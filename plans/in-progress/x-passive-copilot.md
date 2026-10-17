@@ -177,11 +177,11 @@ makes zero network requests and zero DOM changes.
 
 **Steps:**
 
-- [ ] Selectors + parsers + capture entry (functions <= ~30 lines)
-- [ ] Server db + routes; SW relay; manifest
-- [ ] Panel list view
-- [ ] Fixture + unit tests + Playwright smoke test
-- [ ] `.ai/capture/passive-capture-invariants` entry (constraint: ban-risk rules, one selector module)
+- [x] Selectors + parsers + capture entry (functions <= ~30 lines)
+- [x] Server db + routes; SW relay; manifest
+- [x] Panel list view
+- [x] Fixture + unit tests + Playwright smoke test
+- [x] `.ai/capture/passive-capture-invariants` entry (constraint: ban-risk rules, one selector module)
 - [ ] **Live hil check** (below)
 
 **Tests:**
@@ -194,8 +194,8 @@ makes zero network requests and zero DOM changes.
 
 **Verification:**
 
-- [ ] `pnpm test:unit`, `pnpm test:e2e smoke`, `pnpm check` pass
-- [ ] grep: no `fetch(`, `XMLHttpRequest`, `.click(`, `scroll`, `dispatchEvent`, `appendChild`, `setAttribute`, `innerHTML` in `apps/extension/src/content/` (excluding tests)
+- [x] `pnpm test:unit`, `pnpm test:e2e smoke`, `pnpm check` pass
+- [x] grep: no `fetch(`, `XMLHttpRequest`, `.click(`, `scroll`, `dispatchEvent`, `appendChild`, `setAttribute`, `innerHTML` in `apps/extension/src/content/` (excluding tests)
 
 **Live hil check (separate tiny step, `Mode: hil` for this step only):**
 
