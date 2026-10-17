@@ -296,10 +296,10 @@ Claude runs read-only with cwd = the spacehood repo.
 
 **Steps:**
 
-- [ ] Claude runner/argv builder; polish + guard + regenerate-once
-- [ ] Auto-polish + daily cap; DB + route
-- [ ] Panel changes
-- [ ] README "Polish / auto top picks / config". `.ai/security/llm-subprocess-sandbox` entry (constraint: stdin, shell:false, flag profile, env scrubbing, opencode sandbox)
+- [x] Claude runner/argv builder; polish + guard + regenerate-once
+- [x] Auto-polish + daily cap; DB + route
+- [x] Panel changes
+- [x] README "Polish / auto top picks / config". `.ai/security/llm-subprocess-sandbox` entry (constraint: stdin, shell:false, flag profile, env scrubbing, opencode sandbox)
 
 **Tests:**
 
@@ -312,15 +312,16 @@ Claude runs read-only with cwd = the spacehood repo.
 
 **Verification:**
 
-- [ ] `pnpm test:unit`, `pnpm test:e2e smoke`, `pnpm check` pass
-- [ ] grep: no `shell: true`, no `--bare`
+- [x] `pnpm test:unit`, `pnpm test:e2e smoke`, `pnpm check` pass
+- [x] grep: no `shell: true`, no `--bare`
 - [ ] Manual: polish one real flagged post; confirm reply <= 280 and read-only tools only
+      _Partially verified 2026-10-17: a trivial `claude -p` run (haiku) confirmed the flag profile incl. `--max-turns` and the `.structured_output` envelope. A real polish run is still on the pre-merge checklist._
 
 **Phase checklist:**
 
-- [ ] Steps and Verification ticked in this file
-- [ ] Changes committed: `feat: claude polish with auto top picks, daily cap and hard-rule guard`
-- [ ] Phase marked complete
+- [x] Steps and Verification ticked in this file
+- [x] Changes committed: `feat: claude polish with auto top picks, daily cap and hard-rule guard`
+- [x] Phase marked complete
 
 ---
 
