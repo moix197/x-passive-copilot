@@ -413,10 +413,10 @@ post ideas, each with Copy and a guarded Polish; a failed digest keeps the previ
 
 **Steps:**
 
-- [ ] Own detection, voice job, example selection, feedback route
-- [ ] Digest job + route; idea polish
-- [ ] Panel tabs/components
-- [ ] README "seeding your voice / digest". `.ai/pipeline/voice-and-digest` entry (decision)
+- [x] Own detection, voice job, example selection, feedback route
+- [x] Digest job + route; idea polish
+- [x] Panel tabs/components
+- [x] README "seeding your voice / digest". `.ai/pipeline/voice-and-digest` entry (decision)
 
 **Tests:**
 
@@ -428,14 +428,14 @@ post ideas, each with Copy and a guarded Polish; a failed digest keeps the previ
 
 **Verification:**
 
-- [ ] `pnpm test:unit`, `pnpm test:e2e smoke`, `pnpm check` pass
+- [x] `pnpm test:unit`, `pnpm test:e2e smoke`, `pnpm check` pass
 - [ ] Manual: visit own profile -> samples counted, profile appears at 5; copy/rate a draft -> shows in Voice tab; digest refreshes after 50 posts
 
 **Phase checklist:**
 
-- [ ] Steps and Verification ticked in this file
-- [ ] Changes committed: `feat: voice profile, draft feedback and rolling digest`
-- [ ] Phase marked complete
+- [x] Steps and Verification ticked in this file
+- [x] Changes committed: `feat: voice profile, draft feedback and rolling digest`
+- [x] Phase marked complete
 
 ---
 
