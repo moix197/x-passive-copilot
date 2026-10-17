@@ -1,6 +1,6 @@
 import { chromium, expect, test, type BrowserContext } from '@playwright/test';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -37,7 +37,10 @@ async function startServer(): Promise<void> {
   const port = await findFreePort();
   baseUrl = `http://127.0.0.1:${port}`;
   const args = ['--import', 'tsx', 'apps/server/src/main.ts', '--dev', '--port', String(port)];
-  server = spawn(process.execPath, [...args, '--home', makeTempDir('xc-home-')], {
+  const home = makeTempDir('xc-home-');
+  // Triage stays disabled (no models.triage), so must-flag posts can only show as pending.
+  writeFileSync(join(home, 'config.json'), JSON.stringify({ handle: 'e2eowner', watchlist: ['watched'] }));
+  server = spawn(process.execPath, [...args, '--home', home], {
     cwd: root,
     env: { ...process.env, XC_DEV_TOKEN: devToken },
     stdio: 'ignore',
@@ -138,4 +141,29 @@ test('re-sent posts never duplicate on the server', async () => {
     fetch(`${baseUrl}/v1/posts`, { method: 'POST', headers: authHeader, body: JSON.stringify({ posts: [post] }) }).then((r) => r.json());
   expect(await send()).toEqual({ accepted: 1, duplicates: 0 });
   expect(await send()).toEqual({ accepted: 0, duplicates: 1 });
+});
+
+test('mention and watchlist posts show in Flagged as pending before any triage', async () => {
+  const base = { authorName: 'N', text: 'plain post', postedAt: null, isReply: false, replyTo: [], quotedStatusId: null,
+    metrics: { replies: 0, reposts: 0, likes: 0, views: 0 } };
+  const posts = [
+    { ...base, statusId: '7001', authorHandle: 'someone', text: 'hey @e2eowner what do you think?' },
+    { ...base, statusId: '7002', authorHandle: 'watched' },
+    { ...base, statusId: '7003', authorHandle: 'random' },
+  ];
+  const sent = await fetch(`${baseUrl}/v1/posts`, { method: 'POST', headers: authHeader, body: JSON.stringify({ posts }) });
+  expect(sent.ok).toBe(true);
+  const flagged = await (await fetch(`${baseUrl}/v1/posts?view=flagged&limit=50`, { headers: authHeader })).json();
+  const byId = new Map((flagged.posts as { statusId: string; triage: { mustFlag: string } | null }[]).map((p) => [p.statusId, p]));
+  expect(byId.get('7001')?.triage?.mustFlag).toBe('mention');
+  expect(byId.get('7002')?.triage?.mustFlag).toBe('watchlist');
+  expect(byId.has('7003')).toBe(false);
+
+  const extensionId = await pointExtensionAtServer(context);
+  const panel = await context.newPage();
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
+  await panel.getByRole('tab', { name: 'Flagged' }).click();
+  const row = panel.locator('[data-status-id="7001"]');
+  await expect(row).toContainText('mention', { timeout: 15_000 });
+  await expect(row).toContainText('triage pending');
 });

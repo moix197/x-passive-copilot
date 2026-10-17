@@ -85,13 +85,18 @@ to; first 8 KB are used) by an LLM through [opencode](https://opencode.ai). Setu
 - Posts older than `maxAgeHours` or with likes+reposts+replies below `minEngagement` show
   "skipped: <reason>" in the All tab and are never sent to the LLM.
 - Posts whose text mentions `@handle` and posts by `watchlist` authors are always flagged
-  (tagged `mention` / `watchlist`), even if scored low.
+  (tagged `mention` / `watchlist`), even if scored low, and show in Flagged as "triage pending"
+  before triage runs (or when triage is off) and "triage error" if it failed.
+- Free `opencode/*-free` models need no `opencode auth login`; the readiness card shows opencode ok
+  ("free models only, no auth") when `models.triage` is one of them.
+- Failed batches log `triage batch <ids> failed: <class> (<reason>)`; the reason is CLI/provider
+  error text (exit code, stderr, opencode error event), never the prompt.
 - The **Flagged** tab lists reply-worthy posts by score with reason, rough draft and a Copy button.
 - A batch runs at 15 pending posts or 30s after the first pending one. Malformed model output marks
   those posts "triage error"; the server keeps running.
-- opencode runs in `<home>/sandbox/opencode` with all tools denied; prompts go over stdin only.
-- The opencode event parser is built from the documented format and not yet verified against a live
-  install.
+- opencode runs in `<home>/sandbox/opencode` with all tools denied (only `read` is offered, with
+  every path denied, because opencode's free tier rejects requests without it); prompts go over
+  stdin only. Verified against opencode 1.19.3 with `opencode/deepseek-v4.1-flash-free`.
 
 ## Polish / auto top picks / config
 

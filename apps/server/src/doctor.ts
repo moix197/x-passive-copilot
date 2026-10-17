@@ -59,6 +59,16 @@ async function checkCli(
   return loggedIn(auth) ? check(name, name, 'ok', detail, null) : check(name, name, 'not_logged_in', detail, loginFix);
 }
 
+// opencode's free `opencode/*-free` models work without any credentials.
+export function isFreeOpencodeModel(model: string): boolean {
+  return /^opencode\/.+-free$/.test(model);
+}
+
+function allowNoAuthForFreeModel(c: DoctorCheck, triageModel: string): DoctorCheck {
+  if (c.status !== 'not_logged_in' || !isFreeOpencodeModel(triageModel)) return c;
+  return check(c.id, c.label, 'ok', `${c.detail ?? ''} (free models only, no auth)`.trim(), null);
+}
+
 function isFile(path: string): boolean {
   try {
     return statSync(path).isFile() && readFileSync(path, 'utf8').trim() !== '';
@@ -97,7 +107,8 @@ export function createDoctor(deps: DoctorDeps): () => Promise<DoctorReport> {
   return async () => {
     if (cached && now() - cached.at < CACHE_MS) return cached.report;
     const cliChecks = await Promise.all([
-      checkCli({ run, resolve }, 'opencode', ['auth', 'list'], opencodeLoggedIn, 'opencode auth login', 'pnpm add -g opencode-ai'),
+      checkCli({ run, resolve }, 'opencode', ['auth', 'list'], opencodeLoggedIn, 'opencode auth login', 'pnpm add -g opencode-ai')
+        .then((c) => allowNoAuthForFreeModel(c, deps.config.models.triage)),
       checkCli({ run, resolve }, 'claude', ['auth', 'status'], claudeLoggedIn, 'claude, then /login', 'Install Claude Code, see https://claude.com/claude-code'),
     ]);
     const report = { checks: [...cliChecks, ...checkConfig(deps.home, deps.config)] };

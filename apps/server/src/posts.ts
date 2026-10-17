@@ -10,7 +10,7 @@ import {
 } from '@xc/shared';
 import { parseViolations, type DraftKind, type DraftStatus } from './polish/drafts-store';
 import { checkReply, ruleNames } from './polish/guard';
-import { isOwnAuthor } from './triage/prefilter';
+import { isOwnAuthor, mustFlagFor, type PrefilterRules } from './triage/prefilter';
 
 const PRUNE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 const PRUNABLE = 'SELECT status_id FROM posts WHERE captured_at < ? AND is_own = 0';
@@ -205,10 +205,35 @@ export function listPosts(
   return { posts, nextBefore: posts.length === limit && last ? last.seq : null };
 }
 
+const PENDING_SCAN_LIMIT = 500;
+
+/** Untriaged (or triage-disabled) mention/watchlist posts: they must show in Flagged before triage. */
+function listPendingMustFlagPosts(db: DatabaseSync, rules: PrefilterRules, ctx: PolishContext): StoredPost[] {
+  const rows = db
+    .prepare(`${SELECT_WITH_TRIAGE} WHERE t.status_id IS NULL ORDER BY p.seq DESC LIMIT ?`)
+    .all(PENDING_SCAN_LIMIT) as unknown as PostRow[];
+  return rows.flatMap((row) => {
+    const post = toStoredPost(row, ctx);
+    const mustFlag = mustFlagFor(post, rules);
+    return mustFlag ? [{ ...post, triage: pendingTriage(mustFlag) }] : [];
+  });
+}
+
+function pendingTriage(mustFlag: MustFlag): StoredPost['triage'] {
+  return {
+    score: null, reason: null, roughDraft: null, replyWorthy: false,
+    skipReason: null, mustFlag, error: null, roughDraftWarnings: [],
+  };
+}
+
+const byScoreThenNewest = (a: StoredPost, b: StoredPost): number =>
+  (b.triage?.score ?? 0) - (a.triage?.score ?? 0) || b.seq - a.seq;
+
 export function listFlaggedPosts(
   db: DatabaseSync,
   limit: number,
   ctx: PolishContext = NO_POLISH_CONTEXT,
+  rules: PrefilterRules | null = null,
 ): PostListResponse {
   const rows = db
     .prepare(
@@ -216,7 +241,9 @@ export function listFlaggedPosts(
        ORDER BY COALESCE(t.score, 0) DESC, p.seq DESC LIMIT ?`,
     )
     .all(limit) as unknown as PostRow[];
-  return { posts: rows.map((row) => toStoredPost(row, ctx)), nextBefore: null };
+  const triaged = rows.map((row) => toStoredPost(row, ctx));
+  const pending = rules ? listPendingMustFlagPosts(db, rules, ctx) : [];
+  return { posts: [...triaged, ...pending].sort(byScoreThenNewest).slice(0, limit), nextBefore: null };
 }
 
 export function listUntriagedPosts(db: DatabaseSync): StoredPost[] {

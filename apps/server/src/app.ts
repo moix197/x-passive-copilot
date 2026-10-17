@@ -13,6 +13,7 @@ import { claudeGenerate, createPolishService } from './polish/polish';
 import { prunePosts } from './posts';
 import { createRouter, type RouterHooks } from './router';
 import { createVoiceService, loadStyle, opencodeModel, readVoiceView } from './voice/voice';
+import { rulesFromConfig } from './triage/prefilter';
 import { createTriageService, opencodeClassify } from './triage/triage';
 
 export interface AppOptions {
@@ -78,6 +79,7 @@ function buildHooks(db: DatabaseSync, home: string, config: AppConfig, services:
     voiceView: () => readVoiceView(db, config),
     digestView: () => readDigestView(db),
     ownHandle: config.handle,
+    flagRules: rulesFromConfig(config),
     polishContext: () => ({ threshold: config.autoPolish.threshold, capReached: capReached(db, config) }),
     doctor: createDoctor({ home, config }),
   };

@@ -59,6 +59,7 @@ function triageBody(post: StoredPost, onPolish: PolishHandler, actions: HTMLElem
   if (!t) return [];
   const parts: HTMLElement[] = [];
   if (t.error) parts.push(element('div', 'triage error', 'post-tags'));
+  else if (t.score === null && !t.skipReason) parts.push(element('div', 'triage pending', 'post-tags'));
   if (t.reason) parts.push(element('p', t.reason, 'flag-reason'));
   if (t.roughDraft) parts.push(element('p', t.roughDraft, 'flag-draft'), copyButton(t.roughDraft, copyText));
   if (t.roughDraftWarnings.length) parts.push(element('div', `draft warning: ${t.roughDraftWarnings.join(', ')}`, 'needs-edit'));

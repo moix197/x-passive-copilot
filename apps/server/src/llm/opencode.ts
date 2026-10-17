@@ -2,24 +2,46 @@ import { err, ok, TriageItemSchema, type Result, type TriageItem } from '@xc/sha
 import { z } from 'zod';
 import { ensureOpencodeSandbox } from '../sandbox';
 import { resolveCli } from './resolve-cli';
-import { runCli } from './run-cli';
+import { exitFailure, runCli } from './run-cli';
 
 const TRIAGE_TIMEOUT_MS = 120_000;
 
-// Event shape follows opencode's `run --format json` (one JSON object per line); UNVERIFIED
-// against a live install, see .ai/pipeline/triage-flow.
+// Event shape of `opencode run --format json` (one JSON object per line), recorded from opencode
+// 1.19.3 in fixtures/opencode-run.jsonl. Each step is step_start .. step_finish; tool calls arrive
+// as tool_use events and end the step with reason "tool-calls".
 const EventSchema = z.looseObject({
   type: z.string(),
-  part: z.looseObject({ text: z.string().optional(), reason: z.string().optional() }).optional(),
+  part: z
+    .looseObject({
+      text: z.string().optional(),
+      reason: z.string().optional(),
+      state: z.looseObject({ status: z.string().optional() }).optional(),
+    })
+    .optional(),
+  error: z
+    .looseObject({ name: z.string().optional(), data: z.looseObject({ message: z.string().optional() }).optional() })
+    .optional(),
 });
 
+const OPENCODE_ERROR = 'opencode error';
+
+// Provider/CLI error text (e.g. "FreeTierError ... 403"), never model output, so it is safe to log.
+function errorEventMessage(event: z.infer<typeof EventSchema>): string {
+  const detail = [event.error?.name, event.error?.data?.message].filter(Boolean).join(': ');
+  return `${OPENCODE_ERROR}: ${detail.slice(0, 200) || 'unknown'}`;
+}
+
 export function parseOpencodeEvents(stdout: string): Result<string> {
-  const texts: string[] = [];
+  let texts: string[] = [];
   let finished = false;
   for (const line of stdout.split('\n')) {
     const event = parseEventLine(line);
     if (!event) continue;
-    if (event.type === 'error') return err('opencode reported an error event');
+    if (event.type === 'error') return err(errorEventMessage(event));
+    // The sandbox denies every tool; a completed one means it was bypassed, so fail closed.
+    if (event.type === 'tool_use' && event.part?.state?.status === 'completed') return err('opencode ran a tool');
+    // Only the final step's text is the answer; earlier steps hold tool-call preambles.
+    if (event.type === 'step_start') texts = [];
     if (event.type === 'text' && event.part?.text) texts.push(event.part.text);
     if (event.type === 'step_finish' && event.part?.reason !== 'tool-calls') finished = true;
   }
@@ -40,14 +62,18 @@ function parseEventLine(line: string): z.infer<typeof EventSchema> | null {
 
 export function extractJson(text: string): Result<unknown> {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text)?.[1];
-  const start = text.indexOf('[');
-  const end = text.lastIndexOf(']');
-  const candidate = fenced ?? (start !== -1 && end > start ? text.slice(start, end + 1) : '');
-  try {
-    return ok(JSON.parse(candidate));
-  } catch {
-    return err('malformed output: no JSON array');
+  const end = text.lastIndexOf(']') + 1;
+  // Live DeepSeek output sometimes holds a first array, prose ("let me correct"), then a fixed array;
+  // the last `[{` is the fallback start for that case.
+  const candidates = fenced !== undefined ? [fenced] : [text.slice(text.indexOf('['), end), text.slice(text.lastIndexOf('[{'), end)];
+  for (const candidate of candidates) {
+    try {
+      return ok(JSON.parse(candidate));
+    } catch {
+      // try the next candidate
+    }
   }
+  return err('malformed output: no JSON array');
 }
 
 export interface TriageReply {
@@ -65,7 +91,8 @@ export function parseTriageReply(text: string, knownIds: ReadonlySet<string>): R
     const id = (raw as { statusId?: unknown } | null)?.statusId;
     if (typeof id !== 'string' || !knownIds.has(id) || seen.has(id)) continue;
     seen.add(id);
-    const item = TriageItemSchema.safeParse(raw);
+    // The model often omits roughDraft (live-observed); an absent draft is an empty one.
+    const item = TriageItemSchema.safeParse({ roughDraft: '', ...(raw as object) });
     if (item.success) reply.items.push(item.data);
     else reply.invalidIds.push(id);
   }
@@ -85,6 +112,11 @@ export async function runOpencode(prompt: string, model: string, home: string): 
     stdin: prompt,
     cwd: dir,
     timeoutMs: TRIAGE_TIMEOUT_MS,
+    allowNonZeroExit: true,
   });
-  return out.ok ? parseOpencodeEvents(out.value.stdout) : out;
+  if (!out.ok) return out;
+  const events = parseOpencodeEvents(out.value.stdout);
+  const reportedError = !events.ok && events.error.startsWith(OPENCODE_ERROR);
+  if (out.value.exitCode !== 0 && !reportedError) return err(exitFailure(out.value.exitCode ?? null, out.value.stderr));
+  return events;
 }

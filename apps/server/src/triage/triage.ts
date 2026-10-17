@@ -8,7 +8,7 @@ import { listUntriagedPosts } from '../posts';
 import { prefilter, rulesFromConfig } from './prefilter';
 import type { Style } from '../voice/select-examples';
 import { buildTriagePrompt, NO_STYLE } from './prompts';
-import { errorClass, withRetry } from './retry';
+import { errorClass, safeReason, withRetry } from './retry';
 import { saveError, saveResult, saveSkipped } from './triage-store';
 
 const FLUSH_DELAY_MS = 30_000;
@@ -89,7 +89,7 @@ export function createTriageService(
     }
     const kind = errorClass(result.error);
     for (const c of batch) saveError(db, c.post.statusId, kind, c.mustFlag, now());
-    log(`triage batch ${ids} failed: ${kind}`);
+    log(`triage batch ${ids} failed: ${kind} (${safeReason(result.error)})`);
   }
 
   async function drain(force: boolean): Promise<void> {

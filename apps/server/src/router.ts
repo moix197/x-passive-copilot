@@ -12,6 +12,7 @@ import { isAuthorized } from './auth';
 import type { PolishState } from './polish/polish';
 import { log } from './log';
 import { ingestPosts, listFlaggedPosts, listPosts, type PolishContext } from './posts';
+import type { PrefilterRules } from './triage/prefilter';
 import { recordFeedback } from './voice/feedback';
 
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -76,13 +77,13 @@ function postPosts(db: DatabaseSync, ownHandle: string, onIngest: () => void): H
   };
 }
 
-function getPosts(db: DatabaseSync, polishContext: () => PolishContext): Handler {
+function getPosts(db: DatabaseSync, polishContext: () => PolishContext, flagRules: PrefilterRules): Handler {
   return (_req, res, url) => {
     const limit = parseIntParam(url.searchParams.get('limit'), DEFAULT_LIMIT);
     const before = parseIntParam(url.searchParams.get('before'), 0);
     if (!limit || before === null || limit > MAX_LIMIT) return sendJson(res, 400, { error: 'bad query' });
     const view = url.searchParams.get('view');
-    if (view === 'flagged') return sendJson(res, 200, listFlaggedPosts(db, limit, polishContext()));
+    if (view === 'flagged') return sendJson(res, 200, listFlaggedPosts(db, limit, polishContext(), flagRules));
     if (view !== null && view !== 'all') return sendJson(res, 400, { error: 'bad query' });
     sendJson(res, 200, listPosts(db, limit, before || null, polishContext()));
   };
@@ -132,6 +133,7 @@ export interface RouterHooks {
   voiceView: () => VoiceView;
   digestView: () => DigestView;
   ownHandle: string;
+  flagRules: PrefilterRules;
 }
 
 export function createRouter(
@@ -141,7 +143,7 @@ export function createRouter(
 ): (req: IncomingMessage, res: ServerResponse) => void {
   const routes: Record<string, Handler> = {
     'GET /v1/health': (_req, res) => sendJson(res, 200, { status: 'ok' } satisfies HealthResponse),
-    'GET /v1/posts': getPosts(db, hooks.polishContext),
+    'GET /v1/posts': getPosts(db, hooks.polishContext, hooks.flagRules),
     'POST /v1/posts': postPosts(db, hooks.ownHandle, hooks.onIngest),
     'GET /v1/doctor': async (_req, res) => sendJson(res, 200, await hooks.doctor()),
     'GET /v1/voice': (_req, res) => sendJson(res, 200, hooks.voiceView()),

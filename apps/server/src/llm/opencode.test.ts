@@ -1,5 +1,4 @@
-// The fixture is derived from opencode's documented `run --format json` shape, NOT recorded from a
-// live install (opencode was unavailable). Re-record with a real run and re-check these tests.
+// fixtures/opencode-run.jsonl is a real `opencode run --format json` recording (opencode 1.19.3).
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,12 +18,18 @@ describe('ensureOpencodeSandbox', () => {
   it('writes a deny-all opencode config with no MCP servers', () => {
     const dir = ensureOpencodeSandbox(mkdtempSync(join(tmpdir(), 'xc-sandbox-')));
     const config = JSON.parse(readFileSync(join(dir, 'opencode.json'), 'utf8'));
-    expect(config.tools['*']).toBe(false);
-    expect(Object.values(config.tools).every((v) => v === false)).toBe(true);
-    expect(config.tools).toMatchObject({ bash: false, read: false, webfetch: false, task: false });
-    expect(config.permission['*']).toBe('deny');
-    expect(Object.values(config.permission).every((v) => v === 'deny')).toBe(true);
+    const { read: readTool, ...tools } = config.tools;
+    const { read: readPermission, ...permissions } = config.permission;
+    expect(tools['*']).toBe(false);
+    expect(Object.values(tools).every((v) => v === false)).toBe(true);
+    expect(tools).toMatchObject({ bash: false, webfetch: false, task: false });
+    expect(permissions['*']).toBe('deny');
+    expect(Object.values(permissions).every((v) => v === 'deny')).toBe(true);
     expect(config.mcp).toEqual({});
+    // read stays offered (free-tier requirement) but only a never-existing file is allowed
+    expect(readTool).toBe(true);
+    expect(readPermission['*']).toBe('deny');
+    expect(Object.entries(readPermission).filter(([, v]) => v === 'allow')).toEqual([['xc-no-such-file.never', 'allow']]);
   });
 });
 
@@ -46,6 +51,33 @@ describe('parseOpencodeEvents', () => {
     expect(parseOpencodeEvents(out).ok).toBe(false);
   });
 
+  it('keeps only the final step text after a denied tool call', () => {
+    const denied = { type: 'tool_use', part: { tool: 'read', state: { status: 'error' } } };
+    const out = events(
+      { type: 'step_start', part: {} },
+      { type: 'text', part: { text: 'Let me read [x]' } },
+      denied,
+      { type: 'step_finish', part: { reason: 'tool-calls' } },
+      { type: 'step_start', part: {} },
+      { type: 'text', part: { text: '[]' } },
+      finish,
+    );
+    expect(parseOpencodeEvents(out)).toEqual({ ok: true, value: '[]' });
+  });
+
+  it('surfaces the provider error from an error event (live 403 free-tier shape)', () => {
+    const error = { name: 'APIError', data: { message: 'free tier can only be used from within OpenCode', statusCode: 403 } };
+    expect(parseOpencodeEvents(events({ type: 'error', error }))).toEqual({
+      ok: false,
+      error: 'opencode error: APIError: free tier can only be used from within OpenCode',
+    });
+  });
+
+  it('fails closed when a tool actually ran', () => {
+    const ran = { type: 'tool_use', part: { tool: 'bash', state: { status: 'completed' } } };
+    expect(parseOpencodeEvents(events(ran, { type: 'text', part: { text: '[]' } }, finish)).ok).toBe(false);
+  });
+
   it('fails on error events and on empty text; ignores noise lines', () => {
     expect(parseOpencodeEvents(events({ type: 'error', error: {} }, finish)).ok).toBe(false);
     expect(parseOpencodeEvents(events(finish)).ok).toBe(false);
@@ -60,6 +92,19 @@ describe('extractJson / parseTriageReply', () => {
     expect(extractJson('```json\n' + body + '\n```').ok).toBe(true);
     expect(extractJson('Here you go: ' + body + ' done').ok).toBe(true);
     expect(extractJson('no json here').ok).toBe(false);
+  });
+
+  it('falls back to a self-corrected last array (live-observed)', () => {
+    const bad = JSON.stringify([item('1001')]).replace('}]', '');
+    const fixed = JSON.stringify([item('1001', { score: 40 })]);
+    const result = parseTriageReply(`${bad}]\n\nWait, format error. Let me correct.\n\n${fixed}`, known);
+    expect(result.ok && result.value.items[0]?.score).toBe(40);
+  });
+
+  it('treats a missing roughDraft as empty (live-observed)', () => {
+    const { roughDraft: _omitted, ...noDraft } = item('1001');
+    const result = parseTriageReply(JSON.stringify([noDraft]), known);
+    expect(result.ok && result.value.items[0]?.roughDraft).toBe('');
   });
 
   it('drops unknown and duplicate ids', () => {

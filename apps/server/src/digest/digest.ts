@@ -19,7 +19,7 @@ import { parseViolations } from '../polish/drafts-store';
 import { ideaDraftKey, type Idea } from '../polish/polish';
 import { readIngestCount } from '../posts';
 import { dataJson } from '../triage/prompts';
-import { errorClass, withRetry } from '../triage/retry';
+import { errorClass, safeReason, withRetry } from '../triage/retry';
 import type { RunModel } from '../voice/voice';
 
 const POST_LIMIT = 60;
@@ -218,7 +218,7 @@ export function createDigestService(
     try {
       const result = await generate();
       if (result.ok) saveDigest(db, bucket, result.value, now());
-      else log(`digest ${bucket} failed: ${errorClass(result.error)}`);
+      else log(`digest ${bucket} failed: ${errorClass(result.error)} (${safeReason(result.error)})`);
       setMeta(db, META_FAILED, result.ok ? 0 : 1);
     } finally {
       running = false;

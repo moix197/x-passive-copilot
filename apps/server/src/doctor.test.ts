@@ -31,4 +31,19 @@ describe('doctor', () => {
     await doctor();
     expect(calls).toBeGreaterThan(before);
   });
+
+  it('opencode without credentials is ok only for a free opencode/*-free triage model', async () => {
+    const opencodeStatus = async (triage: string) => {
+      const config = { ...defaultConfig(), models: { ...defaultConfig().models, triage } };
+      const doctor = createDoctor({
+        home: '/nonexistent-home',
+        config,
+        resolve: () => ok(['opencode']),
+        run: async (argv) => ok({ stdout: argv.includes('auth') ? 'Credentials\n0 credentials\n' : '1.19.3\n', stderr: '' }),
+      });
+      return (await doctor()).checks.find((c) => c.id === 'opencode');
+    };
+    expect(await opencodeStatus('opencode/deepseek-v4.1-flash-free')).toMatchObject({ status: 'ok', fix: null });
+    expect(await opencodeStatus('anthropic/claude-x')).toMatchObject({ status: 'not_logged_in' });
+  });
 });

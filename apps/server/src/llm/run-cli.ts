@@ -10,11 +10,14 @@ export interface RunCliOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs: number;
+  /** Resolve ok on a non-zero exit (exitCode set) for CLIs that report errors on stdout. */
+  allowNonZeroExit?: boolean;
 }
 
 export interface CliOutput {
   stdout: string;
   stderr: string;
+  exitCode?: number | null;
 }
 
 const activeChildren = new Set<number>();
@@ -55,6 +58,10 @@ function collectStreams(child: ChildProcess, onOverflow: () => void) {
   return { read: (): CliOutput => ({ stdout: Buffer.concat(out).toString('utf8'), stderr }) };
 }
 
+export function exitFailure(code: number | null, stderr: string): string {
+  return `exit ${code}: ${stderr.slice(0, 300)}`;
+}
+
 // XC_* carries our own secrets (e.g. XC_DEV_TOKEN); LLM children never need them.
 export function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(env).filter(([key]) => !key.toUpperCase().startsWith('XC_')));
@@ -88,7 +95,8 @@ export function runCli(opts: RunCliOptions): Promise<Result<CliOutput>> {
       if (child.pid !== undefined) activeChildren.delete(child.pid);
       const output = streams.read();
       if (failure) return resolve(err(failure));
-      resolve(code === 0 ? ok(output) : err(`exit ${code}: ${output.stderr.slice(0, 300)}`));
+      if (code === 0 || opts.allowNonZeroExit) return resolve(ok({ ...output, exitCode: code }));
+      resolve(err(exitFailure(code, output.stderr)));
     });
     child.stdin?.on('error', () => undefined);
     child.stdin?.end(opts.stdin);

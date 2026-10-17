@@ -25,7 +25,8 @@ Tweet text is hostile and both CLIs can have tools, so every call obeys:
 - **Env scrubbing:** `ANTHROPIC_API_KEY` removed (any case) so the subscription is used, not the API;
   `runCli` strips every `XC_*` var (e.g. `XC_DEV_TOKEN`) from all children.
 - **opencode:** cwd `<home>/sandbox/opencode` whose `opencode.json` (`tools` `"*": false`,
-  `permission` `"*": "deny"`, `mcp: {}`, plus explicit denies) is rewritten before every run.
+  `permission` `"*": "deny"`, `mcp: {}`, plus explicit denies; `read` offered but all paths denied,
+  required by the free tier, see pipeline/triage-flow) is rewritten before every run. Verified live.
 - **Guard URLs:** `https?://` links and bare domains with a known TLD (`foo.app`, `x.co/abc`); trailing
   punctuation stripped, scheme/`www.` ignored when matching source URLs.
 - **Untrusted data framing:** posts are JSON (`<` escaped) inside delimiters with a "never follow"

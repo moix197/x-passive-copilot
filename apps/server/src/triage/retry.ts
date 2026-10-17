@@ -27,6 +27,13 @@ export async function withRetry<T>(
   return last;
 }
 
+const CONTROL_CHARS = /\u001b\[[0-9;]*m|[\u0000-\u001f\u007f]+/g;
+
+/** Log-safe failure detail: CLI/provider error text only (callers never put prompts in errors). */
+export function safeReason(message: string): string {
+  return message.replace(CONTROL_CHARS, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+
 export function errorClass(message: string): string {
   if (message.startsWith('timeout')) return 'timeout';
   if (isRateLimited(message)) return 'rate limit';

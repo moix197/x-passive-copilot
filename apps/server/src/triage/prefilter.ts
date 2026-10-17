@@ -54,7 +54,7 @@ function engagement(m: PrefilterPost['metrics']): number {
   return m.likes + m.reposts + m.replies;
 }
 
-function mustFlagFor(post: PrefilterPost, rules: PrefilterRules): MustFlag | undefined {
+export function mustFlagFor(post: PrefilterPost, rules: PrefilterRules): MustFlag | undefined {
   if (mentionsHandle(post.text, rules.handle) || repliesToHandle(post.replyTo, rules.handle)) return 'mention';
   if (onWatchlist(post.authorHandle, rules.watchlist)) return 'watchlist';
   return undefined;
