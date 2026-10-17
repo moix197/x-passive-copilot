@@ -81,6 +81,7 @@ export function openDb(home: string): DatabaseSync {
   mkdirSync(home, { recursive: true });
   const db = new DatabaseSync(join(home, 'posts.db'));
   db.exec('PRAGMA journal_mode = WAL');
+  db.exec('PRAGMA synchronous = NORMAL');
   db.exec(SCHEMA);
   addMissingColumns(db);
   seedIngestCounters(db);

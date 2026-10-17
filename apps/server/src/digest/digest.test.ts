@@ -49,7 +49,7 @@ describe('digest service', () => {
       calls += 1;
       return ok(reply(['1', '777']));
     };
-    const service = createDigestService(db, config(), model, () => '');
+    const service = createDigestService(db, config(), model, () => '', Date.now, async () => {});
     addPosts(db, 1, 49);
     addPosts(db, 500, 520, 'me');
     await service.run();
@@ -90,7 +90,7 @@ describe('digest service', () => {
     const db = freshDb();
     let fail = false;
     const model = async () => (fail ? err('malformed output') : ok(reply(['1'])));
-    const service = createDigestService(db, config(), model, () => '');
+    const service = createDigestService(db, config(), model, () => '', Date.now, async () => {});
     addPosts(db, 1, 50);
     await service.run();
     fail = true;
@@ -99,5 +99,5 @@ describe('digest service', () => {
     const view = readDigestView(db);
     expect(view.failed).toBe(true);
     expect(view.digest?.trends).toHaveLength(1);
-  }, 60_000);
+  });
 });

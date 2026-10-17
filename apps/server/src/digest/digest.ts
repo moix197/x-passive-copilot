@@ -196,6 +196,7 @@ export function createDigestService(
   runModel: RunModel,
   features: () => string = readFeatures,
   now: () => number = Date.now,
+  wait?: (ms: number) => Promise<void>,
 ): DigestService {
   let running = false;
 
@@ -205,7 +206,7 @@ export function createDigestService(
     return withRetry(async () => {
       const out = await runModel(buildDigestPrompt(features(), posts));
       return out.ok ? parseDigest(out.value, known) : out;
-    });
+    }, wait);
   }
 
   async function run(): Promise<void> {
