@@ -58,6 +58,13 @@ export function isIdeaDraftKey(draftKey: string): boolean {
   return draftKey.startsWith(IDEA_PREFIX);
 }
 
+const ROUGH_PREFIX = 'rough-';
+
+/** Feedback key `rough-<statusId>` for a post's triage rough draft, separate from the Claude draft keyed by statusId. */
+export function roughDraftStatusId(draftKey: string): string | null {
+  return draftKey.startsWith(ROUGH_PREFIX) ? draftKey.slice(ROUGH_PREFIX.length) : null;
+}
+
 export function replySource(post: StoredPost): string {
   return `${post.text} @${post.authorHandle}`;
 }

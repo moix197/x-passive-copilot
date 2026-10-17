@@ -72,6 +72,8 @@ export const TriageInfoSchema = z.object({
   mustFlag: MustFlagSchema.nullable(),
   error: z.string().nullable(),
   roughDraftWarnings: z.array(z.string()),
+  /** The rough draft's saved thumb (its `examples` polarity), independent of the Claude version's. */
+  feedback: z.enum(['up', 'down']).nullable().default(null),
 });
 export type TriageInfo = z.infer<typeof TriageInfoSchema>;
 

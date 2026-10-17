@@ -31,7 +31,6 @@ test.beforeAll(async () => {
     spacehoodRepoPath: makeTempDir('xc-repo-'),
     models: { triage: 'google/fake-flash', final: 'fake-final' },
     triage: { batchSize: 1 },
-    autoPolish: { dailyCap: 0 },
   };
   server = await startServer(config, { ...fakes.env, GEMINI_API_KEY: FAKE_GEMINI_KEY });
   context = await launchExtension();
@@ -278,4 +277,61 @@ test('thumbs show a pressed state with confirmation, switch, survive polls and a
   claude = panel.locator('[data-status-id="8601"]').getByTestId('claude-version');
   await expect(claude.getByTestId('draft-down')).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
   await expect(claude.getByTestId('draft-up')).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('a high-score post is never polished automatically by default', async () => {
+  const post = capturedPost('8701', { authorName: 'Uma', authorHandle: 'uma', text: 'Launching our beta tomorrow' });
+  expect((await postJson(server.baseUrl, '/v1/posts', { posts: [post] })).ok).toBe(true);
+  const panel = await openFlagged();
+  const row = panel.locator('[data-status-id="8701"]');
+  await expect(row.getByTestId('first-draft')).toContainText('Congrats on shipping!', { timeout: 20_000 });
+  await expect(row.getByTestId('polish-button')).toBeVisible();
+  await panel.waitForTimeout(3500);
+  await expect(row.getByTestId('claude-text')).toHaveCount(0);
+  await expect(row.getByTestId('claude-version')).not.toContainText('Top pick');
+});
+
+test('first draft thumbs and edit are independent of the Claude version, guarded and persisted', async () => {
+  const post = capturedPost('8801', { authorName: 'Vik', authorHandle: 'vik', text: 'What are you building this week?' });
+  expect((await postJson(server.baseUrl, '/v1/posts', { posts: [post] })).ok).toBe(true);
+  let panel = await openFlagged();
+  let row = panel.locator('[data-status-id="8801"]');
+  let rough = row.getByTestId('first-draft');
+  let claude = row.getByTestId('claude-version');
+  await claude.getByTestId('polish-button').click({ timeout: 20_000 });
+  await expect(claude.getByTestId('claude-text')).toBeVisible({ timeout: 20_000 });
+
+  await rough.getByTestId('draft-up').click();
+  await expect(rough.getByTestId('draft-up')).toHaveAttribute('aria-pressed', 'true');
+  await expect(rough).toContainText('Saved as good example');
+  await expect(claude.getByTestId('draft-up')).toHaveAttribute('aria-pressed', 'false');
+  await claude.getByTestId('draft-down').click();
+  await expect(claude.getByTestId('draft-down')).toHaveAttribute('aria-pressed', 'true');
+  await expect(rough.getByTestId('draft-up')).toHaveAttribute('aria-pressed', 'true');
+  await expect(rough.getByTestId('draft-down')).toHaveAttribute('aria-pressed', 'false');
+
+  await rough.getByTestId('draft-edit').click();
+  const editor = rough.getByTestId('draft-editor');
+  await expect(editor).toBeFocused();
+  await editor.fill('lfg #ship #now');
+  await rough.getByTestId('draft-save').click();
+  await expect(rough).toContainText('guard: hashtags, hype-word');
+  const edited = 'What is the one thing you would cut first?';
+  await editor.fill(edited);
+  await rough.getByTestId('draft-save').click();
+  await expect(editor).toHaveCount(0);
+  await expect(rough.locator('.reply-text')).toHaveText(edited);
+
+  await panel.close();
+  panel = await openFlagged();
+  row = panel.locator('[data-status-id="8801"]');
+  rough = row.getByTestId('first-draft');
+  claude = row.getByTestId('claude-version');
+  await expect(rough.locator('.reply-text')).toHaveText(edited, { timeout: 15_000 });
+  await expect(rough.getByTestId('draft-up')).toHaveAttribute('aria-pressed', 'true');
+  await expect(claude.getByTestId('draft-down')).toHaveAttribute('aria-pressed', 'true');
+  await expect(claude.getByTestId('draft-up')).toHaveAttribute('aria-pressed', 'false');
+
+  const copied = await postJson(server.baseUrl, '/v1/drafts/rough-8801/feedback', { kind: 'copy' });
+  expect(copied.status).toBe(200);
 });

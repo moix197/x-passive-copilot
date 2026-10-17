@@ -142,6 +142,7 @@ interface PostRow {
   d_selected_version: number | null;
   d_versions: string | null;
   d_feedback: 'up' | 'down' | null;
+  t_feedback: 'up' | 'down' | null;
 }
 
 export interface PolishContext {
@@ -162,6 +163,7 @@ function toTriage(row: PostRow): StoredPost['triage'] {
     mustFlag: row.must_flag,
     error: row.error,
     roughDraftWarnings: row.rough_draft ? ruleNames(checkReply(row.rough_draft, row.text)) : [],
+    feedback: row.t_feedback,
   };
 }
 
@@ -210,7 +212,8 @@ const SELECT_WITH_TRIAGE = `SELECT p.*, t.status_id AS t_status_id, t.score, t.r
   t.reply_worthy, t.skip_reason, t.must_flag, t.error,
   d.status AS d_status, d.kind AS d_kind, d.text AS d_text, d.violations AS d_violations, d.error AS d_error,
   d.selected_version AS d_selected_version, ${VERSIONS_SUBQUERY('p.status_id')} AS d_versions,
-  (SELECT CASE e.polarity WHEN 'positive' THEN 'up' ELSE 'down' END FROM examples e WHERE e.draft_id = d.status_id) AS d_feedback
+  (SELECT CASE e.polarity WHEN 'positive' THEN 'up' ELSE 'down' END FROM examples e WHERE e.draft_id = d.status_id) AS d_feedback,
+  (SELECT CASE e.polarity WHEN 'positive' THEN 'up' ELSE 'down' END FROM examples e WHERE e.draft_id = 'rough-' || p.status_id) AS t_feedback
   FROM posts p LEFT JOIN triage t ON t.status_id = p.status_id
   LEFT JOIN drafts d ON d.status_id = p.status_id`;
 
@@ -250,7 +253,7 @@ function listPendingMustFlagPosts(
 function pendingTriage(mustFlag: MustFlag): StoredPost['triage'] {
   return {
     score: null, reason: null, roughDraft: null, replyWorthy: false,
-    skipReason: null, mustFlag, error: null, roughDraftWarnings: [],
+    skipReason: null, mustFlag, error: null, roughDraftWarnings: [], feedback: null,
   };
 }
 

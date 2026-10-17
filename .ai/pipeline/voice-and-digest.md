@@ -24,7 +24,7 @@ example. Counts are monotonic `meta` counters (`ingest:non_own`, `ingest:own`), 
 and seeded from live rows on first open, because the 30-day prune shrinks `posts`; own posts are
 exempt from the prune (voice samples). Digest: bucket = floor(ingest:non_own / everyNPosts); the bucket is stored
 in `meta` before the model runs so a bucket never fires twice; unknown statusIds are dropped; failure
-keeps the previous digest and sets `digest:failed`. Idea polish reuses the polish service with a
+keeps the previous digest and sets `digest:failed`. Rough-draft feedback uses key `rough-<statusId>` (text from `triage.rough_draft`, guard source = the post). Idea polish reuses the polish service with a
 `idea-<digestId>-<n>` draft key and an empty guard source (any URL/@mention is a violation).
 
 **Style notes:** the owner's own rules live in the singleton `style_notes` table (db, not a file:

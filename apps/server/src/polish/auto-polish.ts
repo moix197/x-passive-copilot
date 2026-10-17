@@ -34,7 +34,7 @@ export function createAutoPolish(
   }
 
   async function run(): Promise<void> {
-    if (running || config.autoPolish.dailyCap === 0) return;
+    if (running || !config.autoPolish.enabled || config.autoPolish.dailyCap === 0) return;
     running = true;
     try {
       const skipped = new Set<string>();

@@ -19,6 +19,10 @@ export function saveError(
   db.prepare(UPSERT).run(statusId, null, null, null, 0, null, mustFlag, error, now);
 }
 
+export function saveEditedRoughDraft(db: DatabaseSync, statusId: string, text: string): void {
+  db.prepare('UPDATE triage SET rough_draft = ? WHERE status_id = ?').run(text, statusId);
+}
+
 export function saveResult(db: DatabaseSync, item: TriageItem, mustFlag: MustFlag | null, now: number): void {
   const worthy = item.relevant && item.replyWorthy ? 1 : 0;
   db.prepare(UPSERT).run(item.statusId, item.score, item.reason, item.roughDraft, worthy, null, mustFlag, null, now);

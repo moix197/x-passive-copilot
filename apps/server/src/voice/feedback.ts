@@ -2,8 +2,9 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { FeedbackRequest } from '@xc/shared';
 import { saveEditedText } from '../polish/drafts-store';
 import { checkReply, ruleNames } from '../polish/guard';
-import { isIdeaDraftKey, replySource } from '../polish/polish';
+import { isIdeaDraftKey, replySource, roughDraftStatusId } from '../polish/polish';
 import { getPost } from '../posts';
+import { saveEditedRoughDraft } from '../triage/triage-store';
 
 export type FeedbackOutcome = { ok: true } | { ok: false; status: 404 | 422; error: string };
 
@@ -21,6 +22,13 @@ export function listFeedbackExamples(db: DatabaseSync): { positives: string[]; n
 }
 
 function readDraftText(db: DatabaseSync, draftId: string): string | null {
+  const roughId = roughDraftStatusId(draftId);
+  if (roughId !== null) {
+    const rough = db.prepare('SELECT rough_draft FROM triage WHERE status_id = ?').get(roughId) as
+      | { rough_draft: string | null }
+      | undefined;
+    return rough?.rough_draft || null;
+  }
   const row = db.prepare('SELECT text FROM drafts WHERE status_id = ?').get(draftId) as
     | { text: string | null }
     | undefined;
@@ -29,7 +37,7 @@ function readDraftText(db: DatabaseSync, draftId: string): string | null {
 
 function guardSource(db: DatabaseSync, draftId: string): string {
   if (isIdeaDraftKey(draftId)) return '';
-  const post = getPost(db, draftId);
+  const post = getPost(db, roughDraftStatusId(draftId) ?? draftId);
   return post ? replySource(post) : '';
 }
 
@@ -62,7 +70,9 @@ export function recordFeedback(
   const verdict = guardText(db, draftId, text);
   if (feedback.kind === 'edit') {
     if (!verdict.ok) return verdict;
-    saveEditedText(db, draftId, text);
+    const roughId = roughDraftStatusId(draftId);
+    if (roughId !== null) saveEditedRoughDraft(db, roughId, text);
+    else saveEditedText(db, draftId, text);
   }
   // A copied/liked draft that breaks the guard is not a style example worth learning from.
   if (verdict.ok) upsertExample(db, draftId, text, 'positive', now);

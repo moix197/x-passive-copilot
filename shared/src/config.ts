@@ -17,6 +17,7 @@ export const AppConfigSchema = z.object({
     .prefault({}),
   autoPolish: z
     .object({
+      enabled: z.boolean().default(false),
       threshold: z.number().default(80),
       dailyCap: z.number().int().nonnegative().default(10),
     })

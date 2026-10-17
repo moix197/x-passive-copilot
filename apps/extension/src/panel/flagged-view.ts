@@ -1,6 +1,6 @@
 import { MAX_DRAFT_VERSIONS, type DraftVersion, type PolishInfo, type StoredPost } from '@xc/shared/types';
 import { element } from './dom';
-import { copyButton, copyText, renderDraftActions, type DraftCallbacks, type Rating } from './draft-actions';
+import { renderDraftActions, type DraftCallbacks, type Rating } from './draft-actions';
 import { renderPostCard } from './post-card';
 import { mountPostsView, type PostsViewOptions } from './posts-view';
 import { renderVersionNav } from './version-nav';
@@ -81,17 +81,37 @@ function triageStatus(t: NonNullable<StoredPost['triage']>): HTMLElement[] {
   return t.roughDraft ? [] : [element('div', 'No draft suggested.', 'post-tags')];
 }
 
-function firstDraftSection(post: StoredPost): HTMLElement | null {
+function trackEditing(ctx: RowContext, statusId: string): (editing: boolean) => void {
+  return (editing) => {
+    if (editing) ctx.editors.set(statusId, ctx.row);
+    else ctx.editors.delete(statusId);
+  };
+}
+
+// The rough draft is rated and edited under its own `rough-<statusId>` key, apart from the Claude version.
+function roughDraftActions(post: StoredPost, text: HTMLElement, rating: Rating | null, ctx: RowContext): HTMLElement {
+  const key = `rough-${post.statusId}`;
+  const base = ctx.handlers.draftCallbacks(key, rating);
+  const callbacks: DraftCallbacks = {
+    ...base,
+    onEdit: async (edited) => {
+      const error = await base.onEdit(edited);
+      if (!error) text.textContent = edited;
+      return error;
+    },
+  };
+  return renderDraftActions(text.textContent ?? '', callbacks, trackEditing(ctx, post.statusId));
+}
+
+function firstDraftSection(post: StoredPost, ctx: RowContext): HTMLElement | null {
   const t = post.triage;
   if (!t) return null;
   const box = section('first-draft', 'First draft', 'triage model');
   box.append(...triageStatus(t));
   if (t.reason) box.append(element('p', t.reason, 'flag-reason'));
   if (t.roughDraft) {
-    const actions = document.createElement('div');
-    actions.className = 'draft-actions';
-    actions.append(copyButton(t.roughDraft, copyText));
-    box.append(element('p', t.roughDraft, 'reply-text'), actions);
+    const text = element('p', t.roughDraft, 'reply-text');
+    box.append(text, roughDraftActions(post, text, t.feedback, ctx));
   }
   if (t.roughDraftWarnings.length) {
     box.append(element('div', `draft warning: ${t.roughDraftWarnings.join(', ')}`, 'needs-edit'));
@@ -126,7 +146,7 @@ function showEdited(post: StoredPost, text: string, ctx: RowContext): void {
 }
 
 function draftActionsFor(post: StoredPost, text: string, ctx: RowContext): HTMLElement {
-  const { handlers, editors } = ctx;
+  const { handlers } = ctx;
   const versions = post.polish?.versions.length ?? 0;
   const base = handlers.draftCallbacks(post.statusId, post.polish?.feedback ?? null);
   const callbacks: DraftCallbacks = {
@@ -138,11 +158,7 @@ function draftActionsFor(post: StoredPost, text: string, ctx: RowContext): HTMLE
     },
     ...(versions < MAX_DRAFT_VERSIONS ? { onRegenerate: () => handlers.onRegenerate(post.statusId) } : {}),
   };
-  const onEditing = (editing: boolean) => {
-    if (editing) editors.set(post.statusId, ctx.row);
-    else editors.delete(post.statusId);
-  };
-  return renderDraftActions(text, callbacks, onEditing);
+  return renderDraftActions(text, callbacks, trackEditing(ctx, post.statusId));
 }
 
 // While a regenerate runs, the selected version stays readable but cannot be acted on.
@@ -193,7 +209,7 @@ export function renderFlagged(
   row.dataset.testid = 'flagged-row';
   row.dataset.statusId = post.statusId;
   const ctx: RowContext = { handlers, editors, row };
-  const sections = [originalPost(post), firstDraftSection(post), claudeSection(post, ctx)];
+  const sections = [originalPost(post), firstDraftSection(post, ctx), claudeSection(post, ctx)];
   row.append(...sections.filter((s): s is HTMLElement => s !== null));
   return row;
 }

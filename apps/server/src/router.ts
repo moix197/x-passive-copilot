@@ -95,7 +95,7 @@ function getPosts(db: DatabaseSync, polishContext: () => PolishContext, flagRule
 
 const POLISH_PATH = /^\/v1\/posts\/(\d{1,30})\/polish$/;
 
-const FEEDBACK_PATH = /^\/v1\/drafts\/(\d{1,30}|idea-\d{1,9}-\d)\/feedback$/;
+const FEEDBACK_PATH = /^\/v1\/drafts\/(\d{1,30}|rough-\d{1,30}|idea-\d{1,9}-\d)\/feedback$/;
 const SELECT_PATH = /^\/v1\/drafts\/(\d{1,30}|idea-\d{1,9}-\d)\/select$/;
 const IDEA_POLISH_PATH = /^\/v1\/ideas\/(\d{1,9}-\d)\/polish$/;
 

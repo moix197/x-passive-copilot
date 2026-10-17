@@ -15,7 +15,7 @@ updated: 2026-10-17
 in-memory in-flight set keyed by statusId plus a `drafts` row (`polishing`) make double clicks one
 job. generate -> `checkReply` -> on violations regenerate once with them listed -> `ready` or
 `needs_edit` (rule names stored). Failures store `error` (class only) and allow a manual retry.
-After each triage batch `auto-polish` takes posts with score >= `autoPolish.threshold` and no draft,
+Auto-polish is OFF by default (`autoPolish.enabled`, default false; Claude runs only on a user click). When enabled, after each triage batch `auto-polish` takes posts with score >= `autoPolish.threshold` and no draft,
 best first, reserving a slot in `meta` (key `autoPolish:<local day>`); a failed job releases its
 slot and stops the loop; a candidate already in flight is skipped (slot released) instead. `dailyCap: 0` disables auto; manual Polish ignores the cap.
 
@@ -39,7 +39,7 @@ owner's `<user-style-rules>` (see pipeline/voice-and-digest). Post cards show a 
 
 **Thumbs:** `PolishInfo.feedback` ('up'|'down'|null) is the draft's `examples` polarity, joined at list time. The
 panel renders it as `aria-pressed` on 👍/👎 plus an inline "Saved as ..." note; a session map in panel.ts keeps
-the pick if a poll was fetched before the save. Latest wins; copy/edit also write a positive example.
+the pick if a poll was fetched before the save. Latest wins; copy/edit also write a positive example. The First draft (triage rough draft) has the same actions under draft key `rough-<statusId>` (`TriageInfo.feedback`, own `examples` row); its edit overwrites `triage.rough_draft`.
 
 **Why:** Claude subscription limits are shared with interactive use, hence the cap. Rows over the
 cap show a synthetic `cap_reached` status computed at list time (not stored).

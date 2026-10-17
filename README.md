@@ -118,13 +118,13 @@ from its environment so it never bills the API. Double clicks run one job.
 {
   "spacehoodRepoPath": "H:/path/to/spacehood_dashboard",
   "models": { "triage": "opencode/<model-id>", "final": "<claude model id>" },
-  "autoPolish": { "threshold": 80, "dailyCap": 10 }
+  "autoPolish": { "enabled": false, "threshold": 80, "dailyCap": 10 }
 }
 ```
 
-- Posts scoring >= `threshold` are polished automatically after each triage batch and marked
+- Claude only runs when you click Polish/Regenerate. Auto-polish is off by default (`autoPolish.enabled: false`); when set to `true`, posts scoring >= `threshold` are polished automatically after each triage batch and marked
   **Top pick**, up to `dailyCap` per local day. Beyond that the row says "Daily cap reached"; manual
-  Polish still works. `dailyCap: 0` turns auto-polish off.
+  Polish still works. `dailyCap: 0` also turns it off. The **First draft** has the same Copy / Edit / thumbs actions as the Claude version.
 - A pure guard checks every reply: <= 280 chars (URL = 23), <= 1 hashtag, no hype words, price
   predictions or advice phrasing, no URL/@mention absent from the source post. A violation triggers
   one regeneration with the violations listed; still failing -> "Needs edit: <rules>". Rough drafts
