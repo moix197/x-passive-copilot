@@ -96,3 +96,44 @@ h1 {
   color: #b3261e;
   font-size: 12px;
 }
+header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+header h1 {
+  flex: 1;
+}
+.power-label {
+  font-size: 12px;
+  color: #536471;
+}
+.power-label[data-state='online'] {
+  color: #1b7f3b;
+}
+.power-label[data-state='error'] {
+  color: #b3261e;
+}
+#doctor:not(:empty) {
+  padding: 8px 16px;
+  border-bottom: 1px solid #eff3f4;
+}
+.doctor-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+.doctor-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+.doctor-list li[data-status]:not([data-status='ok']) {
+  color: #b3261e;
+}
+.doctor-fix {
+  display: block;
+  margin: 2px 0 4px;
+  color: #0f1419;
+  overflow-wrap: anywhere;
+}

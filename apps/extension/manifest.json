@@ -3,7 +3,9 @@
   "name": "X passive copilot",
   "version": "0.1.0",
   "description": "Reads posts you already loaded on x.com and helps you find ones worth replying to.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqiB1BuOR2F5TqKIU1hQ6hITU+ovWObTGLZCHsnA7hTr+wMA+ift5h6RYvXbwJuLeTDiHkGil5ne3vkwZ4eDkQmlZfTAdpjOzH2MiYdFXaUc9RfyF7D9HL8/TvqxoJEawmJdb+HgOICTlMZexbkbhYly9ZnO45f5anSyGjwGt+dJE+3YYeSl46SnyRast7GQZpA/6Y/S8dGeOiRcDnZZWbxMxHLPweI1j142+v2cgeqyJJMRiVPhJArfjr/wL24XyuMzp+GzawL16gHKoHKOxuMCIKc1TtrL7mA00I289nuwqk9Khzgxjm09idiXpfkbsFO4BkNJOsDSk0qKaO4zugwIDAQAB",
   "permissions": [
+    "nativeMessaging",
     "sidePanel",
     "storage"
   ],

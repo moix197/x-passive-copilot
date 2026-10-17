@@ -1,19 +1,15 @@
-import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '@xc/shared';
-import { openDb } from './db';
-import { createAutoPolish } from './polish/auto-polish';
-import { remainingSlots } from './polish/daily-cap';
-import { clearStalePolishing } from './polish/drafts-store';
-import { claudeGenerate, createPolishService } from './polish/polish';
-import { prunePosts } from './posts';
-import { createRouter } from './router';
-import { createTriageService, opencodeClassify } from './triage/triage';
+import { startApp } from './app';
+import { createToken, devTokenFromEnv } from './auth';
+import { log } from './log';
+import { runNativeHost } from './native';
 
 interface CliOptions {
   dev: boolean;
-  port: number;
+  native: boolean;
+  port: number | null;
   home: string;
 }
 
@@ -22,42 +18,42 @@ function parseArgs(argv: string[]): CliOptions {
     const i = argv.indexOf(flag);
     return i === -1 ? undefined : argv[i + 1];
   };
+  const port = value('--port');
   return {
     dev: argv.includes('--dev'),
-    port: Number(value('--port') ?? 7457),
+    native: argv.includes('--native'),
+    port: port === undefined ? null : Number(port),
     home: value('--home') ?? join(homedir(), '.x-passive-copilot'),
   };
 }
 
-function main(): void {
-  const opts = parseArgs(process.argv.slice(2));
-  const config = loadConfig(opts.home);
-  if (!config.ok) {
-    console.error(config.error);
-    process.exit(1);
-  }
-  const db = openDb(opts.home);
-  prunePosts(db, Date.now());
-  clearStalePolishing(db);
-  const polish = createPolishService(db, config.value, claudeGenerate(config.value));
-  const autoPolish = createAutoPolish(db, config.value, polish);
-  const triage = createTriageService(
-    db, config.value, opencodeClassify(config.value, opts.home), Date.now, () => void autoPolish.run(),
-  );
-  if (!config.value.models.triage) console.log('triage disabled: set models.triage in config.json');
-  triage.notify();
-  const hooks = {
-    onIngest: triage.notify,
-    onPolish: (statusId: string) => polish.request(statusId, 'manual').state,
-    polishContext: () => ({
-      threshold: config.value.autoPolish.threshold,
-      capReached:
-        config.value.autoPolish.dailyCap > 0 && remainingSlots(db, config.value.autoPolish.dailyCap, Date.now()) === 0,
-    }),
+function startNative(opts: CliOptions): Promise<void> {
+  const start = async (token: string) => {
+    const config = loadConfig(opts.home);
+    if (!config.ok) throw new Error(config.error);
+    return startApp({ home: opts.home, port: opts.port ?? 0, token, config: config.value });
   };
-  createServer(createRouter(db, hooks)).listen(opts.port, '127.0.0.1', () => {
-    console.log(`server listening on 127.0.0.1:${opts.port}${opts.dev ? ' (dev)' : ''}`);
-  });
+  return runNativeHost({ home: opts.home, start, createToken });
 }
 
-main();
+async function startDev(opts: CliOptions): Promise<void> {
+  const token = devTokenFromEnv(process.env);
+  if (!token) {
+    log('--dev requires XC_DEV_TOKEN (16-128 chars of A-Z a-z 0-9 _ -)');
+    process.exit(1);
+  }
+  const config = loadConfig(opts.home);
+  if (!config.ok) {
+    log(config.error);
+    process.exit(1);
+  }
+  const app = await startApp({ home: opts.home, port: opts.port ?? 7457, token, config: config.value });
+  log(`dev server on 127.0.0.1:${app.port}`);
+}
+
+const opts = parseArgs(process.argv.slice(2));
+if (opts.native === opts.dev) {
+  log('pass exactly one of --native or --dev');
+  process.exit(1);
+}
+await (opts.native ? startNative(opts) : startDev(opts));

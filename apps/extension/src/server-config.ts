@@ -6,10 +6,14 @@ export interface ServerConfig {
 }
 
 export async function getServerConfig(): Promise<ServerConfig> {
-  const stored = await chrome.storage.local.get(['serverUrl', 'token']);
+  const [local, session] = await Promise.all([
+    chrome.storage.local.get('serverUrl'),
+    chrome.storage.session.get(['token', 'port']),
+  ]);
+  const fromPort = typeof session.port === 'number' ? `http://127.0.0.1:${session.port}` : DEFAULT_SERVER_URL;
   return {
-    baseUrl: typeof stored.serverUrl === 'string' ? stored.serverUrl : DEFAULT_SERVER_URL,
-    token: typeof stored.token === 'string' ? stored.token : null,
+    baseUrl: typeof local.serverUrl === 'string' ? local.serverUrl : fromPort,
+    token: typeof session.token === 'string' ? session.token : null,
   };
 }
 

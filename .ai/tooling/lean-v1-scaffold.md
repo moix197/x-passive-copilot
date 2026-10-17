@@ -11,8 +11,8 @@ updated: 2026-10-17
 
 # Lean v1 scaffold
 
-**Decision:** Three workspace members only: `apps/server` (node:http, run by tsx, no server
-bundle until the native host phase), `apps/extension` (esbuild bundles to `apps/extension/dist`),
+**Decision:** Three workspace members only: `apps/server` (node:http, run by tsx in dev, bundled to
+`apps/server/dist/server.mjs` for the native host), `apps/extension` (esbuild bundles to `apps/extension/dist`),
 `shared` (zod schemas, `Result`, `loadConfig`). Gate is `pnpm check` = typecheck + unit tests +
 build. No lint.
 

@@ -10,6 +10,7 @@
     "typecheck": "tsc -p apps/server --noEmit && tsc -p apps/extension --noEmit && tsc -p shared --noEmit",
     "test:unit": "vitest run",
     "test:e2e": "pnpm build && playwright test",
+    "setup:host": "node scripts/setup-host.mjs",
     "dev:server": "tsx apps/server/src/main.ts --dev",
     "check": "pnpm typecheck && pnpm test:unit && pnpm build"
   },

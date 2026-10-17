@@ -3,6 +3,7 @@ import { cp, mkdir, rm } from 'node:fs/promises';
 
 const ext = 'apps/extension';
 const out = `${ext}/dist`;
+const server = 'apps/server';
 
 async function bundle() {
   await build({
@@ -26,6 +27,20 @@ async function bundle() {
   });
 }
 
+async function bundleServer() {
+  await build({
+    entryPoints: { server: `${server}/src/main.ts` },
+    outdir: `${server}/dist`,
+    outExtension: { '.js': '.mjs' },
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    target: 'node22',
+    tsconfig: `${server}/tsconfig.json`,
+  });
+  await cp(`${server}/assets`, `${server}/dist/assets`, { recursive: true });
+}
+
 async function copyStatic() {
   await cp(`${ext}/manifest.json`, `${out}/manifest.json`);
   await cp(`${ext}/src/panel/panel.html`, `${out}/panel.html`);
@@ -35,4 +50,6 @@ async function copyStatic() {
 await rm(out, { recursive: true, force: true });
 await mkdir(out, { recursive: true });
 await bundle();
+await rm(`${server}/dist`, { recursive: true, force: true });
+await bundleServer();
 await copyStatic();

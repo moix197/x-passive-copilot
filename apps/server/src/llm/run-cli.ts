@@ -17,6 +17,13 @@ export interface CliOutput {
   stderr: string;
 }
 
+const activeChildren = new Set<number>();
+
+export function killAllChildren(): void {
+  for (const pid of activeChildren) killTree(pid);
+  activeChildren.clear();
+}
+
 export function killTree(pid: number | undefined): void {
   if (pid === undefined) return;
   if (process.platform === 'win32') {
@@ -56,6 +63,7 @@ export function runCli(opts: RunCliOptions): Promise<Result<CliOutput>> {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
+    if (child.pid !== undefined) activeChildren.add(child.pid);
     let failure: string | null = null;
     const abort = (reason: string) => {
       failure ??= reason;
@@ -69,6 +77,7 @@ export function runCli(opts: RunCliOptions): Promise<Result<CliOutput>> {
     });
     child.on('close', (code) => {
       clearTimeout(timer);
+      if (child.pid !== undefined) activeChildren.delete(child.pid);
       const output = streams.read();
       if (failure) return resolve(err(failure));
       resolve(code === 0 ? ok(output) : err(`exit ${code}: ${output.stderr.slice(0, 300)}`));

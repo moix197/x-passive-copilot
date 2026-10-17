@@ -1,3 +1,4 @@
+import { log } from '../log';
 import type { DatabaseSync } from 'node:sqlite';
 import { type AppConfig, type PolishReply, type Result, type StoredPost } from '@xc/shared';
 import { runClaude } from '../llm/claude';
@@ -85,13 +86,13 @@ export function createPolishService(
     if (!outcome.ok) {
       const kindOfError = errorClass(outcome.error);
       save(id, kind, { status: 'error', error: kindOfError });
-      console.log(`polish ${id} failed: ${kindOfError}`);
+      log(`polish ${id} failed: ${kindOfError}`);
       return false;
     }
     const { reply, violations } = outcome.value;
     const status = violations.length ? 'needs_edit' : 'ready';
     save(id, kind, { status, text: reply, violations: ruleNames(violations) });
-    console.log(`polish ${id} ${status}`);
+    log(`polish ${id} ${status}`);
     return true;
   }
 

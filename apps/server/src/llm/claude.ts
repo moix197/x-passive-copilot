@@ -7,7 +7,9 @@ import { runCli } from './run-cli';
 
 const POLISH_TIMEOUT_MS = 180_000;
 const MAX_TURNS = '8';
-const SYSTEM_ASSET = join(import.meta.dirname, '../../assets/finalize-system.md');
+// src/llm/ when run by tsx, dist/assets/ when bundled
+const ASSET_CANDIDATES = ['../../assets', 'assets'].map((d) => join(import.meta.dirname, d, 'finalize-system.md'));
+const SYSTEM_ASSET = ASSET_CANDIDATES.find((p) => existsSync(p)) ?? ASSET_CANDIDATES[0]!;
 
 const ALLOWED_TOOLS = 'Read,Grep,Glob';
 const DENIED_TOOLS = 'Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Task';

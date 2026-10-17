@@ -7,7 +7,12 @@
     <link rel="stylesheet" href="panel.css" />
   </head>
   <body>
-    <header><h1 id="title"></h1></header>
+    <header>
+      <h1 id="title"></h1>
+      <span id="power-label" class="power-label" data-testid="power-label"></span>
+      <input id="power-toggle" type="checkbox" role="switch" aria-label="Capture on/off" />
+    </header>
+    <section id="doctor" aria-label="Readiness"></section>
     <nav role="tablist" class="tabs">
       <button role="tab" type="button" data-view="all" aria-selected="true">All</button>
       <button role="tab" type="button" data-view="flagged" aria-selected="false">Flagged</button>

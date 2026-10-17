@@ -1,3 +1,4 @@
+import { log } from '../log';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
@@ -81,13 +82,13 @@ export function createTriageService(
     const ids = batch.map((c) => c.post.statusId).join(',');
     if (result.ok) {
       recordReply(batch, result.value);
-      console.log(`triage batch ${ids} ok`);
+      log(`triage batch ${ids} ok`);
       afterBatch();
       return;
     }
     const kind = errorClass(result.error);
     for (const c of batch) saveError(db, c.post.statusId, kind, c.mustFlag, now());
-    console.log(`triage batch ${ids} failed: ${kind}`);
+    log(`triage batch ${ids} failed: ${kind}`);
   }
 
   async function drain(force: boolean): Promise<void> {

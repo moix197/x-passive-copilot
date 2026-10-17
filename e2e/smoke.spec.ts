@@ -11,6 +11,8 @@ const fixtureHtml = readFileSync(join(root, 'e2e/fixtures/x-home.html'), 'utf8')
 
 let server: ChildProcess;
 let baseUrl: string;
+const devToken = 'e2e-dev-token-0123456789';
+const authHeader = { authorization: `Bearer ${devToken}` };
 let context: BrowserContext;
 const tempDirs: string[] = [];
 
@@ -37,10 +39,11 @@ async function startServer(): Promise<void> {
   const args = ['--import', 'tsx', 'apps/server/src/main.ts', '--dev', '--port', String(port)];
   server = spawn(process.execPath, [...args, '--home', makeTempDir('xc-home-')], {
     cwd: root,
+    env: { ...process.env, XC_DEV_TOKEN: devToken },
     stdio: 'ignore',
   });
   await expect
-    .poll(() => fetch(`${baseUrl}/v1/health`).then((r) => r.ok, () => false), { timeout: 20_000 })
+    .poll(() => fetch(`${baseUrl}/v1/health`, { headers: authHeader }).then((r) => r.ok, () => false), { timeout: 20_000 })
     .toBe(true);
 }
 
@@ -62,6 +65,7 @@ async function launchExtension(): Promise<BrowserContext> {
 async function pointExtensionAtServer(ctx: BrowserContext): Promise<string> {
   const worker = ctx.serviceWorkers()[0] ?? (await ctx.waitForEvent('serviceworker'));
   await worker.evaluate((serverUrl) => chrome.storage.local.set({ serverUrl }), baseUrl);
+  await worker.evaluate((token) => chrome.storage.session.set({ token }), devToken);
   return new URL(worker.url()).host;
 }
 
@@ -115,15 +119,20 @@ test('captures timeline posts passively and lists them in the panel', async () =
   expect(pageRequests.filter((url) => url.includes('127.0.0.1'))).toEqual([]);
 });
 
+test('rejects requests without the token', async () => {
+  expect((await fetch(`${baseUrl}/v1/health`)).status).toBe(401);
+  expect((await fetch(`${baseUrl}/v1/posts`)).status).toBe(401);
+});
+
 test('re-sent posts never duplicate on the server', async () => {
-  const body = await (await fetch(`${baseUrl}/v1/posts?limit=100`)).json();
+  const body = await (await fetch(`${baseUrl}/v1/posts?limit=100`, { headers: authHeader })).json();
   const ids = (body.posts as { statusId: string }[]).map((p) => p.statusId);
   expect(new Set(ids).size).toBe(ids.length);
   expect(ids).not.toContain('1004');
 
   const post = { ...body.posts[0], statusId: '9999' };
   const send = () =>
-    fetch(`${baseUrl}/v1/posts`, { method: 'POST', body: JSON.stringify({ posts: [post] }) }).then((r) => r.json());
+    fetch(`${baseUrl}/v1/posts`, { method: 'POST', headers: authHeader, body: JSON.stringify({ posts: [post] }) }).then((r) => r.json());
   expect(await send()).toEqual({ accepted: 1, duplicates: 0 });
   expect(await send()).toEqual({ accepted: 0, duplicates: 1 });
 });

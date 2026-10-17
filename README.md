@@ -16,20 +16,31 @@ server, and helps you find posts worth replying to. You copy and post by hand.
 | `pnpm typecheck` | `tsc` over server, extension, shared |
 | `pnpm test:unit` | vitest (passes with no tests) |
 | `pnpm test:e2e [spec]` | Build, then Playwright |
-| `pnpm dev:server` | Runs the server with tsx on `127.0.0.1:7457` (`--dev --port N --home DIR`) |
+| `pnpm setup:host [--unregister] [--dry-run]` | One-time: registers the native-messaging host (HKCU) for the panel on/off switch |
+| `XC_DEV_TOKEN=<16+ chars> pnpm dev:server` | Dev server on `127.0.0.1:7457` (`--dev --port N --home DIR`); refuses to start without the token |
 | `pnpm check` | typecheck + test:unit + build |
 
 ## First run
 
-1. `pnpm install`
-2. `pnpm build`
-3. Chrome -> `chrome://extensions` -> Developer mode -> Load unpacked -> `apps/extension/dist`
-4. `pnpm dev:server`, then `curl 127.0.0.1:7457/v1/health`
-5. Click the extension icon to open the side panel.
+1. Install the CLIs: `pnpm add -g opencode-ai` then `opencode auth login`; install Claude Code and log in (`claude`, then `/login`).
+2. `pnpm install`, then `pnpm build` (builds the extension and `apps/server/dist/server.mjs`).
+3. Chrome -> `chrome://extensions` -> Developer mode -> Load unpacked -> `apps/extension/dist`.
+4. `pnpm setup:host` (writes `<home>/native-host/*` and an HKCU registry key; undo with `--unregister`).
+   The extension id is fixed by the `key` in the manifest. Rerun after moving the repo or changing Node.
+5. Open the side panel (click the extension icon) and flip the switch: Chrome starts the server
+   ("Online"). Switch off or close Chrome and the server process exits ("Offline - not capturing").
+6. Manual check: while online, `curl 127.0.0.1:<port>/v1/posts` without a token returns 401; the
+   Readiness card lists opencode / claude / config problems, each with a fix; after toggling off the
+   node process is gone in Task Manager.
+
+The token is random per launch, kept in memory, and handed only to the extension over native
+messaging. Server logs go to `<home>/logs/server.log`. Without Chrome's host, run
+`XC_DEV_TOKEN=<16+ chars> pnpm dev:server` and set the same token from the service worker console:
+`chrome.storage.session.set({ token: '<token>' })`.
 
 ## Capture usage
 
-With `pnpm dev:server` running, browse https://x.com normally: posts you scroll past are captured
+With the switch on (or a dev server running), browse https://x.com normally: posts you scroll past are captured
 and listed newest first in the side panel (polls every 3s while open). Posts are stored in
 `<home>/posts.db` (30-day prune). The extension targets `http://127.0.0.1:7457` by default; to use
 another server set it from the service worker DevTools console:

@@ -100,3 +100,36 @@ export const PostListResponseSchema = z.object({
 export type PostListResponse = z.infer<typeof PostListResponseSchema>;
 
 export const DEFAULT_SERVER_URL = 'http://127.0.0.1:7457';
+
+export const NATIVE_HOST_NAME = 'com.xpassivecopilot.host';
+
+export const NativeHostMessageSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('ready'),
+    port: z.number().int().min(1).max(65535),
+    token: z.string().regex(/^[A-Za-z0-9_-]{16,128}$/),
+  }),
+  z.object({ type: z.literal('error'), message: z.string().max(300) }),
+]);
+export type NativeHostMessage = z.infer<typeof NativeHostMessageSchema>;
+
+export const LinkStatusSchema = z.object({
+  state: z.enum(['offline', 'connecting', 'online', 'error']),
+  message: z.string().max(300).nullable(),
+});
+export type LinkStatus = z.infer<typeof LinkStatusSchema>;
+
+export const LinkControlMessageSchema = z.object({ type: z.literal('set-online'), online: z.boolean() });
+export type LinkControlMessage = z.infer<typeof LinkControlMessageSchema>;
+
+export const DoctorCheckSchema = z.object({
+  id: z.string().max(40),
+  label: z.string().max(80),
+  status: z.enum(['ok', 'missing', 'not_logged_in', 'problem']),
+  detail: z.string().max(200).nullable(),
+  fix: z.string().max(300).nullable(),
+});
+export type DoctorCheck = z.infer<typeof DoctorCheckSchema>;
+
+export const DoctorReportSchema = z.object({ checks: z.array(DoctorCheckSchema).max(20) });
+export type DoctorReport = z.infer<typeof DoctorReportSchema>;

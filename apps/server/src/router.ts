@@ -1,7 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
-import { PostBatchSchema, type HealthResponse } from '@xc/shared';
+import { PostBatchSchema, type DoctorReport, type HealthResponse } from '@xc/shared';
+import { isAuthorized } from './auth';
 import type { PolishState } from './polish/polish';
+import { log } from './log';
 import { ingestPosts, listFlaggedPosts, listPosts, type PolishContext } from './posts';
 
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -54,7 +56,7 @@ function postPosts(db: DatabaseSync, onIngest: () => void): Handler {
     const batch = PostBatchSchema.safeParse(parseJson(raw));
     if (!batch.success) return sendJson(res, 400, { error: 'invalid batch' });
     const result = ingestPosts(db, batch.data.posts, Date.now());
-    console.log(`ingested ${batch.data.posts.map((p) => p.statusId).join(',')}`);
+    log(`ingested ${batch.data.posts.map((p) => p.statusId).join(',')}`);
     sendJson(res, 200, result);
   };
 }
@@ -86,15 +88,22 @@ export interface RouterHooks {
   onIngest: () => void;
   onPolish: (statusId: string) => PolishState;
   polishContext: () => PolishContext;
+  doctor: () => Promise<DoctorReport>;
 }
 
-export function createRouter(db: DatabaseSync, hooks: RouterHooks): (req: IncomingMessage, res: ServerResponse) => void {
+export function createRouter(
+  db: DatabaseSync,
+  hooks: RouterHooks,
+  token: string,
+): (req: IncomingMessage, res: ServerResponse) => void {
   const routes: Record<string, Handler> = {
     'GET /v1/health': (_req, res) => sendJson(res, 200, { status: 'ok' } satisfies HealthResponse),
     'GET /v1/posts': getPosts(db, hooks.polishContext),
     'POST /v1/posts': postPosts(db, hooks.onIngest),
+    'GET /v1/doctor': async (_req, res) => sendJson(res, 200, await hooks.doctor()),
   };
   return (req, res) => {
+    if (!isAuthorized(req.headers.authorization, token)) return sendJson(res, 401, { error: 'unauthorized' });
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const polishRoute = req.method === 'POST' && POLISH_PATH.test(url.pathname);
     const handler = polishRoute ? postPolish(hooks.onPolish) : routes[`${req.method} ${url.pathname}`];
