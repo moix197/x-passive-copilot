@@ -15,7 +15,7 @@
             <div data-testid="User-Name"><a href="/bob"><span>Bob Quoter</span></a><a href="/bob"><span>@bob</span></a></div>
             <a href="/bob/status/1002"><time datetime="2026-10-17T10:05:00.000Z">55m</time></a>
             <div data-testid="tweetText"><span>Outer quote commentary</span></div>
-            <div data-testid="quoteTweet">
+            <div role="link">
               <div data-testid="User-Name"><a href="/carol"><span>Carol Quoted</span></a><a href="/carol"><span>@carol</span></a></div>
               <a href="/carol/status/2002"><time datetime="2026-10-16T09:00:00.000Z">Oct 16</time></a>
               <div data-testid="tweetText"><span>Quoted inner text</span></div>
@@ -23,16 +23,16 @@
             <div role="group" aria-label="1 reply, 2 reposts, 30 likes, 900 views"></div>
           </article>
           <article data-testid="tweet">
-            <div data-testid="replyContext">Replying to @alice</div>
+            <div><span>Replying to @alice</span></div>
             <div data-testid="User-Name"><a href="/dave"><span>Dave Replier</span></a><a href="/dave"><span>@dave</span></a></div>
             <a href="/dave/status/1003"><time datetime="2026-10-17T10:10:00.000Z">50m</time></a>
             <div data-testid="tweetText"><span>A reply in the timeline</span></div>
             <div role="group" aria-label="0 replies, 0 reposts, 3 likes, 40 views"></div>
           </article>
           <article data-testid="tweet">
-            <div data-testid="placementTracking"></div>
+            <span>Ad</span>
             <div data-testid="User-Name"><a href="/brand"><span>Brand Ad</span></a><a href="/brand"><span>@brand</span></a></div>
-            <a href="/brand/status/1004"><time datetime="2026-10-17T10:15:00.000Z">Ad</time></a>
+            <a href="/brand/status/1004"><span>brand.example</span></a>
             <div data-testid="tweetText"><span>Promoted post must be skipped</span></div>
             <div role="group" aria-label="9 replies, 9 reposts, 9 likes, 9 views"></div>
           </article>
@@ -41,6 +41,13 @@
             <a href="/eve/status/1005"><time datetime="2026-10-17T10:20:00.000Z">40m</time></a>
             <div data-testid="tweetText"><span>&lt;img src=x onerror=alert(1)&gt;</span></div>
             <div role="group" aria-label="2 replies, 1 repost, 7 likes, 80 views"></div>
+          </article>
+          <article data-testid="tweet">
+            <div data-testid="User-Name"><a href="/frank"><span>Frank Video</span></a><a href="/frank"><span>@frank</span></a></div>
+            <a href="/frank/status/1006"><time datetime="2026-10-17T10:25:00.000Z">35m</time></a>
+            <div data-testid="tweetText"><span>Video post</span></div>
+            <div data-testid="placementTracking"><video></video></div>
+            <div role="group" aria-label="5 respuestas, 3 reposts, 56 Me gusta, 23 elementos guardados, 1449 reproducciones"></div>
           </article>
         </section>
       </div>

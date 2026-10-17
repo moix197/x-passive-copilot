@@ -93,10 +93,10 @@ test('captures timeline posts passively and lists them in the panel', async () =
   const rows = panel.getByTestId('post-row');
   const row = (statusId: string) => panel.locator(`[data-status-id="${statusId}"]`);
 
-  for (const id of ['1001', '1002', '1003', '1005', '3000', '3001', '3002']) {
+  for (const id of ['1001', '1002', '1003', '1005', '1006', '3000', '3001', '3002']) {
     await expect(row(id)).toBeVisible({ timeout: 15_000 });
   }
-  await expect(rows).toHaveCount(7);
+  await expect(rows).toHaveCount(8);
   await expect(row('1004')).toHaveCount(0);
 
   await expect(row('1002')).toContainText('Bob Quoter');
@@ -104,6 +104,7 @@ test('captures timeline posts passively and lists them in the panel', async () =
   await expect(row('1002')).toContainText('quote');
   await expect(row('1003')).toContainText('reply');
   await expect(row('1001')).toContainText('1200 views');
+  await expect(row('1006')).toContainText('1449 views');
   await expect(row('1005')).toContainText('<img src=x onerror=alert(1)>');
   await expect(panel.locator('img')).toHaveCount(0);
   await expect(row('1001').getByRole('link', { name: 'Open on X' })).toHaveAttribute(

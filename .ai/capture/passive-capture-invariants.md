@@ -34,5 +34,11 @@ validates again (1 MB cap, batch <= 100) and logs statusIds only; the panel rend
 **Extension imports `@xc/shared/types`, never `@xc/shared`:** the index re-exports `config.ts`,
 which uses Node APIs and would break extension typecheck and bundling.
 
-**Unverified selectors:** `replyContext`, `quoteTweet` and `placementTracking` are fixture-derived
-guesses until the Phase 2 live check on real x.com confirms them.
+**Live-verified (Spanish UI, `lang="es"`):** promoted = outer article has no `time` element (shows an
+"Ad"/"Anuncio" label); `placementTracking` also wraps normal video players, never use it. Metrics
+come from the localized `[role="group"][aria-label]`, parsed by keyword (EN + ES), order-independent,
+omitted parts = 0.
+
+**Unverified selectors:** no quote or reply samples were seen live. Quote = nested `div[role="link"]`
+containing both `User-Name` and `time` (link cards lack them). Reply = short header text starting with
+"Replying to" / "En respuesta a" (UI may be localized further). Re-check when samples appear.

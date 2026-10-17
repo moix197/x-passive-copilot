@@ -28,7 +28,7 @@ describe('parseArticle', () => {
   });
 
   it('uses the outer author and text for a quote post', () => {
-    const quote = `<div data-testid="quoteTweet">
+    const quote = `<div role="link">
       <div data-testid="User-Name"><a href="/carol"><span>Carol</span></a></div>
       <a href="/carol/status/2002"><time datetime="2026-10-16T09:00:00.000Z">x</time></a>
       <div data-testid="tweetText"><span>inner</span></div></div>`;
@@ -43,19 +43,37 @@ describe('parseArticle', () => {
   });
 
   it('does not leak quoted text when the outer post has no text', () => {
-    const quote = `<div data-testid="quoteTweet"><a href="/carol/status/2002"><time>x</time></a>
+    const quote = `<div role="link"><div data-testid="User-Name"><a href="/carol">Carol</a></div><a href="/carol/status/2002"><time>x</time></a>
       <div data-testid="tweetText"><span>inner</span></div></div>`;
     expect(parseArticle(articleFrom(AUTHOR + quote + METRICS))?.text).toBe('');
   });
 
   it('tags replies', () => {
-    const reply = '<div data-testid="replyContext">Replying to @bob</div>';
+    const reply = '<div><span>Replying to @bob</span></div>';
     expect(parseArticle(articleFrom(reply + AUTHOR + TEXT + METRICS))?.isReply).toBe(true);
+    const es = '<div>En respuesta a @bob</div>';
+    expect(parseArticle(articleFrom(es + AUTHOR + TEXT + METRICS))?.isReply).toBe(true);
   });
 
-  it('skips promoted posts', () => {
-    const ad = '<div data-testid="placementTracking"></div>';
-    expect(parseArticle(articleFrom(ad + AUTHOR + TEXT + METRICS))).toBeNull();
+  it('does not treat reply-like body text as a reply', () => {
+    const text = '<div data-testid="tweetText"><span>Replying to everyone</span></div>';
+    expect(parseArticle(articleFrom(AUTHOR + text + METRICS))?.isReply).toBe(false);
+  });
+
+  it('does not treat a link card as a quote', () => {
+    const card = '<div role="link"><span>example.com</span></div>';
+    expect(parseArticle(articleFrom(AUTHOR + TEXT + card + METRICS))?.quotedStatusId).toBeNull();
+  });
+
+  it('keeps video posts wrapped in placementTracking', () => {
+    const video = '<div data-testid="placementTracking"><video></video></div>';
+    expect(parseArticle(articleFrom(AUTHOR + TEXT + video + METRICS))?.statusId).toBe('1001');
+  });
+
+  it('skips promoted posts (no time element)', () => {
+    const ad = `<div data-testid="User-Name"><a href="/brand">Brand</a></div><span>Ad</span>
+      <a href="/brand/status/1004"><span>brand.example</span></a>`;
+    expect(parseArticle(articleFrom(ad + TEXT + METRICS))).toBeNull();
   });
 
   it('defaults metrics to zero when the group is missing', () => {

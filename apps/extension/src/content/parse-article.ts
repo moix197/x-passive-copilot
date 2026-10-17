@@ -1,15 +1,24 @@
 import type { CapturedPost } from '@xc/shared/types';
 import { parseMetrics } from './parse-metrics';
-import { SEL } from './selectors';
+import { REPLY_PREFIX, SEL } from './selectors';
 
 const STATUS_PATH = /^\/([A-Za-z0-9_]{1,15})\/status\/(\d+)/;
 
+function findQuotes(article: Element): Element[] {
+  return Array.from(article.querySelectorAll(SEL.quoteCandidate)).filter(
+    (el) => el.querySelector(SEL.userName) && el.querySelector(SEL.time),
+  );
+}
+
+function ownElements(article: Element, selector: string): Element[] {
+  const quotes = findQuotes(article);
+  return Array.from(article.querySelectorAll(selector)).filter(
+    (el) => !quotes.some((quote) => quote.contains(el)),
+  );
+}
+
 function ownMatch(article: Element, selector: string): Element | null {
-  const own = Array.from(article.querySelectorAll(selector)).find((el) => {
-    const quote = el.closest(SEL.quoted);
-    return !quote || !article.contains(quote);
-  });
-  return own ?? null;
+  return ownElements(article, selector)[0] ?? null;
 }
 
 function readStatusPath(anchor: Element | null | undefined): { handle: string; statusId: string } | null {
@@ -29,23 +38,30 @@ function readText(article: Element): string {
 }
 
 function readQuotedStatusId(article: Element): string | null {
-  const quote = article.querySelector(SEL.quoted);
+  const quote = findQuotes(article)[0];
   return readStatusPath(quote?.querySelector(SEL.statusLink))?.statusId ?? null;
 }
 
+function isReply(article: Element): boolean {
+  return ownElements(article, SEL.replyCandidate).some((el) => {
+    const text = (el.textContent ?? '').trim();
+    return text.length <= 80 && REPLY_PREFIX.test(text) && !el.closest(SEL.tweetText);
+  });
+}
+
 export function parseArticle(article: Element): CapturedPost | null {
-  if (article.querySelector(SEL.promoted)) return null;
-  const link = readStatusPath(ownMatch(article, SEL.time)?.closest('a'));
-  if (!link) return null;
+  const time = ownMatch(article, SEL.time);
+  const link = readStatusPath(time?.closest('a'));
+  if (!time || !link) return null;
   const label = ownMatch(article, SEL.metrics)?.getAttribute('aria-label') ?? '';
   return {
     statusId: link.statusId,
     authorName: readAuthorName(article),
     authorHandle: link.handle,
     text: readText(article),
-    postedAt: ownMatch(article, SEL.time)?.getAttribute('datetime')?.slice(0, 40) ?? null,
+    postedAt: time.getAttribute('datetime')?.slice(0, 40) ?? null,
     metrics: parseMetrics(label),
-    isReply: ownMatch(article, SEL.replyContext) !== null,
+    isReply: isReply(article),
     quotedStatusId: readQuotedStatusId(article),
   };
 }

@@ -34,6 +34,23 @@ describe('parseMetrics', () => {
     expect(parseMetrics('7 likes')).toEqual({ replies: 0, reposts: 0, likes: 7, views: 0 });
   });
 
+  it('parses the Spanish label', () => {
+    const label = '5 respuestas, 3 reposts, 56 Me gusta, 23 elementos guardados, 1449 reproducciones';
+    expect(parseMetrics(label)).toEqual({ replies: 5, reposts: 3, likes: 56, views: 1449 });
+  });
+
+  it('handles omitted parts and singular Spanish nouns in any order', () => {
+    expect(parseMetrics('1 reproducción, 1 respuesta')).toEqual({ replies: 1, reposts: 0, likes: 0, views: 1 });
+    expect(parseMetrics('12 Me gusta')).toEqual({ replies: 0, reposts: 0, likes: 12, views: 0 });
+  });
+
+  it('handles dot thousands and Spanish mil/M suffixes', () => {
+    expect(parseMetrics('1.234 Me gusta, 12.000 reproducciones')).toMatchObject({ likes: 1234, views: 12000 });
+    expect(parseMetrics('2 mil reproducciones').views).toBe(2000);
+    expect(parseMetrics('1,5 M reproducciones').views).toBe(1_500_000);
+    expect(parseMetrics('3 mill. reproducciones').views).toBe(3_000_000);
+  });
+
   it('returns zeros for garbage or empty labels', () => {
     const zeros = { replies: 0, reposts: 0, likes: 0, views: 0 };
     expect(parseMetrics('')).toEqual(zeros);
