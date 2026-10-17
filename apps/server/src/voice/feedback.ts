@@ -1,5 +1,6 @@
 import type { DatabaseSync } from 'node:sqlite';
 import type { FeedbackRequest } from '@xc/shared';
+import { saveEditedText } from '../polish/drafts-store';
 import { checkReply, ruleNames } from '../polish/guard';
 import { isIdeaDraftKey, replySource } from '../polish/polish';
 import { getPost } from '../posts';
@@ -59,7 +60,10 @@ export function recordFeedback(
     return { ok: true };
   }
   const verdict = guardText(db, draftId, text);
-  if (feedback.kind === 'edit' && !verdict.ok) return verdict;
+  if (feedback.kind === 'edit') {
+    if (!verdict.ok) return verdict;
+    saveEditedText(db, draftId, text);
+  }
   // A copied/liked draft that breaks the guard is not a style example worth learning from.
   if (verdict.ok) upsertExample(db, draftId, text, 'positive', now);
   return { ok: true };

@@ -80,6 +80,18 @@ export function selectVersion(db: DatabaseSync, key: string, versionId: number):
   return 'ok';
 }
 
+/** An accepted edit replaces the selected version's text, so it is what the panel shows and copies. */
+export function saveEditedText(db: DatabaseSync, key: string, text: string): void {
+  db.prepare(
+    `UPDATE draft_versions SET text = ?, status = 'ready', violations = '[]' WHERE draft_key = ? AND id =
+       (SELECT COALESCE(selected_version, (SELECT MAX(id) FROM draft_versions WHERE draft_key = ?)) FROM drafts WHERE status_id = ?)`,
+  ).run(text, key, key, key);
+  db.prepare(
+    `UPDATE drafts SET text = ?, violations = '[]', status = CASE WHEN status = 'polishing' THEN status ELSE 'ready' END
+     WHERE status_id = ?`,
+  ).run(text, key);
+}
+
 // A crash mid-job would leave 'polishing' rows that no in-flight job owns.
 export function clearStalePolishing(db: DatabaseSync): void {
   db.prepare(`UPDATE drafts SET status = ${SETTLED_STATUS} WHERE status = 'polishing' AND text IS NOT NULL`).run();

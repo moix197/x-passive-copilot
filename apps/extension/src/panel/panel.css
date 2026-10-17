@@ -327,11 +327,22 @@ h1 {
   gap: 6px;
   margin: 4px 0;
 }
+.draft-editor {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.draft-editor button {
+  margin: 6px 6px 0 0;
+}
 .draft-actions textarea {
+  display: block;
   width: 100%;
+  min-height: 5lh;
   box-sizing: border-box;
   font: inherit;
   font-size: 13px;
+  field-sizing: content;
+  resize: vertical;
 }
 [data-testid='draft-regenerate'],
 [data-testid='polish-button'] {

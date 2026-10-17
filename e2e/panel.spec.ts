@@ -185,3 +185,63 @@ test('style notes reject oversized input', async () => {
   const res = await postJson(server.baseUrl, '/v1/style-notes', { notes: 'x'.repeat(2001) });
   expect(res.status).toBe(400);
 });
+
+test('editing a Claude version keeps focus across polls, saves the edit as the shown text and survives a reload', async () => {
+  const post = capturedPost('8401', { authorName: 'Ines', authorHandle: 'ines', text: 'Which feature would you cut first?' });
+  expect((await postJson(server.baseUrl, '/v1/posts', { posts: [post] })).ok).toBe(true);
+  let panel = await openFlagged();
+  let claude = panel.locator('[data-status-id="8401"]').getByTestId('claude-version');
+  await claude.getByTestId('polish-button').click({ timeout: 20_000 });
+  const original = claude.getByTestId('claude-text');
+  await expect(original).toBeVisible({ timeout: 20_000 });
+  const originalText = await original.textContent();
+
+  await claude.getByTestId('draft-edit').click();
+  const editor = claude.getByTestId('draft-editor');
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveValue(originalText ?? '');
+  const [editorBox, sectionBox] = [await editor.boundingBox(), await claude.boundingBox()];
+  expect(editorBox!.width).toBeGreaterThan(sectionBox!.width * 0.85);
+
+  const shortHeight = (await editor.boundingBox())!.height;
+  await editor.fill('A much longer reply that wraps over many lines in the narrow side panel. '.repeat(4));
+  await expect.poll(async () => (await editor.boundingBox())!.height).toBeGreaterThan(shortHeight);
+
+  // Typing low in a scrolled panel must survive the 3s list refresh: same scroll, focus and text.
+  await panel.setViewportSize({ width: 400, height: 500 });
+  await editor.fill('Cut the settings page');
+  await editor.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  const scrollY = await panel.evaluate(() => window.scrollY);
+  expect(scrollY).toBeGreaterThan(0);
+  await panel.keyboard.type(' fir');
+  await panel.waitForResponse((r) => r.url().includes('/v1/posts'));
+  await panel.waitForResponse((r) => r.url().includes('/v1/posts'));
+  await expect(editor).toBeFocused();
+  await panel.keyboard.type('st');
+  await expect(editor).toHaveValue('Cut the settings page first');
+  expect(await panel.evaluate(() => window.scrollY)).toBe(scrollY);
+
+  await panel.keyboard.press('Escape');
+  await expect(editor).toHaveCount(0);
+  await expect(original).toHaveText(originalText ?? '');
+
+  await claude.getByTestId('draft-edit').click();
+  await editor.fill('lfg #ship #now');
+  await claude.getByTestId('draft-save').click();
+  await expect(claude).toContainText('guard: hashtags, hype-word');
+  await expect(editor).toBeVisible();
+
+  const edited = 'Cut the settings page first, nobody opens it';
+  await editor.fill(edited);
+  await panel.keyboard.press('Control+Enter');
+  await expect(editor).toHaveCount(0);
+  await expect(original).toHaveText(edited);
+  await expect(claude).not.toContainText('Needs edit');
+
+  await panel.close();
+  panel = await openFlagged();
+  claude = panel.locator('[data-status-id="8401"]').getByTestId('claude-version');
+  await expect(claude.getByTestId('claude-text')).toHaveText(edited, { timeout: 15_000 });
+  await claude.getByTestId('draft-edit').click();
+  await expect(claude.getByTestId('draft-editor')).toHaveValue(edited);
+});

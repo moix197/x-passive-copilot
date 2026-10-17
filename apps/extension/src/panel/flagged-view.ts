@@ -104,21 +104,38 @@ function withVersion(post: StoredPost, polish: PolishInfo, version: DraftVersion
   return { ...post, polish: { ...polish, text, status, violations, error: null, selectedVersion: version.id } };
 }
 
+function showVersion(post: StoredPost, polish: PolishInfo, version: DraftVersion, ctx: RowContext): void {
+  ctx.editors.delete(post.statusId);
+  ctx.row.replaceWith(renderFlagged(withVersion(post, polish, version), ctx.handlers, ctx.editors));
+}
+
 function selectVersion(post: StoredPost, polish: PolishInfo, version: DraftVersion, ctx: RowContext): void {
   void ctx.handlers
     .onSelectVersion(post.statusId, version.id)
-    .then(() => {
-      ctx.editors.delete(post.statusId);
-      ctx.row.replaceWith(renderFlagged(withVersion(post, polish, version), ctx.handlers, ctx.editors));
-    })
+    .then(() => showVersion(post, polish, version, ctx))
     .catch(() => undefined);
+}
+
+// A saved edit passed the guard and replaced the selected version's text on the server.
+function showEdited(post: StoredPost, text: string, ctx: RowContext): void {
+  const polish = post.polish;
+  if (!polish) return;
+  const edited: DraftVersion = { id: polish.selectedVersion ?? 0, text, status: 'ready', violations: [] };
+  const versions = polish.versions.map((v) => (v.id === edited.id ? edited : v));
+  showVersion(post, { ...polish, versions }, edited, ctx);
 }
 
 function draftActionsFor(post: StoredPost, text: string, ctx: RowContext): HTMLElement {
   const { handlers, editors } = ctx;
   const versions = post.polish?.versions.length ?? 0;
+  const base = handlers.draftCallbacks(post.statusId);
   const callbacks: DraftCallbacks = {
-    ...handlers.draftCallbacks(post.statusId),
+    ...base,
+    onEdit: async (edited) => {
+      const error = await base.onEdit(edited);
+      if (!error) showEdited(post, edited, ctx);
+      return error;
+    },
     ...(versions < MAX_DRAFT_VERSIONS ? { onRegenerate: () => handlers.onRegenerate(post.statusId) } : {}),
   };
   const onEditing = (editing: boolean) => {

@@ -57,17 +57,34 @@ function regenerateButton(onRegenerate: () => Promise<void>): HTMLButtonElement 
   });
 }
 
-function editor(text: string, callbacks: DraftCallbacks, close: () => void): HTMLElement {
-  const box = document.createElement('div');
+function bindEditorKeys(area: HTMLTextAreaElement, save: () => void, cancel: () => void): void {
+  area.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') cancel();
+    else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) save();
+  });
+}
+
+function editor(text: string, callbacks: DraftCallbacks, onSaved: (text: string) => void, close: () => void): HTMLElement {
+  const box = element('div', '', 'draft-editor');
   const area = document.createElement('textarea');
   area.value = text;
   area.maxLength = 1000;
   area.rows = 4;
   area.dataset.testid = 'draft-editor';
   const problem = element('div', '', 'needs-edit');
-  const save = button('Save', 'draft-save', () => {
-    void callbacks.onEdit(area.value).then((error) => (error ? (problem.textContent = error) : close()));
+  const save = button('Save', 'draft-save', (b) => {
+    const edited = area.value;
+    b.disabled = true;
+    void callbacks
+      .onEdit(edited)
+      .catch(() => 'Save failed.')
+      .then((error) => {
+        b.disabled = false;
+        if (error) problem.textContent = error;
+        else onSaved(edited);
+      });
   });
+  bindEditorKeys(area, () => save.click(), close);
   box.append(area, problem, save, button('Cancel', 'draft-cancel', close));
   return box;
 }
@@ -79,19 +96,25 @@ export function renderDraftActions(
 ): HTMLElement {
   const bar = document.createElement('div');
   bar.className = 'draft-actions';
+  let current = text;
   const showButtons = () => {
     onEditing(false);
     bar.replaceChildren(
-      copyButton(text, callbacks.onCopy),
+      copyButton(current, callbacks.onCopy),
       button('Edit', 'draft-edit', showEditor),
       ...(callbacks.onRegenerate ? [regenerateButton(callbacks.onRegenerate)] : []),
       rateButton('up', callbacks),
       rateButton('down', callbacks),
     );
   };
+  const onSaved = (edited: string) => {
+    current = edited;
+    showButtons();
+  };
   function showEditor(): void {
     onEditing(true);
-    bar.replaceChildren(editor(text, callbacks, showButtons));
+    bar.replaceChildren(editor(current, callbacks, onSaved, showButtons));
+    bar.querySelector('textarea')?.focus();
   }
   showButtons();
   return bar;

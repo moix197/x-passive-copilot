@@ -3,7 +3,7 @@ id: pipeline/polish-flow
 type: decision
 summary: Polish guards each reply (one auto-retry); Regenerate appends guarded versions with a persisted pick; auto top picks use a per-day meta counter
 tags: [polish, claude, guard, daily-cap, auto-polish, versions, regenerate]
-paths: [apps/server/src/polish/**, apps/server/src/llm/claude.ts, apps/server/src/posts.ts, apps/server/src/db.ts, apps/extension/src/panel/flagged-view.ts, apps/extension/src/panel/version-nav.ts]
+paths: [apps/server/src/polish/**, apps/server/src/llm/claude.ts, apps/server/src/posts.ts, apps/server/src/db.ts, apps/extension/src/panel/flagged-view.ts, apps/extension/src/panel/version-nav.ts, apps/extension/src/panel/draft-actions.ts, apps/extension/src/panel/posts-view.ts]
 related: [security/llm-subprocess-sandbox, pipeline/triage-flow]
 status: active
 updated: 2026-10-17
@@ -22,6 +22,9 @@ slot and stops the loop; a candidate already in flight is skipped (slot released
 **Versions:** every successful job appends a row to `draft_versions` (each one guarded, with the
 same regenerate-once) and points `drafts.selected_version` at it; `drafts.text/status/violations`
 always mirror the selected version, so feedback, edit and examples keep reading `drafts`.
+Panel Edit: the open editor row is reused across the 3s poll and `posts-view` reconciles rows in
+place (never detaching a reused row), so focus, caret and scroll survive refreshes; Esc cancels,
+Ctrl/Cmd+Enter saves.
 `POST /v1/posts/:id/polish?regenerate=1` on a ready/needs_edit draft keeps the text visible
 (`polishing` + text) and passes earlier versions to the prompt as "already written"; a failure
 restores the status (ready/needs_edit from violations) and sets `error` instead of losing the text.

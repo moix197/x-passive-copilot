@@ -56,6 +56,16 @@ export function pollWhileVisible(task: () => Promise<void>): () => void {
   };
 }
 
+// Rows reused across polls (an open editor) must never be detached: that would blur the textarea.
+function replaceRows(list: HTMLElement, rows: HTMLElement[]): void {
+  const keep = new Set<Node>(rows);
+  for (const child of [...list.children]) if (!keep.has(child)) child.remove();
+  rows.forEach((row, i) => {
+    const at = list.children[i] ?? null;
+    if (at !== row) list.insertBefore(row, at);
+  });
+}
+
 export function mountPostsView(root: HTMLElement, options: PostsViewOptions): () => void {
   const status = element('p', 'Loading...', 'status');
   const list = document.createElement('div');
@@ -63,7 +73,7 @@ export function mountPostsView(root: HTMLElement, options: PostsViewOptions): ()
   return pollWhileVisible(async () => {
     try {
       const posts = await options.load();
-      list.replaceChildren(...posts.map(options.render ?? renderPost));
+      replaceRows(list, posts.map(options.render ?? renderPost));
       status.textContent = posts.length ? '' : (options.emptyText ?? 'No posts captured yet.');
     } catch {
       status.textContent = 'Server offline.';
