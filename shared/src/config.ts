@@ -11,6 +11,7 @@ export const AppConfigSchema = z.object({
     .object({
       batchSize: z.number().int().positive().default(15),
       maxAgeHours: z.number().positive().default(24),
+      mentionMaxAgeHours: z.number().positive().default(72),
       minEngagement: z.number().nonnegative().default(3),
     })
     .prefault({}),

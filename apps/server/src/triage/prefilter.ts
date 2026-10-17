@@ -6,6 +6,7 @@ export interface PrefilterRules {
   handle: string;
   watchlist: string[];
   maxAgeHours: number;
+  mentionMaxAgeHours: number;
   minEngagement: number;
 }
 
@@ -20,6 +21,7 @@ export function rulesFromConfig(config: AppConfig): PrefilterRules {
     handle: config.handle,
     watchlist: config.watchlist,
     maxAgeHours: config.triage.maxAgeHours,
+    mentionMaxAgeHours: config.triage.mentionMaxAgeHours,
     minEngagement: config.triage.minEngagement,
   };
 }
@@ -60,12 +62,34 @@ export function mustFlagFor(post: PrefilterPost, rules: PrefilterRules): MustFla
   return undefined;
 }
 
+export function ageLimitHours(mustFlag: MustFlag | undefined, rules: PrefilterRules): number {
+  return mustFlag === 'mention' ? rules.mentionMaxAgeHours : rules.maxAgeHours;
+}
+
+/** Unknown postedAt counts as fresh. */
+export function isWithinAgeLimit(
+  postedAt: string | null,
+  mustFlag: MustFlag | undefined,
+  rules: PrefilterRules,
+  now: number,
+): boolean {
+  const age = ageHours(postedAt, now);
+  return age === null || age <= ageLimitHours(mustFlag, rules);
+}
+
+/** Must-flag verdict that no longer applies once the post is past its age limit. */
+export function activeMustFlag(post: PrefilterPost, rules: PrefilterRules, now: number): MustFlag | undefined {
+  const mustFlag = mustFlagFor(post, rules);
+  return mustFlag && isWithinAgeLimit(post.postedAt, mustFlag, rules, now) ? mustFlag : undefined;
+}
+
 export function prefilter(post: PrefilterPost, rules: PrefilterRules, now: number): PrefilterResult {
   if (isOwnAuthor(post.authorHandle, rules.handle)) return { action: 'skip', reason: 'own post' };
   const mustFlag = mustFlagFor(post, rules);
+  if (!isWithinAgeLimit(post.postedAt, mustFlag, rules, now)) {
+    return { action: 'skip', reason: `older than ${ageLimitHours(mustFlag, rules)}h` };
+  }
   if (mustFlag) return { action: 'triage', mustFlag };
-  const age = ageHours(post.postedAt, now);
-  if (age !== null && age > rules.maxAgeHours) return { action: 'skip', reason: `older than ${rules.maxAgeHours}h` };
   if (engagement(post.metrics) < rules.minEngagement) {
     return { action: 'skip', reason: `engagement below ${rules.minEngagement}` };
   }

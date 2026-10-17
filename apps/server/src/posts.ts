@@ -16,7 +16,7 @@ import {
   type DraftStatus,
 } from './polish/drafts-store';
 import { checkReply, ruleNames } from './polish/guard';
-import { isOwnAuthor, mustFlagFor, type PrefilterRules } from './triage/prefilter';
+import { activeMustFlag, isOwnAuthor, isWithinAgeLimit, type PrefilterRules } from './triage/prefilter';
 
 const PRUNE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 const PRUNABLE = 'SELECT status_id FROM posts WHERE captured_at < ? AND is_own = 0';
@@ -228,13 +228,18 @@ export function listPosts(
 const PENDING_SCAN_LIMIT = 500;
 
 /** Untriaged (or triage-disabled) mention/watchlist posts: they must show in Flagged before triage. */
-function listPendingMustFlagPosts(db: DatabaseSync, rules: PrefilterRules, ctx: PolishContext): StoredPost[] {
+function listPendingMustFlagPosts(
+  db: DatabaseSync,
+  rules: PrefilterRules,
+  ctx: PolishContext,
+  now: number,
+): StoredPost[] {
   const rows = db
     .prepare(`${SELECT_WITH_TRIAGE} WHERE t.status_id IS NULL ORDER BY p.seq DESC LIMIT ?`)
     .all(PENDING_SCAN_LIMIT) as unknown as PostRow[];
   return rows.flatMap((row) => {
     const post = toStoredPost(row, ctx);
-    const mustFlag = mustFlagFor(post, rules);
+    const mustFlag = activeMustFlag(post, rules, now);
     return mustFlag ? [{ ...post, triage: pendingTriage(mustFlag) }] : [];
   });
 }
@@ -249,11 +254,18 @@ function pendingTriage(mustFlag: MustFlag): StoredPost['triage'] {
 const byScoreThenNewest = (a: StoredPost, b: StoredPost): number =>
   (b.triage?.score ?? 0) - (a.triage?.score ?? 0) || b.seq - a.seq;
 
+/** Stored must-flag rows hide once past their age limit; reply-worthy-only rows were age-filtered by prefilter. */
+function isStaleMustFlag(post: StoredPost, rules: PrefilterRules | null, now: number): boolean {
+  const mustFlag = post.triage?.mustFlag ?? undefined;
+  return !!rules && !!mustFlag && !isWithinAgeLimit(post.postedAt, mustFlag, rules, now);
+}
+
 export function listFlaggedPosts(
   db: DatabaseSync,
   limit: number,
   ctx: PolishContext = NO_POLISH_CONTEXT,
   rules: PrefilterRules | null = null,
+  now: number = Date.now(),
 ): PostListResponse {
   const rows = db
     .prepare(
@@ -261,8 +273,8 @@ export function listFlaggedPosts(
        ORDER BY COALESCE(t.score, 0) DESC, p.seq DESC LIMIT ?`,
     )
     .all(limit) as unknown as PostRow[];
-  const triaged = rows.map((row) => toStoredPost(row, ctx));
-  const pending = rules ? listPendingMustFlagPosts(db, rules, ctx) : [];
+  const triaged = rows.map((row) => toStoredPost(row, ctx)).filter((post) => !isStaleMustFlag(post, rules, now));
+  const pending = rules ? listPendingMustFlagPosts(db, rules, ctx, now) : [];
   return { posts: [...triaged, ...pending].sort(byScoreThenNewest).slice(0, limit), nextBefore: null };
 }
 

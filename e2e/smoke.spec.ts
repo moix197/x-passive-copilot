@@ -85,6 +85,25 @@ test('re-sent posts never duplicate on the server', async () => {
   expect(await send()).toEqual({ accepted: 0, duplicates: 1 });
 });
 
+test('old watchlist and mention posts never show in Flagged, fresh ones do', async () => {
+  const base = { authorName: 'N', text: 'plain post', isReply: false, replyTo: [], quotedStatusId: null,
+    metrics: { replies: 0, reposts: 0, likes: 0, views: 0 } };
+  const ago = (hours: number) => new Date(Date.now() - hours * 3600_000).toISOString();
+  const posts = [
+    { ...base, statusId: '8001', authorHandle: 'watched', postedAt: ago(24 * 40) },
+    { ...base, statusId: '8002', authorHandle: 'watched', postedAt: ago(25) },
+    { ...base, statusId: '8003', authorHandle: 'watched', postedAt: ago(23) },
+    { ...base, statusId: '8004', authorHandle: 'someone', text: 'hi @e2eowner', postedAt: ago(73) },
+    { ...base, statusId: '8005', authorHandle: 'someone', text: 'hi @e2eowner', postedAt: ago(71) },
+  ];
+  const sent = await fetch(`${baseUrl}/v1/posts`, { method: 'POST', headers: authHeader, body: JSON.stringify({ posts }) });
+  expect(sent.ok).toBe(true);
+  const flagged = await (await fetch(`${baseUrl}/v1/posts?view=flagged&limit=50`, { headers: authHeader })).json();
+  const ids = (flagged.posts as { statusId: string }[]).map((p) => p.statusId);
+  expect(ids).toEqual(expect.arrayContaining(['8003', '8005']));
+  for (const stale of ['8001', '8002', '8004']) expect(ids).not.toContain(stale);
+});
+
 test('mention and watchlist posts show in Flagged as pending before any triage', async () => {
   const base = { authorName: 'N', text: 'plain post', postedAt: null, isReply: false, replyTo: [], quotedStatusId: null,
     metrics: { replies: 0, reposts: 0, likes: 0, views: 0 } };

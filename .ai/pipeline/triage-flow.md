@@ -13,7 +13,8 @@ updated: 2026-10-17
 
 **Decision:** after ingest, untriaged posts pass the pure `prefilter` (older than `triage.maxAgeHours`
 or below `triage.minEngagement` -> stored as `skip_reason`, never sent to the LLM; mention of `handle`
-or `watchlist` author -> `must_flag`, never skipped). Candidates go to opencode (`models.triage`) in
+or `watchlist` author -> `must_flag`, exempt from the engagement floor but NOT from age: mentions
+use `triage.mentionMaxAgeHours` (72), watchlist posts `maxAgeHours` (24); unknown `postedAt` = fresh). Candidates go to opencode (`models.triage`) in
 batches of `triage.batchSize` (15), run immediately at >= 15 pending or 30s after the first pending
 post. Serial (in-memory flag), 3 attempts with exponential backoff (60s on rate-limit text). Restart
 just re-picks untriaged rows (no queue table). Failed batches store a coarse `error` class
@@ -37,7 +38,7 @@ tools.
 
 **Constraints it creates:** logs carry statusIds, error classes and a `safeReason` (<= 200 chars of
 CLI/provider error text: exit code + stderr, or opencode's `error` event name/message); never prompt
-or model text. Stored `triage.error` stays the coarse class. Must-flag posts with no triage row are
+or model text. Stored `triage.error` stays the coarse class. Flagged hides stored must-flag rows past their age limit (`isWithinAgeLimit`, by `posted_at`). Must-flag posts with no triage row are
 added to the Flagged list at read time (`listFlaggedPosts` + `mustFlagFor`, scan of the newest 500
 untriaged posts) with a synthetic triage (`score: null`, no error) the panel labels "triage pending".
 Live model quirks absorbed by the parser: missing `roughDraft` = `""`; a bad array followed by a

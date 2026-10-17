@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { prefilter, type PrefilterRules } from './prefilter';
 
 const NOW = Date.parse('2026-10-17T12:00:00Z');
-const rules: PrefilterRules = { handle: 'MyHandle', watchlist: ['@Vip_User'], maxAgeHours: 24, minEngagement: 3 };
+const rules: PrefilterRules = { handle: 'MyHandle', watchlist: ['@Vip_User'], maxAgeHours: 24, mentionMaxAgeHours: 72, minEngagement: 3 };
 const metrics = (likes: number, reposts = 0, replies = 0) => ({ likes, reposts, replies, views: 0 });
 const post = (over: Partial<Parameters<typeof prefilter>[0]> = {}) => ({
   authorHandle: 'someone',
@@ -47,20 +47,20 @@ describe('prefilter', () => {
     });
   });
 
-  it('mention is case-insensitive, whole-handle only, and overrides skips', () => {
+  it('mention is case-insensitive, whole-handle only, and overrides engagement skips', () => {
     const stale = { postedAt: '2020-01-01T00:00:00Z', metrics: metrics(0) };
-    expect(prefilter(post({ ...stale, text: 'hey @myhandle thoughts?' }), rules, NOW)).toEqual({
+    expect(prefilter(post({ ...stale, postedAt: '2026-10-16T12:00:00Z', text: 'hey @myhandle thoughts?' }), rules, NOW)).toEqual({
       action: 'triage',
       mustFlag: 'mention',
     });
-    expect(prefilter(post({ ...stale, text: '@MYHANDLE' }), rules, NOW)).toMatchObject({ mustFlag: 'mention' });
+    expect(prefilter(post({ ...stale, postedAt: '2026-10-16T12:00:00Z', text: '@MYHANDLE' }), rules, NOW)).toMatchObject({ mustFlag: 'mention' });
     expect(prefilter(post({ ...stale, text: 'hey @myhandle2' }), rules, NOW).action).toBe('skip');
     expect(prefilter(post({ ...stale, text: 'mail me@myhandle' }), rules, NOW).action).toBe('skip');
   });
 
   it('a reply to the handle is a mention even without @handle in the text', () => {
     const stale = { postedAt: '2020-01-01T00:00:00Z', metrics: metrics(0), text: 'agreed, ship it' };
-    expect(prefilter(post({ ...stale, replyTo: ['other', 'MYHANDLE'] }), rules, NOW)).toEqual({
+    expect(prefilter(post({ ...stale, postedAt: '2026-10-16T12:00:00Z', replyTo: ['other', 'MYHANDLE'] }), rules, NOW)).toEqual({
       action: 'triage',
       mustFlag: 'mention',
     });
@@ -70,6 +70,24 @@ describe('prefilter', () => {
   it('watchlist author is always flagged, case-insensitive, @ optional in config', () => {
     const result = prefilter(post({ authorHandle: 'VIP_user', metrics: metrics(0) }), rules, NOW);
     expect(result).toEqual({ action: 'triage', mustFlag: 'watchlist' });
+  });
+
+  it('watchlist posts obey maxAgeHours: 23h flagged, 25h skipped', () => {
+    const at = (hours: number) => new Date(NOW - hours * 3600_000).toISOString();
+    const watched = { authorHandle: 'vip_user', metrics: metrics(0) };
+    expect(prefilter(post({ ...watched, postedAt: at(23) }), rules, NOW)).toEqual({ action: 'triage', mustFlag: 'watchlist' });
+    expect(prefilter(post({ ...watched, postedAt: at(25) }), rules, NOW)).toEqual({ action: 'skip', reason: 'older than 24h' });
+  });
+
+  it('mentions obey mentionMaxAgeHours: 71h flagged, 73h skipped', () => {
+    const at = (hours: number) => new Date(NOW - hours * 3600_000).toISOString();
+    const mention = { text: '@myhandle hi', metrics: metrics(0) };
+    expect(prefilter(post({ ...mention, postedAt: at(71) }), rules, NOW)).toEqual({ action: 'triage', mustFlag: 'mention' });
+    expect(prefilter(post({ ...mention, postedAt: at(73) }), rules, NOW)).toEqual({ action: 'skip', reason: 'older than 72h' });
+  });
+
+  it('must-flag posts with unknown date are still flagged', () => {
+    expect(prefilter(post({ authorHandle: 'vip_user', postedAt: null }), rules, NOW)).toMatchObject({ mustFlag: 'watchlist' });
   });
 
   it('mention wins over watchlist', () => {
