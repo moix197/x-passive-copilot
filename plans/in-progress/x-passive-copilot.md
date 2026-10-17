@@ -240,14 +240,14 @@ argv. Malformed model output marks those posts "triage error" and the server kee
 
 **Steps:**
 
-- [ ] `run-cli` + `resolve-cli`; opencode adapter
+- [x] `run-cli` + `resolve-cli`; opencode adapter
 - [ ] User (one-time, hil-lite): `pnpm add -g opencode-ai`, `opencode auth login`. Agent records a
       real `opencode run --format json` sample (prompt on stdin) and confirms the deny-all sandbox
       blocks a "list files / run a command" prompt. If opencode is unavailable, build the parser from
       the documented format and flag it unverified in the report.
-- [ ] Prefilter, triage service, prompts, trigger, DB, route
-- [ ] Panel Flagged tab
-- [ ] README "context.md / watchlist / config" section. `.ai/pipeline/triage-flow` entry (decision: stdin-only, deny-all sandbox)
+- [x] Prefilter, triage service, prompts, trigger, DB, route
+- [x] Panel Flagged tab
+- [x] README "context.md / watchlist / config" section. `.ai/pipeline/triage-flow` entry (decision: stdin-only, deny-all sandbox)
 
 **Tests:**
 
@@ -259,15 +259,16 @@ argv. Malformed model output marks those posts "triage error" and the server kee
 
 **Verification:**
 
-- [ ] `pnpm test:unit`, `pnpm test:e2e smoke`, `pnpm check` pass
-- [ ] grep: no `shell: true` in `apps/server/src`
+- [x] `pnpm test:unit`, `pnpm test:e2e smoke`, `pnpm check` pass
+- [x] grep: no `shell: true` in `apps/server/src`
 - [ ] Manual: `pnpm dev:server`, browse, Flagged tab shows items from real opencode
+      _Deferred 2026-10-17: opencode not installed; parser + fixture built from docs (unverified). Steps "User opencode install" and this manual check carry over to the Final Verification pre-merge checklist._
 
 **Phase checklist:**
 
-- [ ] Steps and Verification ticked in this file
-- [ ] Changes committed: `feat: opencode deepseek triage with prefilter and flagged tab`
-- [ ] Phase marked complete
+- [x] Steps and Verification ticked in this file
+- [x] Changes committed: `feat: opencode deepseek triage with prefilter and flagged tab`
+- [x] Phase marked complete
 
 ---
 
