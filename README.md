@@ -81,3 +81,27 @@ to; first 8 KB are used) by an LLM through [opencode](https://opencode.ai). Setu
 - opencode runs in `<home>/sandbox/opencode` with all tools denied; prompts go over stdin only.
 - The opencode event parser is built from the documented format and not yet verified against a live
   install.
+
+## Polish / auto top picks / config
+
+The **Polish** button on a flagged post asks `claude -p` (subscription login) for one final reply in
+your voice. Claude runs read-only (`Read,Grep,Glob`) with cwd = `spacehoodRepoPath` and reads only
+`.claude/skills/announce/voice.md` and `.ai/product/index.md` there. `ANTHROPIC_API_KEY` is removed
+from its environment so it never bills the API. Double clicks run one job.
+
+```json
+{
+  "spacehoodRepoPath": "H:/path/to/spacehood_dashboard",
+  "models": { "triage": "opencode/<model-id>", "final": "<claude model id>" },
+  "autoPolish": { "threshold": 80, "dailyCap": 10 }
+}
+```
+
+- Posts scoring >= `threshold` are polished automatically after each triage batch and marked
+  **Top pick**, up to `dailyCap` per local day. Beyond that the row says "Daily cap reached"; manual
+  Polish still works. `dailyCap: 0` turns auto-polish off.
+- A pure guard checks every reply: <= 280 chars (URL = 23), <= 1 hashtag, no hype words, price
+  predictions or advice phrasing, no URL/@mention absent from the source post. A violation triggers
+  one regeneration with the violations listed; still failing -> "Needs edit: <rules>". Rough drafts
+  get a "draft warning" tag.
+- `models.final` and `spacehoodRepoPath` are required; otherwise polish shows "Polish failed: config...".

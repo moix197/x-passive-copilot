@@ -1,0 +1,65 @@
+import { describe, expect, it } from 'vitest';
+import { checkReply, replyLength } from './guard';
+
+const rules = (text: string, source = 'a post about tools') => checkReply(text, source).map((v) => v.rule);
+
+describe('length', () => {
+  it('allows exactly 280 chars and rejects 281', () => {
+    expect(rules('a'.repeat(280))).toEqual([]);
+    expect(rules('a'.repeat(281))).toEqual(['too-long']);
+  });
+
+  it('counts a URL as 23 chars', () => {
+    const url = 'https://example.com/a/very/long/path/that/is/over/twenty/three/chars';
+    const source = `see ${url}`;
+    expect(replyLength(url)).toBe(23);
+    expect(checkReply(`${'a'.repeat(257)}${url}`, source)).toEqual([]);
+    expect(checkReply(`${'a'.repeat(258)}${url}`, source).map((v) => v.rule)).toEqual(['too-long']);
+  });
+});
+
+describe('hashtags', () => {
+  it('allows 0 and 1, rejects 2', () => {
+    expect(rules('nice build')).toEqual([]);
+    expect(rules('nice build #solana')).toEqual([]);
+    expect(rules('nice build #solana #defi')).toEqual(['hashtags']);
+  });
+});
+
+describe('hype words', () => {
+  it.each(['This is a GEM.', 'to the moon!', 'buy now', 'real alpha here', 'easy 100x'])('rejects %s', (text) => {
+    expect(rules(text)).toContain('hype-word');
+  });
+
+  it('does not match inside other words', () => {
+    expect(rules('the gemstone market and a buyer guide')).toEqual([]);
+  });
+});
+
+describe('price predictions and advice', () => {
+  it('rejects price predictions', () => {
+    expect(rules('this will hit $500 soon')).toContain('price-prediction');
+    expect(rules('my price target is high')).toContain('price-prediction');
+  });
+
+  it('rejects advice phrasing', () => {
+    expect(rules('you should ship it today')).toContain('advice');
+    expect(rules('nfa but dyor')).toContain('advice');
+  });
+
+  it('allows plain builder talk', () => {
+    expect(rules('we shipped the indexer last week, caching was the hard part')).toEqual([]);
+  });
+});
+
+describe('foreign URLs and mentions', () => {
+  it('rejects URLs and mentions missing from the source', () => {
+    expect(rules('see https://evil.example/x', 'no links')).toEqual(['foreign-url']);
+    expect(rules('ping @someone', 'no mentions')).toEqual(['foreign-mention']);
+  });
+
+  it('allows the ones in the source, case-insensitively', () => {
+    const source = 'read https://site.example/a.  cc @Builder';
+    expect(rules('good read https://site.example/a, thanks @builder', source)).toEqual([]);
+  });
+});

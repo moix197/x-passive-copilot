@@ -1,7 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { PostBatchSchema, type HealthResponse } from '@xc/shared';
-import { ingestPosts, listFlaggedPosts, listPosts } from './posts';
+import type { PolishState } from './polish/polish';
+import { ingestPosts, listFlaggedPosts, listPosts, type PolishContext } from './posts';
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const DEFAULT_LIMIT = 50;
@@ -58,31 +59,45 @@ function postPosts(db: DatabaseSync, onIngest: () => void): Handler {
   };
 }
 
-function getPosts(db: DatabaseSync): Handler {
+function getPosts(db: DatabaseSync, polishContext: () => PolishContext): Handler {
   return (_req, res, url) => {
     const limit = parseIntParam(url.searchParams.get('limit'), DEFAULT_LIMIT);
     const before = parseIntParam(url.searchParams.get('before'), 0);
     if (!limit || before === null || limit > MAX_LIMIT) return sendJson(res, 400, { error: 'bad query' });
     const view = url.searchParams.get('view');
-    if (view === 'flagged') return sendJson(res, 200, listFlaggedPosts(db, limit));
+    if (view === 'flagged') return sendJson(res, 200, listFlaggedPosts(db, limit, polishContext()));
     if (view !== null && view !== 'all') return sendJson(res, 400, { error: 'bad query' });
-    sendJson(res, 200, listPosts(db, limit, before || null));
+    sendJson(res, 200, listPosts(db, limit, before || null, polishContext()));
+  };
+}
+
+const POLISH_PATH = /^\/v1\/posts\/(\d{1,30})\/polish$/;
+
+function postPolish(onPolish: (statusId: string) => PolishState): Handler {
+  return (_req, res, url) => {
+    const statusId = POLISH_PATH.exec(url.pathname)?.[1];
+    const state = statusId ? onPolish(statusId) : 'unknown';
+    if (state === 'unknown') return sendJson(res, 404, { error: 'not found' });
+    sendJson(res, 202, { state });
   };
 }
 
 export interface RouterHooks {
   onIngest: () => void;
+  onPolish: (statusId: string) => PolishState;
+  polishContext: () => PolishContext;
 }
 
 export function createRouter(db: DatabaseSync, hooks: RouterHooks): (req: IncomingMessage, res: ServerResponse) => void {
   const routes: Record<string, Handler> = {
     'GET /v1/health': (_req, res) => sendJson(res, 200, { status: 'ok' } satisfies HealthResponse),
-    'GET /v1/posts': getPosts(db),
+    'GET /v1/posts': getPosts(db, hooks.polishContext),
     'POST /v1/posts': postPosts(db, hooks.onIngest),
   };
   return (req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-    const handler = routes[`${req.method} ${url.pathname}`];
+    const polishRoute = req.method === 'POST' && POLISH_PATH.test(url.pathname);
+    const handler = polishRoute ? postPolish(hooks.onPolish) : routes[`${req.method} ${url.pathname}`];
     if (!handler) return sendJson(res, 404, { error: 'not found' });
     Promise.resolve(handler(req, res, url)).catch(() => {
       if (!res.headersSent) sendJson(res, 500, { error: 'internal error' });

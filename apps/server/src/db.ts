@@ -28,6 +28,19 @@ CREATE TABLE IF NOT EXISTS triage (
   must_flag TEXT,
   error TEXT,
   triaged_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS drafts (
+  status_id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  text TEXT,
+  status TEXT NOT NULL,
+  violations TEXT NOT NULL DEFAULT '[]',
+  error TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS meta (
+  key TEXT PRIMARY KEY,
+  value INTEGER NOT NULL
 )`;
 
 export function openDb(home: string): DatabaseSync {

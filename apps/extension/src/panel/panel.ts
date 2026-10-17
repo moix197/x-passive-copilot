@@ -16,6 +16,15 @@ async function loadPosts(view: View): Promise<StoredPost[]> {
   return PostListResponseSchema.parse(await res.json()).posts;
 }
 
+async function requestPolish(statusId: string): Promise<void> {
+  const config = await getServerConfig();
+  const res = await fetch(`${config.baseUrl}/v1/posts/${encodeURIComponent(statusId)}/polish`, {
+    method: 'POST',
+    headers: authHeaders(config),
+  });
+  if (!res.ok) throw new Error(`server ${res.status}`);
+}
+
 const app = document.getElementById('app');
 const tabs = document.querySelectorAll<HTMLButtonElement>('[role="tab"][data-view]');
 let dispose: (() => void) | null = null;
@@ -25,7 +34,7 @@ function selectView(view: View): void {
   dispose?.();
   for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.view === view));
   const load = () => loadPosts(view);
-  dispose = view === 'flagged' ? mountFlaggedView(app, { load }) : mountPostsView(app, { load });
+  dispose = view === 'flagged' ? mountFlaggedView(app, { load, onPolish: requestPolish }) : mountPostsView(app, { load });
 }
 
 for (const tab of tabs) tab.addEventListener('click', () => selectView(tab.dataset.view as View));

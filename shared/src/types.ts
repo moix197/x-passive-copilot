@@ -63,13 +63,33 @@ export const TriageInfoSchema = z.object({
   skipReason: z.string().nullable(),
   mustFlag: MustFlagSchema.nullable(),
   error: z.string().nullable(),
+  roughDraftWarnings: z.array(z.string()),
 });
 export type TriageInfo = z.infer<typeof TriageInfoSchema>;
+
+export const PolishStatusSchema = z.enum(['polishing', 'ready', 'needs_edit', 'error', 'cap_reached']);
+export type PolishStatus = z.infer<typeof PolishStatusSchema>;
+
+export const PolishInfoSchema = z.object({
+  status: PolishStatusSchema,
+  text: z.string().nullable(),
+  violations: z.array(z.string()),
+  topPick: z.boolean(),
+  error: z.string().nullable(),
+});
+export type PolishInfo = z.infer<typeof PolishInfoSchema>;
+
+export const PolishReplySchema = z.object({
+  reply: z.string().min(1).max(1000),
+  rationale: z.string().max(1000).default(''),
+});
+export type PolishReply = z.infer<typeof PolishReplySchema>;
 
 export const StoredPostSchema = CapturedPostSchema.extend({
   seq: z.number().int().positive(),
   capturedAt: z.number().int().nonnegative(),
   triage: TriageInfoSchema.nullable(),
+  polish: PolishInfoSchema.nullable(),
 });
 export type StoredPost = z.infer<typeof StoredPostSchema>;
 

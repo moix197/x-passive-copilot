@@ -9,5 +9,6 @@ scope: Server-side post pipeline (prefilter, LLM triage, later polish/voice/dige
 
 | Entry | Type | Summary | Tags | Paths |
 | --- | --- | --- | --- | --- |
+| [polish-flow](polish-flow.md) | decision | Polish runs claude once per post, guards the reply, regenerates once; auto top picks reserve slots in a per-local-day meta counter | polish, claude, guard, daily-cap, auto-polish | `apps/server/src/polish/**`, `apps/server/src/llm/claude.ts`, `apps/server/src/posts.ts` |
 | [triage-flow](triage-flow.md) | decision | Posts are prefiltered then triaged in batches via opencode/DeepSeek: stdin-only prompts, deny-all sandbox, in-memory retry; event parser unverified | triage, opencode, deepseek, prefilter, subprocess, untrusted-input | `apps/server/src/triage/**`, `apps/server/src/llm/**`, `apps/server/src/sandbox.ts`, `fixtures/opencode-run.jsonl` |
 <!-- entries:end -->

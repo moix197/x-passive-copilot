@@ -75,3 +75,24 @@ h1 {
   background: #f7f9f9;
   border-radius: 6px;
 }
+.flag-final {
+  margin: 6px 0;
+  padding: 6px 8px;
+  background: #e8f5e9;
+  border-radius: 6px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.top-pick {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: #f5a623;
+  color: #fff;
+  font-size: 12px;
+}
+.needs-edit {
+  margin: 4px 0;
+  color: #b3261e;
+  font-size: 12px;
+}

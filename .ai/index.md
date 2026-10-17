@@ -7,5 +7,6 @@ Read protocol: pick the domain(s) matching your task, open that domain's `index.
 | Domain | Scope | Active entries |
 | --- | --- | --- |
 | [capture](capture/index.md) | Passive x.com capture (content script), ban-risk rules, selectors | 1 |
-| [pipeline](pipeline/index.md) | Server-side post pipeline (prefilter, LLM triage, later polish/voice/digest) | 1 |
+| [pipeline](pipeline/index.md) | Server-side post pipeline (prefilter, LLM triage, later polish/voice/digest) | 2 |
+| [security](security/index.md) | Untrusted-input containment for LLM subprocesses (argv, env, sandboxes) | 1 |
 | [tooling](tooling/index.md) | Dev tooling, agent workflow, knowledge base mechanics | 3 |

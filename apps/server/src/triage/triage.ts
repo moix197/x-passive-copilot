@@ -45,6 +45,7 @@ export function createTriageService(
   config: AppConfig,
   classify: Classify,
   now: () => number = Date.now,
+  afterBatch: () => void = () => undefined,
 ): TriageService {
   let running = false;
   let timer: NodeJS.Timeout | null = null;
@@ -81,6 +82,7 @@ export function createTriageService(
     if (result.ok) {
       recordReply(batch, result.value);
       console.log(`triage batch ${ids} ok`);
+      afterBatch();
       return;
     }
     const kind = errorClass(result.error);
