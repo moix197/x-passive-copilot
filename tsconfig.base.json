@@ -9,6 +9,6 @@
     "isolatedModules": true,
     "noEmit": true,
     "resolveJsonModule": true,
-    "paths": { "@xc/shared": ["./shared/src/index.ts"] }
+    "paths": { "@xc/shared": ["./shared/src/index.ts"], "@xc/shared/types": ["./shared/src/types.ts"] }
   }
 }

@@ -1,9 +1,15 @@
 import { defineConfig } from 'vitest/config';
 import { fileURLToPath } from 'node:url';
 
+const sharedFile = (name: string) =>
+  fileURLToPath(new URL(`./shared/src/${name}`, import.meta.url));
+
 export default defineConfig({
   resolve: {
-    alias: { '@xc/shared': fileURLToPath(new URL('./shared/src/index.ts', import.meta.url)) },
+    alias: [
+      { find: /^@xc\/shared\/types$/, replacement: sharedFile('types.ts') },
+      { find: /^@xc\/shared$/, replacement: sharedFile('index.ts') },
+    ],
   },
   test: {
     passWithNoTests: true,

@@ -16,6 +16,14 @@ async function bundle() {
     target: 'chrome120',
     tsconfig: `${ext}/tsconfig.json`,
   });
+  await build({
+    entryPoints: { content: `${ext}/src/content/capture.ts` },
+    outdir: out,
+    bundle: true,
+    format: 'iife',
+    target: 'chrome120',
+    tsconfig: `${ext}/tsconfig.json`,
+  });
 }
 
 async function copyStatic() {

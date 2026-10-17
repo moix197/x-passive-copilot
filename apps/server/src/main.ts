@@ -1,7 +1,10 @@
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { createServer } from 'node:http';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { loadConfig, type HealthResponse } from '@xc/shared';
+import { loadConfig } from '@xc/shared';
+import { openDb } from './db';
+import { prunePosts } from './posts';
+import { createRouter } from './router';
 
 interface CliOptions {
   dev: boolean;
@@ -21,19 +24,6 @@ function parseArgs(argv: string[]): CliOptions {
   };
 }
 
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { 'content-type': 'application/json' });
-  res.end(JSON.stringify(body));
-}
-
-function handle(req: IncomingMessage, res: ServerResponse): void {
-  if (req.method === 'GET' && req.url === '/v1/health') {
-    const body: HealthResponse = { status: 'ok' };
-    return sendJson(res, 200, body);
-  }
-  sendJson(res, 404, { error: 'not found' });
-}
-
 function main(): void {
   const opts = parseArgs(process.argv.slice(2));
   const config = loadConfig(opts.home);
@@ -41,7 +31,9 @@ function main(): void {
     console.error(config.error);
     process.exit(1);
   }
-  createServer(handle).listen(opts.port, '127.0.0.1', () => {
+  const db = openDb(opts.home);
+  prunePosts(db, Date.now());
+  createServer(createRouter(db)).listen(opts.port, '127.0.0.1', () => {
     console.log(`server listening on 127.0.0.1:${opts.port}${opts.dev ? ' (dev)' : ''}`);
   });
 }

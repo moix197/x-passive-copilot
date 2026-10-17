@@ -27,6 +27,14 @@ server, and helps you find posts worth replying to. You copy and post by hand.
 4. `pnpm dev:server`, then `curl 127.0.0.1:7457/v1/health`
 5. Click the extension icon to open the side panel.
 
+## Capture usage
+
+With `pnpm dev:server` running, browse https://x.com normally: posts you scroll past are captured
+and listed newest first in the side panel (polls every 3s while open). Posts are stored in
+`<home>/posts.db` (30-day prune). The extension targets `http://127.0.0.1:7457` by default; to use
+another server set it from the service worker DevTools console:
+`chrome.storage.local.set({ serverUrl: 'http://127.0.0.1:PORT' })`.
+
 Config lives in `<home>/config.json` (default home `~/.x-passive-copilot`); missing file means defaults.
 
 ## v1 trade-offs

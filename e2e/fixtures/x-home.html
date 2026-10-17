@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Home / X (fixture)</title></head>
+  <body>
+    <main>
+      <div data-testid="primaryColumn">
+        <section id="timeline">
+          <article data-testid="tweet">
+            <div data-testid="User-Name"><a href="/alice"><span>Alice Plain</span></a><a href="/alice"><span>@alice</span></a></div>
+            <a href="/alice/status/1001"><time datetime="2026-10-17T10:00:00.000Z">1h</time></a>
+            <div data-testid="tweetText"><span>Plain post about shipping</span></div>
+            <div role="group" aria-label="5 replies, 10 reposts, 120 likes, 1.2K views"></div>
+          </article>
+          <article data-testid="tweet">
+            <div data-testid="User-Name"><a href="/bob"><span>Bob Quoter</span></a><a href="/bob"><span>@bob</span></a></div>
+            <a href="/bob/status/1002"><time datetime="2026-10-17T10:05:00.000Z">55m</time></a>
+            <div data-testid="tweetText"><span>Outer quote commentary</span></div>
+            <div data-testid="quoteTweet">
+              <div data-testid="User-Name"><a href="/carol"><span>Carol Quoted</span></a><a href="/carol"><span>@carol</span></a></div>
+              <a href="/carol/status/2002"><time datetime="2026-10-16T09:00:00.000Z">Oct 16</time></a>
+              <div data-testid="tweetText"><span>Quoted inner text</span></div>
+            </div>
+            <div role="group" aria-label="1 reply, 2 reposts, 30 likes, 900 views"></div>
+          </article>
+          <article data-testid="tweet">
+            <div data-testid="replyContext">Replying to @alice</div>
+            <div data-testid="User-Name"><a href="/dave"><span>Dave Replier</span></a><a href="/dave"><span>@dave</span></a></div>
+            <a href="/dave/status/1003"><time datetime="2026-10-17T10:10:00.000Z">50m</time></a>
+            <div data-testid="tweetText"><span>A reply in the timeline</span></div>
+            <div role="group" aria-label="0 replies, 0 reposts, 3 likes, 40 views"></div>
+          </article>
+          <article data-testid="tweet">
+            <div data-testid="placementTracking"></div>
+            <div data-testid="User-Name"><a href="/brand"><span>Brand Ad</span></a><a href="/brand"><span>@brand</span></a></div>
+            <a href="/brand/status/1004"><time datetime="2026-10-17T10:15:00.000Z">Ad</time></a>
+            <div data-testid="tweetText"><span>Promoted post must be skipped</span></div>
+            <div role="group" aria-label="9 replies, 9 reposts, 9 likes, 9 views"></div>
+          </article>
+          <article data-testid="tweet">
+            <div data-testid="User-Name"><a href="/eve"><span>Eve Hostile</span></a><a href="/eve"><span>@eve</span></a></div>
+            <a href="/eve/status/1005"><time datetime="2026-10-17T10:20:00.000Z">40m</time></a>
+            <div data-testid="tweetText"><span>&lt;img src=x onerror=alert(1)&gt;</span></div>
+            <div role="group" aria-label="2 replies, 1 repost, 7 likes, 80 views"></div>
+          </article>
+        </section>
+      </div>
+    </main>
+    <script>
+      window.__append = function (n) {
+        var timeline = document.getElementById('timeline');
+        for (var i = 0; i < n; i++) {
+          var id = 3000 + i;
+          var article = document.createElement('article');
+          article.setAttribute('data-testid', 'tweet');
+          article.innerHTML =
+            '<div data-testid="User-Name"><a href="/user' + id + '"><span>User ' + id + '</span></a></div>' +
+            '<a href="/user' + id + '/status/' + id + '"><time datetime="2026-10-17T11:00:00.000Z">now</time></a>' +
+            '<div data-testid="tweetText"><span>Appended post ' + id + '</span></div>' +
+            '<div role="group" aria-label="1 reply, 1 repost, 1 like, 10 views"></div>';
+          timeline.appendChild(article);
+        }
+      };
+    </script>
+  </body>
+</html>
