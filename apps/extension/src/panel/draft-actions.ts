@@ -24,9 +24,11 @@ function button(label: string, testId: string, onClick: (b: HTMLButtonElement) =
   return b;
 }
 
-function copyButton(text: string, callbacks: DraftCallbacks): HTMLButtonElement {
+export const copyText = (text: string): Promise<void> => navigator.clipboard.writeText(text);
+
+export function copyButton(text: string, onCopy: (text: string) => Promise<void>): HTMLButtonElement {
   return button('Copy', 'draft-copy', (b) => {
-    void callbacks.onCopy(text).then(() => {
+    void onCopy(text).then(() => {
       b.textContent = 'Copied';
       setTimeout(() => (b.textContent = 'Copy'), COPIED_MS);
     });
@@ -67,7 +69,7 @@ export function renderDraftActions(
   const showButtons = () => {
     onEditing(false);
     bar.replaceChildren(
-      copyButton(text, callbacks),
+      copyButton(text, callbacks.onCopy),
       button('Edit', 'draft-edit', showEditor),
       rateButton('up', callbacks),
       rateButton('down', callbacks),

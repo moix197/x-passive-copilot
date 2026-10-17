@@ -17,7 +17,9 @@ sends both only in the framed `ready` message (4-byte LE length, JSON). Every HT
 included, needs `Authorization: Bearer <token>` (constant-time compare). When stdin ends (toggle
 off, Chrome closed, SW died) the host closes HTTP and DB, kills CLI child trees, drops
 `<home>/server.lock` and exits. Nothing but framed messages may reach stdout; logs go to
-`<home>/logs/server.log`.
+`<home>/logs/server.log`. The lock is created with `wx` and the pid written through that fd; an
+empty/unparsable lock younger than 5s counts as held (a starter mid-write). On a host `error`
+message the panel shows that message; the `pnpm setup:host` hint only appears on a silent disconnect.
 
 **Why:** Nothing runs unless Chrome wants it (no always-on service, no autostart), the token never
 touches disk or a page, and a stray local process or web page cannot read or poison captures.

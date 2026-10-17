@@ -3,6 +3,7 @@ import { err, ok, VoiceProfileSchema, type AppConfig, type Result, type VoicePro
 import { z } from 'zod';
 import { log } from '../log';
 import { extractJson, runOpencode } from '../llm/opencode';
+import { readIngestCount } from '../posts';
 import { dataJson } from '../triage/prompts';
 import { errorClass, withRetry } from '../triage/retry';
 import { listFeedbackExamples } from './feedback';
@@ -90,11 +91,6 @@ function lastGeneratedCount(db: DatabaseSync): number | null {
   return row?.profile ? row.sample_count : null;
 }
 
-export function countOwnPosts(db: DatabaseSync): number {
-  const row = db.prepare('SELECT COUNT(*) AS n FROM posts WHERE is_own = 1').get() as unknown as { n: number };
-  return row.n;
-}
-
 function ownPosts(db: DatabaseSync, limit: number): OwnPost[] {
   return db
     .prepare('SELECT text, likes, reposts, replies FROM posts WHERE is_own = 1 ORDER BY likes + reposts + replies DESC LIMIT ?')
@@ -120,7 +116,7 @@ export function readVoiceView(db: DatabaseSync, config: AppConfig): VoiceView {
   const examples = selectExamples({ ownPosts: [], positives, negatives });
   return {
     profile: parseStoredProfile(row?.profile ?? null),
-    sampleCount: countOwnPosts(db),
+    sampleCount: readIngestCount(db, 'own'),
     minSamples: config.voice.minSamples,
     failed: row?.failed === 1,
     examples: { positive: examples.positive, negative: examples.negative },
@@ -165,7 +161,7 @@ export function createVoiceService(
 
   async function run(): Promise<void> {
     if (running || !config.models.triage || now() - lastFailureAt < RETRY_AFTER_FAILURE_MS) return;
-    const count = countOwnPosts(db);
+    const count = readIngestCount(db, 'own');
     if (!shouldRegenerate(count, lastGeneratedCount(db), config.voice.minSamples)) return;
     running = true;
     try {

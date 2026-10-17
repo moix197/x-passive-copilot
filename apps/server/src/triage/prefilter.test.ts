@@ -9,6 +9,7 @@ const post = (over: Partial<Parameters<typeof prefilter>[0]> = {}) => ({
   text: 'hello world',
   postedAt: '2026-10-17T11:00:00Z',
   metrics: metrics(10),
+  replyTo: [] as string[],
   ...over,
 });
 
@@ -55,6 +56,15 @@ describe('prefilter', () => {
     expect(prefilter(post({ ...stale, text: '@MYHANDLE' }), rules, NOW)).toMatchObject({ mustFlag: 'mention' });
     expect(prefilter(post({ ...stale, text: 'hey @myhandle2' }), rules, NOW).action).toBe('skip');
     expect(prefilter(post({ ...stale, text: 'mail me@myhandle' }), rules, NOW).action).toBe('skip');
+  });
+
+  it('a reply to the handle is a mention even without @handle in the text', () => {
+    const stale = { postedAt: '2020-01-01T00:00:00Z', metrics: metrics(0), text: 'agreed, ship it' };
+    expect(prefilter(post({ ...stale, replyTo: ['other', 'MYHANDLE'] }), rules, NOW)).toEqual({
+      action: 'triage',
+      mustFlag: 'mention',
+    });
+    expect(prefilter(post({ ...stale, replyTo: ['myhandle2'] }), rules, NOW).action).toBe('skip');
   });
 
   it('watchlist author is always flagged, case-insensitive, @ optional in config', () => {

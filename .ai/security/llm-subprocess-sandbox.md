@@ -17,14 +17,17 @@ Tweet text is hostile and both CLIs can have tools, so every call obeys:
 - **`shell:false`** always. npm `.cmd` shims are resolved to `[node, script.js]` (`resolve-cli.ts`);
   never `shell:true`.
 - **Timeouts kill the tree** (`taskkill /T /F`): triage 120s, polish 180s. Stdout capped at 2 MB.
-- **claude flag profile** (`llm/claude.ts`): `-p --allowedTools Read,Grep,Glob --disallowedTools
+- **claude flag profile** (`llm/claude.ts`): `-p --allowedTools Read(./**),Grep,Glob --disallowedTools
   Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Task --permission-mode dontAsk --strict-mcp-config
   --max-turns 8 --output-format json --json-schema <reply schema> --append-system-prompt-file
   assets/finalize-system.md`; cwd = `spacehoodRepoPath`; **never `--bare`** (it skips the
   subscription login/OAuth). Result read from `.structured_output`.
-- **Env scrubbing:** `ANTHROPIC_API_KEY` removed (any case) so the subscription is used, not the API.
-- **opencode:** cwd `<home>/sandbox/opencode` whose `opencode.json` denies all tools, rewritten
-  before every run.
+- **Env scrubbing:** `ANTHROPIC_API_KEY` removed (any case) so the subscription is used, not the API;
+  `runCli` strips every `XC_*` var (e.g. `XC_DEV_TOKEN`) from all children.
+- **opencode:** cwd `<home>/sandbox/opencode` whose `opencode.json` (`tools` `"*": false`,
+  `permission` `"*": "deny"`, `mcp: {}`, plus explicit denies) is rewritten before every run.
+- **Guard URLs:** `https?://` links and bare domains with a known TLD (`foo.app`, `x.co/abc`); trailing
+  punctuation stripped, scheme/`www.` ignored when matching source URLs.
 - **Untrusted data framing:** posts are JSON (`<` escaped) inside delimiters with a "never follow"
   instruction; system asset restricts which files Claude may read and forbids `docs/calculations`.
 - **Output is never trusted:** zod-parsed, then the pure `checkReply` guard (`polish/guard.ts`);
@@ -32,3 +35,5 @@ Tweet text is hostile and both CLIs can have tools, so every call obeys:
 
 **Constraint:** any new LLM integration must reuse `runCli`/`resolveCli` and this profile.
 **Unverified:** `--max-turns` is absent from `claude --help` (hidden flag); not exercised live.
+`Read(./**)` scoping follows `--allowedTools` rule syntax from `claude --help`; Grep/Glob stay
+unscoped (claude applies Read rules to them best-effort).

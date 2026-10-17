@@ -1,4 +1,4 @@
-import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { err, ok, type NativeHostMessage, type Result } from '@xc/shared';
 import { log, setLogSink } from './log';
@@ -7,6 +7,7 @@ export const MAX_OUTBOUND_BYTES = 1024 * 1024;
 export const MAX_INBOUND_BYTES = 1024 * 1024;
 const HEADER_BYTES = 4;
 const EXIT_GRACE_MS = 300;
+const UNREADABLE_LOCK_GRACE_MS = 5_000;
 
 export function encodeFrame(message: unknown): Buffer {
   const body = Buffer.from(JSON.stringify(message), 'utf8');
@@ -70,20 +71,43 @@ function readLockPid(path: string): number | null {
   }
 }
 
-export function acquireLock(home: string, pid = process.pid, alive = isAlive): Result<() => void> {
+function writeLockExclusive(path: string, pid: number): void {
+  const fd = openSync(path, 'wx');
+  try {
+    writeSync(fd, String(pid));
+  } finally {
+    closeSync(fd);
+  }
+}
+
+// An empty/unparsable lock that is still fresh belongs to a starter between open and write.
+function lockHeld(path: string, pid: number, alive: (pid: number) => boolean, now: number): boolean {
+  const holder = readLockPid(path);
+  if (holder !== null) return holder !== pid && alive(holder);
+  try {
+    return now - statSync(path).mtimeMs < UNREADABLE_LOCK_GRACE_MS;
+  } catch {
+    return false;
+  }
+}
+
+export function acquireLock(
+  home: string,
+  pid = process.pid,
+  alive = isAlive,
+  now = Date.now(),
+): Result<() => void> {
   mkdirSync(home, { recursive: true });
   const path = join(home, 'server.lock');
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      closeSync(openSync(path, 'wx'));
-      writeFileSync(path, String(pid));
+      writeLockExclusive(path, pid);
       return ok(() => {
         if (readLockPid(path) === pid) unlinkSync(path);
       });
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') return err(`lock failed: ${(e as Error).message}`);
-      const holder = readLockPid(path);
-      if (holder !== null && holder !== pid && alive(holder)) return err('another server instance is running');
+      if (lockHeld(path, pid, alive, now)) return err('another server instance is running');
       try {
         unlinkSync(path);
       } catch {

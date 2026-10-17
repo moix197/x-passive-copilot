@@ -1,6 +1,6 @@
 import { PostListResponseSchema, type StoredPost } from '@xc/shared/types';
 import { authHeaders, getServerConfig } from '../server-config';
-import type { DraftCallbacks, Rating } from './draft-actions';
+import { copyText, type DraftCallbacks, type Rating } from './draft-actions';
 import { mountDigestSection } from './digest-section';
 import { mountDoctorCard } from './doctor-card';
 import { mountFlaggedView } from './flagged-view';
@@ -69,7 +69,7 @@ async function sendFeedback(draftId: string, kind: 'copy' | 'edit' | 'up' | 'dow
 function draftCallbacks(draftId: string): DraftCallbacks {
   return {
     onCopy: async (text) => {
-      await navigator.clipboard.writeText(text);
+      await copyText(text);
       await sendFeedback(draftId, 'copy');
     },
     onEdit: (text) => sendFeedback(draftId, 'edit', text),

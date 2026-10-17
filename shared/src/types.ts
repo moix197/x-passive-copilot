@@ -12,15 +12,19 @@ const counts = z.object({
   views: z.number().int().nonnegative(),
 });
 
+const xHandle = z.string().regex(/^[A-Za-z0-9_]{1,15}$/);
+const capturedStatusId = z.string().regex(/^\d{1,30}$/);
+
 export const CapturedPostSchema = z.object({
-  statusId: z.string().regex(/^\d+$/),
+  statusId: capturedStatusId,
   authorName: z.string().max(200),
-  authorHandle: z.string().regex(/^[A-Za-z0-9_]{1,15}$/),
+  authorHandle: xHandle,
   text: z.string().max(4000),
   postedAt: z.string().max(40).nullable(),
   metrics: counts,
   isReply: z.boolean(),
-  quotedStatusId: z.string().regex(/^\d+$/).nullable(),
+  replyTo: z.array(xHandle).max(10).default([]),
+  quotedStatusId: capturedStatusId.nullable(),
 });
 export type CapturedPost = z.infer<typeof CapturedPostSchema>;
 

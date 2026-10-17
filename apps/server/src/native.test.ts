@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -69,6 +69,14 @@ describe('single-instance lock', () => {
     writeFileSync(join(dir, 'server.lock'), '999999');
     expect(acquireLock(dir, 222, () => false).ok).toBe(true);
     writeFileSync(join(dir, 'server.lock'), 'garbage');
+    utimesSync(join(dir, 'server.lock'), new Date(0), new Date(0));
     expect(acquireLock(dir, 333, () => true).ok).toBe(true);
+  });
+
+  it('treats a fresh empty lock as held by a starter mid-write', () => {
+    const dir = home();
+    writeFileSync(join(dir, 'server.lock'), '');
+    expect(acquireLock(dir, 444, () => true).ok).toBe(false);
+    expect(acquireLock(dir, 444, () => true, Date.now() + 60_000).ok).toBe(true);
   });
 });

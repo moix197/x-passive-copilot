@@ -6,7 +6,14 @@ export interface Violation {
   detail: string;
 }
 
-const URL_PATTERN = /https?:\/\/[^\s]+/gi;
+// Bare domains need a known TLD so code names like Node.js are not taken for links.
+const BARE_TLDS =
+  'com|net|org|io|co|app|dev|xyz|ai|gg|me|so|sh|fun|lol|tv|us|uk|ly|to|fm|in|de|es|fr|info|biz|site|' +
+  'online|tech|link|page|cc|eu|ca|pro|club|live|news|blog|shop|store|finance|money|exchange|network|wtf|vip';
+const URL_PATTERN = new RegExp(
+  String.raw`https?://[^\s]+|(?<![\w@./-])(?:[a-z0-9-]+\.)+(?:${BARE_TLDS})(?![\w-])(?:/[^\s]*)?`,
+  'gi',
+);
 const MENTION_PATTERN = /(?<![\w@])@(\w{1,15})/g;
 const HASHTAG_PATTERN = /(?<![\w#])#\w+/g;
 const HYPE_PATTERN = /\b(moon(?:ing)?|gems?|buy(?:ing)?|alpha|[0-9]+x|pump(?:ing)?|lambo|wagmi|lfg)\b/gi;
@@ -27,12 +34,16 @@ function urlsIn(text: string): string[] {
   return (text.match(URL_PATTERN) ?? []).map(trimTrailingPunctuation);
 }
 
+function urlKey(url: string): string {
+  return url.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
+}
+
 function mentionsIn(text: string): string[] {
   return [...text.matchAll(MENTION_PATTERN)].map((m) => (m[1] ?? '').toLowerCase());
 }
 
 export function replyLength(text: string): number {
-  const withoutUrls = text.replace(URL_PATTERN, '');
+  const withoutUrls = text.replace(URL_PATTERN, (url) => url.slice(trimTrailingPunctuation(url).length));
   return [...withoutUrls].length + urlsIn(text).length * URL_LENGTH;
 }
 
@@ -56,9 +67,9 @@ function pricePredictions(text: string): Violation[] {
 }
 
 function foreignUrls(text: string, source: string): Violation[] {
-  const allowed = new Set(urlsIn(source).map((u) => u.toLowerCase()));
+  const allowed = new Set(urlsIn(source).map(urlKey));
   return urlsIn(text)
-    .filter((u) => !allowed.has(u.toLowerCase()))
+    .filter((u) => !allowed.has(urlKey(u)))
     .map((u) => ({ rule: 'foreign-url', detail: u }));
 }
 

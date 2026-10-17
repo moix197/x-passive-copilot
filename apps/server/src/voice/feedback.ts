@@ -40,7 +40,7 @@ function upsertExample(db: DatabaseSync, draftId: string, text: string, polarity
   ).run(draftId, text, polarity, now);
 }
 
-function guardEdit(db: DatabaseSync, draftId: string, text: string): FeedbackOutcome {
+function guardText(db: DatabaseSync, draftId: string, text: string): FeedbackOutcome {
   const rules = ruleNames(checkReply(text, guardSource(db, draftId)));
   return rules.length ? { ok: false, status: 422, error: `guard: ${rules.join(', ')}` } : { ok: true };
 }
@@ -54,10 +54,13 @@ export function recordFeedback(
   const draftText = readDraftText(db, draftId);
   if (draftText === null) return { ok: false, status: 404, error: 'not found' };
   const text = feedback.kind === 'edit' ? (feedback.text ?? '') : draftText;
-  if (feedback.kind === 'edit') {
-    const verdict = guardEdit(db, draftId, text);
-    if (!verdict.ok) return verdict;
+  if (feedback.kind === 'down') {
+    upsertExample(db, draftId, text, 'negative', now);
+    return { ok: true };
   }
-  upsertExample(db, draftId, text, feedback.kind === 'down' ? 'negative' : 'positive', now);
+  const verdict = guardText(db, draftId, text);
+  if (feedback.kind === 'edit' && !verdict.ok) return verdict;
+  // A copied/liked draft that breaks the guard is not a style example worth learning from.
+  if (verdict.ok) upsertExample(db, draftId, text, 'positive', now);
   return { ok: true };
 }

@@ -1,8 +1,6 @@
 import type { PolishInfo, StoredPost } from '@xc/shared/types';
-import { renderDraftActions, type DraftCallbacks } from './draft-actions';
+import { copyButton, copyText, renderDraftActions, type DraftCallbacks } from './draft-actions';
 import { element, mountPostsView, openOnXLink, type PostsViewOptions } from './posts-view';
-
-const COPIED_MS = 1500;
 
 export type PolishHandler = (statusId: string) => Promise<void>;
 
@@ -18,19 +16,6 @@ function flagTags(post: StoredPost): string {
   const t = post.triage;
   const tags = [t?.mustFlag ?? '', post.isReply ? 'reply' : '', post.quotedStatusId ? 'quote' : ''];
   return tags.filter(Boolean).join(' · ');
-}
-
-export function copyButton(draft: string): HTMLButtonElement {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = 'Copy';
-  button.addEventListener('click', () => {
-    void navigator.clipboard.writeText(draft).then(() => {
-      button.textContent = 'Copied';
-      setTimeout(() => (button.textContent = 'Copy'), COPIED_MS);
-    });
-  });
-  return button;
 }
 
 function polishButton(post: StoredPost, onPolish: PolishHandler): HTMLButtonElement {
@@ -64,7 +49,8 @@ function polishBody(post: StoredPost, onPolish: PolishHandler, actions: HTMLElem
   if (polish?.status === 'polishing') return [element('div', 'Polishing...', 'post-tags')];
   if (polish?.status === 'ready' || polish?.status === 'needs_edit') return finalReply(polish, actions);
   const note = polish?.status === 'cap_reached' ? 'Daily cap reached' : polish?.error ? `Polish failed: ${polish.error}` : '';
-  const canPolish = t && !t.error && !t.skipReason;
+  // A must-flag post stays polishable even when its triage errored.
+  const canPolish = t && !t.skipReason && (!t.error || t.mustFlag !== null);
   return [...(note ? [element('div', note, 'post-tags')] : []), ...(canPolish ? [polishButton(post, onPolish)] : [])];
 }
 
@@ -74,7 +60,7 @@ function triageBody(post: StoredPost, onPolish: PolishHandler, actions: HTMLElem
   const parts: HTMLElement[] = [];
   if (t.error) parts.push(element('div', 'triage error', 'post-tags'));
   if (t.reason) parts.push(element('p', t.reason, 'flag-reason'));
-  if (t.roughDraft) parts.push(element('p', t.roughDraft, 'flag-draft'), copyButton(t.roughDraft));
+  if (t.roughDraft) parts.push(element('p', t.roughDraft, 'flag-draft'), copyButton(t.roughDraft, copyText));
   if (t.roughDraftWarnings.length) parts.push(element('div', `draft warning: ${t.roughDraftWarnings.join(', ')}`, 'needs-edit'));
   return [...parts, ...polishBody(post, onPolish, actions)];
 }

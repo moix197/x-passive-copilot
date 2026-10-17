@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildClaudeArgv, claudeEnv, parseClaudeOutput, REPLY_JSON_SCHEMA } from './claude';
+import { childEnv } from './run-cli';
 
 const argv = buildClaudeArgv(['claude'], 'sonnet-x', 'C:/assets/finalize-system.md');
 const valueOf = (flag: string) => argv[argv.indexOf(flag) + 1];
@@ -8,7 +9,7 @@ describe('buildClaudeArgv', () => {
   it('uses the read-only flag profile', () => {
     expect(argv.slice(0, 3)).toEqual(['claude', '-p', '--model']);
     expect(valueOf('--model')).toBe('sonnet-x');
-    expect(valueOf('--allowedTools')).toBe('Read,Grep,Glob');
+    expect(valueOf('--allowedTools')).toBe('Read(./**),Grep,Glob');
     expect(valueOf('--permission-mode')).toBe('dontAsk');
     expect(valueOf('--output-format')).toBe('json');
     expect(valueOf('--append-system-prompt-file')).toBe('C:/assets/finalize-system.md');
@@ -31,6 +32,13 @@ describe('claudeEnv', () => {
   it('removes ANTHROPIC_API_KEY in any case and keeps the rest', () => {
     const env = claudeEnv({ ANTHROPIC_API_KEY: 'k', anthropic_api_key: 'k', PATH: '/bin' });
     expect(Object.keys(env)).toEqual(['PATH']);
+  });
+});
+
+describe('childEnv', () => {
+  it('strips XC_* secrets in any case and keeps the rest', () => {
+    const env = childEnv({ XC_DEV_TOKEN: 't', xc_other: 'x', PATH: '/bin', HOME: '/h' });
+    expect(env).toEqual({ PATH: '/bin', HOME: '/h' });
   });
 });
 

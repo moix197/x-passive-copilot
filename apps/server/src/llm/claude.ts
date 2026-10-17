@@ -11,7 +11,8 @@ const MAX_TURNS = '8';
 const ASSET_CANDIDATES = ['../../assets', 'assets'].map((d) => join(import.meta.dirname, d, 'finalize-system.md'));
 const SYSTEM_ASSET = ASSET_CANDIDATES.find((p) => existsSync(p)) ?? ASSET_CANDIDATES[0]!;
 
-const ALLOWED_TOOLS = 'Read,Grep,Glob';
+// Read rules scope to cwd (the repo); claude applies Read rules best-effort to Grep/Glob too.
+const ALLOWED_TOOLS = 'Read(./**),Grep,Glob';
 const DENIED_TOOLS = 'Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch,Task';
 
 export const REPLY_JSON_SCHEMA = JSON.stringify({

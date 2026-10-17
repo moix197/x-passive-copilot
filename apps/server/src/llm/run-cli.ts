@@ -41,15 +41,23 @@ function collectStreams(child: ChildProcess, onOverflow: () => void) {
   const out: Buffer[] = [];
   let size = 0;
   let stderr = '';
+  let overflowed = false;
   child.stdout?.on('data', (chunk: Buffer) => {
+    if (overflowed) return;
     size += chunk.length;
-    if (size > MAX_STDOUT_BYTES) onOverflow();
-    else out.push(chunk);
+    if (size <= MAX_STDOUT_BYTES) return void out.push(chunk);
+    overflowed = true;
+    onOverflow();
   });
   child.stderr?.on('data', (chunk: Buffer) => {
     if (stderr.length < MAX_STDERR_CHARS) stderr += chunk.toString('utf8');
   });
   return { read: (): CliOutput => ({ stdout: Buffer.concat(out).toString('utf8'), stderr }) };
+}
+
+// XC_* carries our own secrets (e.g. XC_DEV_TOKEN); LLM children never need them.
+export function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([key]) => !key.toUpperCase().startsWith('XC_')));
 }
 
 export function runCli(opts: RunCliOptions): Promise<Result<CliOutput>> {
@@ -59,7 +67,7 @@ export function runCli(opts: RunCliOptions): Promise<Result<CliOutput>> {
     const child = spawn(cmd, args, {
       shell: false,
       cwd: opts.cwd,
-      env: opts.env ?? process.env,
+      env: childEnv(opts.env ?? process.env),
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });

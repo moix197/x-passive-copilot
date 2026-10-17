@@ -107,6 +107,9 @@ test('captures timeline posts passively and lists them in the panel', async () =
   await expect(row('1002')).not.toContainText('Quoted inner text');
   await expect(row('1002')).toContainText('quote');
   await expect(row('1003')).toContainText('reply');
+  const stored = await (await fetch(`${baseUrl}/v1/posts?limit=100`, { headers: authHeader })).json();
+  const reply = (stored.posts as { statusId: string; replyTo: string[] }[]).find((p) => p.statusId === '1003');
+  expect(reply?.replyTo).toEqual(['alice']);
   await expect(row('1001')).toContainText('1200 views');
   await expect(row('1006')).toContainText('1449 views');
   await expect(row('1005')).toContainText('<img src=x onerror=alert(1)>');

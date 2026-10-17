@@ -74,7 +74,7 @@ function fixBlock(previous: GenerateRequest['previous']): string {
     previousReply: previous.reply,
     violations: previous.violations.map((v) => `${v.rule}: ${v.detail}`),
   };
-  return `Your previous reply was rejected.\n${JSON.stringify(rejected)}\nWrite a new reply that fixes every violation.`;
+  return `Your previous reply was rejected.\n${dataJson(rejected)}\nWrite a new reply that fixes every violation.`;
 }
 
 export function buildPolishPrompt({ subject, previous }: GenerateRequest, style: Style = NO_STYLE): string {

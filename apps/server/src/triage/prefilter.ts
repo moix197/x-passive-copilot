@@ -13,7 +13,7 @@ export type PrefilterResult =
   | { action: 'triage'; mustFlag?: MustFlag }
   | { action: 'skip'; reason: string };
 
-type PrefilterPost = Pick<StoredPost, 'authorHandle' | 'text' | 'postedAt' | 'metrics'>;
+type PrefilterPost = Pick<StoredPost, 'authorHandle' | 'text' | 'postedAt' | 'metrics' | 'replyTo'>;
 
 export function rulesFromConfig(config: AppConfig): PrefilterRules {
   return {
@@ -35,6 +35,11 @@ function mentionsHandle(text: string, handle: string): boolean {
   return new RegExp(`(^|[^A-Za-z0-9_])@${escaped}(?![A-Za-z0-9_])`, 'i').test(text);
 }
 
+// X strips the leading @target from tweetText on replies; the parser captures them as replyTo.
+function repliesToHandle(replyTo: string[], handle: string): boolean {
+  return replyTo.some((target) => isOwnAuthor(target, handle));
+}
+
 function onWatchlist(authorHandle: string, watchlist: string[]): boolean {
   const author = authorHandle.toLowerCase();
   return watchlist.some((entry) => entry.replace(/^@/, '').toLowerCase() === author);
@@ -50,7 +55,7 @@ function engagement(m: PrefilterPost['metrics']): number {
 }
 
 function mustFlagFor(post: PrefilterPost, rules: PrefilterRules): MustFlag | undefined {
-  if (mentionsHandle(post.text, rules.handle)) return 'mention';
+  if (mentionsHandle(post.text, rules.handle) || repliesToHandle(post.replyTo, rules.handle)) return 'mention';
   if (onWatchlist(post.authorHandle, rules.watchlist)) return 'watchlist';
   return undefined;
 }

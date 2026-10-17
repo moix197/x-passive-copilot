@@ -1,16 +1,54 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { CapturedPost, MustFlag, PolishInfo, PostBatchResult, PostListResponse, StoredPost } from '@xc/shared';
+import {
+  CapturedPostSchema,
+  type CapturedPost,
+  type MustFlag,
+  type PolishInfo,
+  type PostBatchResult,
+  type PostListResponse,
+  type StoredPost,
+} from '@xc/shared';
 import { parseViolations, type DraftKind, type DraftStatus } from './polish/drafts-store';
 import { checkReply, ruleNames } from './polish/guard';
 import { isOwnAuthor } from './triage/prefilter';
 
 const PRUNE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
+const PRUNABLE = 'SELECT status_id FROM posts WHERE captured_at < ? AND is_own = 0';
+const INGEST_COUNTER = { own: 'ingest:own', nonOwn: 'ingest:non_own' } as const;
 
+// Own posts are voice samples, so they outlive the prune window.
 export function prunePosts(db: DatabaseSync, now: number): void {
   const cutoff = now - PRUNE_AFTER_MS;
-  db.prepare('DELETE FROM drafts WHERE status_id IN (SELECT status_id FROM posts WHERE captured_at < ?)').run(cutoff);
-  db.prepare('DELETE FROM triage WHERE status_id IN (SELECT status_id FROM posts WHERE captured_at < ?)').run(cutoff);
-  db.prepare('DELETE FROM posts WHERE captured_at < ?').run(cutoff);
+  db.prepare(`DELETE FROM drafts WHERE status_id IN (${PRUNABLE})`).run(cutoff);
+  db.prepare(`DELETE FROM triage WHERE status_id IN (${PRUNABLE})`).run(cutoff);
+  db.prepare('DELETE FROM posts WHERE captured_at < ? AND is_own = 0').run(cutoff);
+}
+
+// Monotonic: digest buckets and voice regen must keep advancing after pruning shrinks the table.
+export function seedIngestCounters(db: DatabaseSync): void {
+  const seed = db.prepare('INSERT OR IGNORE INTO meta (key, value) SELECT ?, COUNT(*) FROM posts WHERE is_own = ?');
+  seed.run(INGEST_COUNTER.own, 1);
+  seed.run(INGEST_COUNTER.nonOwn, 0);
+}
+
+export function readIngestCount(db: DatabaseSync, kind: keyof typeof INGEST_COUNTER): number {
+  const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(INGEST_COUNTER[kind]) as { value: number } | undefined;
+  return row?.value ?? 0;
+}
+
+function bumpIngestCount(db: DatabaseSync, own: boolean): void {
+  db.prepare(
+    'INSERT INTO meta (key, value) VALUES (?, 1) ON CONFLICT(key) DO UPDATE SET value = value + 1',
+  ).run(own ? INGEST_COUNTER.own : INGEST_COUNTER.nonOwn);
+}
+
+function parseReplyTo(raw: string): string[] {
+  try {
+    const parsed = CapturedPostSchema.shape.replyTo.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
+  }
 }
 
 function updateMetrics(db: DatabaseSync, post: CapturedPost): boolean {
@@ -23,15 +61,17 @@ function updateMetrics(db: DatabaseSync, post: CapturedPost): boolean {
 
 function insertPost(db: DatabaseSync, post: CapturedPost, now: number, ownHandle: string): void {
   const m = post.metrics;
+  const own = isOwnAuthor(post.authorHandle, ownHandle);
   db.prepare(
     `INSERT INTO posts (status_id, author_name, author_handle, text, posted_at, replies, reposts,
-       likes, views, is_reply, quoted_status_id, captured_at, is_own)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       likes, views, is_reply, quoted_status_id, captured_at, is_own, reply_to)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     post.statusId, post.authorName, post.authorHandle, post.text, post.postedAt,
     m.replies, m.reposts, m.likes, m.views, post.isReply ? 1 : 0, post.quotedStatusId, now,
-    isOwnAuthor(post.authorHandle, ownHandle) ? 1 : 0,
+    own ? 1 : 0, JSON.stringify(post.replyTo),
   );
+  bumpIngestCount(db, own);
 }
 
 export function ingestPosts(
@@ -71,6 +111,7 @@ interface PostRow {
   likes: number;
   views: number;
   is_reply: number;
+  reply_to: string;
   quoted_status_id: string | null;
   captured_at: number;
   t_status_id: string | null;
@@ -136,6 +177,7 @@ function toStoredPost(row: PostRow, ctx: PolishContext): StoredPost {
     postedAt: row.posted_at,
     metrics: { replies: row.replies, reposts: row.reposts, likes: row.likes, views: row.views },
     isReply: row.is_reply === 1,
+    replyTo: parseReplyTo(row.reply_to),
     quotedStatusId: row.quoted_status_id,
     capturedAt: row.captured_at,
     triage: toTriage(row),

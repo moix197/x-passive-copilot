@@ -40,5 +40,10 @@ come from the localized `[role="group"][aria-label]`, parsed by keyword (EN + ES
 omitted parts = 0.
 
 **Unverified selectors:** no quote or reply samples were seen live. Quote = nested `div[role="link"]`
-containing both `User-Name` and `time` (link cards lack them). Reply = short header text starting with
-"Replying to" / "En respuesta a" (UI may be localized further). Re-check when samples appear.
+containing both `User-Name` and `time` (link cards lack them). Reply = header text (<= 300 chars,
+outside and not containing `tweetText`) starting with "Replying to" / "En respuesta a" (UI may be
+localized further); its `@handles` (read via `textContent`, deduped, max 10) become `replyTo`, because
+X strips the leading `@target` from reply text. Re-check when samples appear.
+
+**The user's handle never reaches the page:** the content script captures every reply target; matching
+against `config.handle` happens server-side (prefilter).

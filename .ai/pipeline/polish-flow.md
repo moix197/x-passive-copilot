@@ -17,7 +17,7 @@ job. generate -> `checkReply` -> on violations regenerate once with them listed 
 `needs_edit` (rule names stored). Failures store `error` (class only) and allow a manual retry.
 After each triage batch `auto-polish` takes posts with score >= `autoPolish.threshold` and no draft,
 best first, reserving a slot in `meta` (key `autoPolish:<local day>`); a failed job releases its
-slot and stops the loop. `dailyCap: 0` disables auto; manual Polish ignores the cap.
+slot and stops the loop; a candidate already in flight is skipped (slot released) instead. `dailyCap: 0` disables auto; manual Polish ignores the cap.
 
 **Why:** Claude subscription limits are shared with interactive use, hence the cap. Rows over the
 cap show a synthetic `cap_reached` status computed at list time (not stored).

@@ -31,8 +31,13 @@ tools.
 
 **Constraints it creates:** logs carry statusIds and error classes only. `models.triage` empty
 disables triage (posts stay pending). `context.md` (<= 8 KB, `<home>/context.md`) is read per batch.
-Reply-to-handle is not detectable (captured posts carry only `isReply`), so `mention` = text contains
-`@handle`.
+`mention` = text contains `@handle` OR `replyTo` (captured reply targets) contains `handle`,
+case-insensitive.
+
+**opencode sandbox config:** `tools` has `"*": false` plus explicit denies, `permission` has
+`"*": "deny"` plus explicit per-tool denies, `mcp: {}`. Global MCP servers merge in from the user's
+config, so `"*": false` (which also matches MCP tool names) is the real guard. Wildcard key support is
+unverified against a live opencode.
 
 **UNVERIFIED:** opencode was not installed when written. The event parser (`type: text` events with
 `part.text`, final `step_finish` with `part.reason != tool-calls`), the stdin prompt handling and the

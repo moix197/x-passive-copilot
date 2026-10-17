@@ -18,7 +18,10 @@ new own samples; failures keep the old profile and back off 10 minutes. `selectE
 <= 8 positives (feedback first, then most-engaged own posts of 20-280 chars, deduped) and <= 3
 negatives. Both go into the triage and polish prompts via `renderStyle` as delimited untrusted data.
 Feedback (`POST /v1/drafts/:id/feedback`) upserts one `examples` row per draft (latest wins); edited
-text is guard-checked first. Digest: bucket = floor(nonOwnCount / everyNPosts); the bucket is stored
+text is guard-checked first (422 on violations); copy/👍 of a draft that breaks the guard stores no
+example. Counts are monotonic `meta` counters (`ingest:non_own`, `ingest:own`), bumped per new insert
+and seeded from live rows on first open, because the 30-day prune shrinks `posts`; own posts are
+exempt from the prune (voice samples). Digest: bucket = floor(ingest:non_own / everyNPosts); the bucket is stored
 in `meta` before the model runs so a bucket never fires twice; unknown statusIds are dropped; failure
 keeps the previous digest and sets `digest:failed`. Idea polish reuses the polish service with a
 `idea-<digestId>-<n>` draft key and an empty guard source (any URL/@mention is a violation).

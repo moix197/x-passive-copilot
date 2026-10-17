@@ -59,26 +59,18 @@ export function renderPost(post: StoredPost): HTMLElement {
   return row;
 }
 
-export function mountPostsView(root: HTMLElement, options: PostsViewOptions): () => void {
-  const status = element('p', 'Loading...', 'status');
-  const list = document.createElement('div');
-  root.replaceChildren(status, list);
+/** Runs `task` now, every POLL_MS and on becoming visible; never overlaps, skips while hidden. */
+export function pollWhileVisible(task: () => Promise<void>): () => void {
   let busy = false;
-
   const refresh = async () => {
     if (busy || document.visibilityState !== 'visible') return;
     busy = true;
     try {
-      const posts = await options.load();
-      list.replaceChildren(...posts.map(options.render ?? renderPost));
-      status.textContent = posts.length ? '' : (options.emptyText ?? 'No posts captured yet.');
-    } catch {
-      status.textContent = 'Server offline.';
+      await task();
     } finally {
       busy = false;
     }
   };
-
   const onVisibility = () => void refresh();
   document.addEventListener('visibilitychange', onVisibility);
   const timer = setInterval(() => void refresh(), POLL_MS);
@@ -87,4 +79,19 @@ export function mountPostsView(root: HTMLElement, options: PostsViewOptions): ()
     clearInterval(timer);
     document.removeEventListener('visibilitychange', onVisibility);
   };
+}
+
+export function mountPostsView(root: HTMLElement, options: PostsViewOptions): () => void {
+  const status = element('p', 'Loading...', 'status');
+  const list = document.createElement('div');
+  root.replaceChildren(status, list);
+  return pollWhileVisible(async () => {
+    try {
+      const posts = await options.load();
+      list.replaceChildren(...posts.map(options.render ?? renderPost));
+      status.textContent = posts.length ? '' : (options.emptyText ?? 'No posts captured yet.');
+    } catch {
+      status.textContent = 'Server offline.';
+    }
+  });
 }

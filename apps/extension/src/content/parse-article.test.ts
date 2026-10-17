@@ -23,6 +23,7 @@ describe('parseArticle', () => {
       postedAt: '2026-10-17T10:00:00.000Z',
       metrics: { replies: 5, reposts: 10, likes: 120, views: 1200 },
       isReply: false,
+      replyTo: [],
       quotedStatusId: null,
     });
   });
@@ -53,6 +54,21 @@ describe('parseArticle', () => {
     expect(parseArticle(articleFrom(reply + AUTHOR + TEXT + METRICS))?.isReply).toBe(true);
     const es = '<div>En respuesta a @bob</div>';
     expect(parseArticle(articleFrom(es + AUTHOR + TEXT + METRICS))?.isReply).toBe(true);
+  });
+
+  it('captures reply-target handles from the reply context', () => {
+    const reply = '<div>Replying to <a href="/Bob"><span>@Bob</span></a> and <a href="/carol_x">@carol_x</a></div>';
+    expect(parseArticle(articleFrom(reply + AUTHOR + TEXT + METRICS))?.replyTo).toEqual(['Bob', 'carol_x']);
+    const es = '<div>En respuesta a <a href="/me">@me</a></div>';
+    expect(parseArticle(articleFrom(es + AUTHOR + TEXT + METRICS))?.replyTo).toEqual(['me']);
+  });
+
+  it('caps reply targets and ignores mentions in the body', () => {
+    const many = Array.from({ length: 12 }, (_, i) => `@user${i}`).join(' ');
+    const reply = `<div>Replying to ${many}</div>`;
+    expect(parseArticle(articleFrom(reply + AUTHOR + TEXT + METRICS))?.replyTo).toHaveLength(10);
+    const body = '<div data-testid="tweetText"><span>Replying to @someone</span></div>';
+    expect(parseArticle(articleFrom(AUTHOR + body + METRICS))?.replyTo).toEqual([]);
   });
 
   it('does not treat reply-like body text as a reply', () => {

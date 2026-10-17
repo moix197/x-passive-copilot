@@ -1,6 +1,5 @@
 import { DigestViewSchema, type DigestIdea, type DigestTrend, type DigestView } from '@xc/shared/types';
-import { renderDraftActions, type DraftCallbacks } from './draft-actions';
-import { copyButton } from './flagged-view';
+import { copyButton, copyText, renderDraftActions, type DraftCallbacks } from './draft-actions';
 import { element } from './posts-view';
 import { mountPolled } from './voice-tab';
 
@@ -63,7 +62,7 @@ function renderIdea(idea: DigestIdea, handlers: DigestHandlers): HTMLElement {
   const row = document.createElement('article');
   row.className = 'post';
   row.dataset.testid = 'digest-idea';
-  row.append(element('p', idea.text, 'flag-draft'), element('div', idea.feature, 'post-tags'), copyButton(idea.text));
+  row.append(element('p', idea.text, 'flag-draft'), element('div', idea.feature, 'post-tags'), copyButton(idea.text, copyText));
   row.append(...polishPart(idea, handlers));
   return row;
 }

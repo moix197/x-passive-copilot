@@ -1,6 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { seedIngestCounters } from './posts';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS posts (
@@ -17,7 +18,8 @@ CREATE TABLE IF NOT EXISTS posts (
   is_reply INTEGER NOT NULL,
   quoted_status_id TEXT,
   captured_at INTEGER NOT NULL,
-  is_own INTEGER NOT NULL DEFAULT 0
+  is_own INTEGER NOT NULL DEFAULT 0,
+  reply_to TEXT NOT NULL DEFAULT '[]'
 );
 CREATE TABLE IF NOT EXISTS triage (
   status_id TEXT PRIMARY KEY,
@@ -70,6 +72,9 @@ function addMissingColumns(db: DatabaseSync): void {
   if (!columns.some((c) => c.name === 'is_own')) {
     db.exec('ALTER TABLE posts ADD COLUMN is_own INTEGER NOT NULL DEFAULT 0');
   }
+  if (!columns.some((c) => c.name === 'reply_to')) {
+    db.exec("ALTER TABLE posts ADD COLUMN reply_to TEXT NOT NULL DEFAULT '[]'");
+  }
 }
 
 export function openDb(home: string): DatabaseSync {
@@ -78,5 +83,6 @@ export function openDb(home: string): DatabaseSync {
   db.exec('PRAGMA journal_mode = WAL');
   db.exec(SCHEMA);
   addMissingColumns(db);
+  seedIngestCounters(db);
   return db;
 }

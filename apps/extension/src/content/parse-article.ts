@@ -1,6 +1,6 @@
 import type { CapturedPost } from '@xc/shared/types';
 import { parseMetrics } from './parse-metrics';
-import { REPLY_PREFIX, SEL } from './selectors';
+import { MAX_REPLY_TO, REPLY_CONTEXT_MAX_CHARS, REPLY_HANDLE, REPLY_PREFIX, SEL } from './selectors';
 
 const STATUS_PATH = /^\/([A-Za-z0-9_]{1,15})\/status\/(\d+)/;
 
@@ -29,7 +29,7 @@ function readStatusPath(anchor: Element | null | undefined): { handle: string; s
 }
 
 function readAuthorName(article: Element): string {
-  const name = ownMatch(article, SEL.userName)?.querySelector('a')?.textContent ?? '';
+  const name = ownMatch(article, SEL.userName)?.querySelector(SEL.userNameLink)?.textContent ?? '';
   return name.trim().slice(0, 200);
 }
 
@@ -42,11 +42,21 @@ function readQuotedStatusId(article: Element): string | null {
   return readStatusPath(quote?.querySelector(SEL.statusLink))?.statusId ?? null;
 }
 
-function isReply(article: Element): boolean {
-  return ownElements(article, SEL.replyCandidate).some((el) => {
+function isOutsideTweetText(el: Element): boolean {
+  return !el.closest(SEL.tweetText) && !el.querySelector(SEL.tweetText);
+}
+
+function readReplyContext(article: Element): string | null {
+  for (const el of ownElements(article, SEL.replyCandidate)) {
     const text = (el.textContent ?? '').trim();
-    return text.length <= 80 && REPLY_PREFIX.test(text) && !el.closest(SEL.tweetText);
-  });
+    if (text.length <= REPLY_CONTEXT_MAX_CHARS && REPLY_PREFIX.test(text) && isOutsideTweetText(el)) return text;
+  }
+  return null;
+}
+
+function readReplyTargets(context: string): string[] {
+  const handles = Array.from(context.matchAll(REPLY_HANDLE), (m) => m[1] ?? '');
+  return [...new Set(handles)].slice(0, MAX_REPLY_TO);
 }
 
 export function parseArticle(article: Element): CapturedPost | null {
@@ -54,6 +64,7 @@ export function parseArticle(article: Element): CapturedPost | null {
   const link = readStatusPath(time?.closest('a'));
   if (!time || !link) return null;
   const label = ownMatch(article, SEL.metrics)?.getAttribute('aria-label') ?? '';
+  const replyContext = readReplyContext(article);
   return {
     statusId: link.statusId,
     authorName: readAuthorName(article),
@@ -61,7 +72,8 @@ export function parseArticle(article: Element): CapturedPost | null {
     text: readText(article),
     postedAt: time.getAttribute('datetime')?.slice(0, 40) ?? null,
     metrics: parseMetrics(label),
-    isReply: isReply(article),
+    isReply: replyContext !== null,
+    replyTo: replyContext ? readReplyTargets(replyContext) : [],
     quotedStatusId: readQuotedStatusId(article),
   };
 }

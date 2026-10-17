@@ -4,13 +4,13 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defaultConfig, err, ok } from '@xc/shared';
 import { openDb } from '../db';
-import { ingestPosts } from '../posts';
+import { ingestPosts, prunePosts, readIngestCount } from '../posts';
 import { bucketToRun, createDigestService, getIdea, readDigestView, sanitizeDigest } from './digest';
 
 const metrics = { replies: 0, reposts: 0, likes: 0, views: 0 };
 const post = (n: number, handle: string) => ({
   statusId: String(n), authorName: 'A', authorHandle: handle, text: `post ${n}`, postedAt: null, metrics,
-  isReply: false, quotedStatusId: null,
+  isReply: false, replyTo: [], quotedStatusId: null,
 });
 const config = () => ({ ...defaultConfig(), handle: 'me', models: { triage: 'm', final: '' } });
 const reply = (ids: string[]) =>
@@ -64,6 +64,26 @@ describe('digest service', () => {
     addPosts(db, 51, 100);
     await service.run();
     expect(calls).toBe(2);
+  });
+
+  it('keeps firing after the 30-day prune shrinks the table; own posts survive the prune', async () => {
+    const db = freshDb();
+    let calls = 0;
+    const service = createDigestService(db, config(), async () => {
+      calls += 1;
+      return ok(reply(['1']));
+    }, () => '');
+    addPosts(db, 1, 50);
+    addPosts(db, 500, 504, 'me');
+    await service.run();
+    prunePosts(db, 31 * 24 * 3600_000);
+    const left = db.prepare('SELECT is_own, COUNT(*) AS n FROM posts GROUP BY is_own').all();
+    expect(left).toEqual([{ is_own: 1, n: 5 }]);
+    addPosts(db, 51, 100);
+    await service.run();
+    expect(calls).toBe(2);
+    expect(readIngestCount(db, 'nonOwn')).toBe(100);
+    expect(readIngestCount(db, 'own')).toBe(5);
   });
 
   it('keeps the previous digest and sets the failed flag when generation fails', async () => {

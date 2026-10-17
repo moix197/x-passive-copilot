@@ -1,7 +1,5 @@
 import { VoiceViewSchema, type VoiceView } from '@xc/shared/types';
-import { element } from './posts-view';
-
-const POLL_MS = 3000;
+import { element, pollWhileVisible } from './posts-view';
 
 export function mountPolled<T>(
   root: HTMLElement,
@@ -12,28 +10,15 @@ export function mountPolled<T>(
   const status = element('p', 'Loading...', 'status');
   const body = document.createElement('div');
   root.replaceChildren(status, body);
-  let busy = false;
-  const refresh = async () => {
-    if (busy || document.visibilityState !== 'visible') return;
-    busy = true;
+  return pollWhileVisible(async () => {
     try {
       const data = await load();
       if (!shouldSkip()) body.replaceChildren(...render(data));
       status.textContent = '';
     } catch {
       status.textContent = 'Server offline.';
-    } finally {
-      busy = false;
     }
-  };
-  const onVisibility = () => void refresh();
-  document.addEventListener('visibilitychange', onVisibility);
-  const timer = setInterval(() => void refresh(), POLL_MS);
-  void refresh();
-  return () => {
-    clearInterval(timer);
-    document.removeEventListener('visibilitychange', onVisibility);
-  };
+  });
 }
 
 function list(items: string[], className: string): HTMLElement {

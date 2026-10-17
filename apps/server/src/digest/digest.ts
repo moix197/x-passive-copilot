@@ -17,6 +17,7 @@ import { extractJson } from '../llm/opencode';
 import { log } from '../log';
 import { parseViolations } from '../polish/drafts-store';
 import { ideaDraftKey, type Idea } from '../polish/polish';
+import { readIngestCount } from '../posts';
 import { dataJson } from '../triage/prompts';
 import { errorClass, withRetry } from '../triage/retry';
 import type { RunModel } from '../voice/voice';
@@ -106,11 +107,6 @@ function recentPosts(db: DatabaseSync): DigestPost[] {
     .prepare('SELECT status_id, author_handle, text FROM posts WHERE is_own = 0 ORDER BY seq DESC LIMIT ?')
     .all(POST_LIMIT) as unknown as { status_id: string; author_handle: string; text: string }[];
   return rows.map((r) => ({ statusId: r.status_id, author: r.author_handle, text: r.text.slice(0, POST_CHARS) }));
-}
-
-function countNonOwnPosts(db: DatabaseSync): number {
-  const row = db.prepare('SELECT COUNT(*) AS n FROM posts WHERE is_own = 0').get() as unknown as { n: number };
-  return row.n;
 }
 
 function getMeta(db: DatabaseSync, key: string): number {
@@ -214,7 +210,7 @@ export function createDigestService(
 
   async function run(): Promise<void> {
     if (running || !config.models.triage) return;
-    const bucket = bucketToRun(countNonOwnPosts(db), config.digest.everyNPosts, getMeta(db, META_BUCKET));
+    const bucket = bucketToRun(readIngestCount(db, 'nonOwn'), config.digest.everyNPosts, getMeta(db, META_BUCKET));
     if (bucket === null) return;
     running = true;
     setMeta(db, META_BUCKET, bucket);

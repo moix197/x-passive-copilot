@@ -58,6 +58,18 @@ describe('foreign URLs and mentions', () => {
     expect(rules('ping @someone', 'no mentions')).toEqual(['foreign-mention']);
   });
 
+  it('detects bare domains as URLs, but not code names or emails', () => {
+    expect(rules('try foo.app today', 'no links')).toEqual(['foreign-url']);
+    expect(rules('see x.co/abc.', 'no links')).toEqual(['foreign-url']);
+    expect(rules('built on Node.js, mail me@site.io', 'no links @me')).toEqual([]);
+    expect(replyLength('foo.app')).toBe(23);
+  });
+
+  it('matches source URLs ignoring scheme and trailing punctuation', () => {
+    expect(rules('see https://x.co/abc!', 'link: x.co/abc')).toEqual([]);
+    expect(rules('see (https://site.io/a).', 'read https://site.io/a')).toEqual([]);
+  });
+
   it('allows the ones in the source, case-insensitively', () => {
     const source = 'read https://site.example/a.  cc @Builder';
     expect(rules('good read https://site.example/a, thanks @builder', source)).toEqual([]);

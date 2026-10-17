@@ -1,8 +1,10 @@
 // The fixture is derived from opencode's documented `run --format json` shape, NOT recorded from a
 // live install (opencode was unavailable). Re-record with a real run and re-check these tests.
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { ensureOpencodeSandbox } from '../sandbox';
 import { extractJson, parseOpencodeEvents, parseTriageReply } from './opencode';
 
 const sample = readFileSync(join(import.meta.dirname, '../../../../fixtures/opencode-run.jsonl'), 'utf8');
@@ -12,6 +14,19 @@ const item = (statusId: string, extra: object = {}) => ({
 });
 const events = (...lines: object[]) => lines.map((l) => JSON.stringify(l)).join('\n');
 const finish = { type: 'step_finish', part: { reason: 'stop' } };
+
+describe('ensureOpencodeSandbox', () => {
+  it('writes a deny-all opencode config with no MCP servers', () => {
+    const dir = ensureOpencodeSandbox(mkdtempSync(join(tmpdir(), 'xc-sandbox-')));
+    const config = JSON.parse(readFileSync(join(dir, 'opencode.json'), 'utf8'));
+    expect(config.tools['*']).toBe(false);
+    expect(Object.values(config.tools).every((v) => v === false)).toBe(true);
+    expect(config.tools).toMatchObject({ bash: false, read: false, webfetch: false, task: false });
+    expect(config.permission['*']).toBe('deny');
+    expect(Object.values(config.permission).every((v) => v === 'deny')).toBe(true);
+    expect(config.mcp).toEqual({});
+  });
+});
 
 describe('parseOpencodeEvents', () => {
   it('extracts the final text from the sample', () => {

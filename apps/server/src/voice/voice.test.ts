@@ -12,7 +12,7 @@ const freshDb = () => openDb(mkdtempSync(join(tmpdir(), 'xc-voice-')));
 const metrics = { replies: 0, reposts: 0, likes: 0, views: 0 };
 const post = (statusId: string, text: string) => ({
   statusId, authorName: 'A', authorHandle: 'someone', text, postedAt: null, metrics,
-  isReply: false, quotedStatusId: null,
+  isReply: false, replyTo: [], quotedStatusId: null,
 });
 
 describe('shouldRegenerate', () => {
@@ -56,6 +56,16 @@ describe('recordFeedback', () => {
     const bad = recordFeedback(db, '100', { kind: 'edit', text: 'to the moon, #a #b' }, 1);
     expect(bad).toMatchObject({ ok: false, status: 422 });
     expect(listFeedbackExamples(db).positives).toEqual([]);
+  });
+
+  it('copy or up on a draft that breaks the guard stores no positive example', () => {
+    const db = freshDb();
+    seedDraft(db, 'to the moon, #a #b');
+    expect(recordFeedback(db, '100', { kind: 'copy' }, 1).ok).toBe(true);
+    expect(recordFeedback(db, '100', { kind: 'up' }, 2).ok).toBe(true);
+    expect(listFeedbackExamples(db).positives).toEqual([]);
+    expect(recordFeedback(db, '100', { kind: 'down' }, 3).ok).toBe(true);
+    expect(listFeedbackExamples(db).negatives).toEqual(['to the moon, #a #b']);
   });
 
   it('404s for an unknown draft', () => {
