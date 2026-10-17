@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AppConfig } from '@xc/shared';
 import { openDb } from './db';
+import { createDigestService, getIdea, readDigestView } from './digest/digest';
 import { createDoctor } from './doctor';
 import { log } from './log';
 import { killAllChildren } from './llm/run-cli';
@@ -10,6 +11,7 @@ import { clearStalePolishing } from './polish/drafts-store';
 import { claudeGenerate, createPolishService } from './polish/polish';
 import { prunePosts } from './posts';
 import { createRouter } from './router';
+import { createVoiceService, loadStyle, opencodeModel, readVoiceView } from './voice/voice';
 import { createTriageService, opencodeClassify } from './triage/triage';
 
 export interface AppOptions {
@@ -38,14 +40,31 @@ export async function startApp({ home, port, token, config }: AppOptions): Promi
   const db = openDb(home);
   prunePosts(db, Date.now());
   clearStalePolishing(db);
-  const polish = createPolishService(db, config, claudeGenerate(config));
+  const style = () => loadStyle(db);
+  const model = opencodeModel(config, home);
+  const polish = createPolishService(db, config, claudeGenerate(config, style));
+  const voice = createVoiceService(db, config, model);
+  const digest = createDigestService(db, config, model);
   const autoPolish = createAutoPolish(db, config, polish);
-  const triage = createTriageService(db, config, opencodeClassify(config, home), Date.now, () => void autoPolish.run());
+  const triage = createTriageService(db, config, opencodeClassify(config, home, style), Date.now, () => void autoPolish.run());
   if (!config.models.triage) log('triage disabled: set models.triage in config.json');
   triage.notify();
+  voice.notify();
+  digest.notify();
   const hooks = {
-    onIngest: triage.notify,
+    onIngest: () => {
+      triage.notify();
+      voice.notify();
+      digest.notify();
+    },
     onPolish: (statusId: string) => polish.request(statusId, 'manual').state,
+    onIdeaPolish: (ideaId: string) => {
+      const idea = getIdea(db, ideaId);
+      return idea ? polish.requestIdea(ideaId, idea).state : 'unknown';
+    },
+    voiceView: () => readVoiceView(db, config),
+    digestView: () => readDigestView(db),
+    ownHandle: config.handle,
     polishContext: () => ({
       threshold: config.autoPolish.threshold,
       capReached: config.autoPolish.dailyCap > 0 && remainingSlots(db, config.autoPolish.dailyCap, Date.now()) === 0,

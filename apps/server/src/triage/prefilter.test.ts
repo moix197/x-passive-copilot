@@ -13,6 +13,11 @@ const post = (over: Partial<Parameters<typeof prefilter>[0]> = {}) => ({
 });
 
 describe('prefilter', () => {
+  it('never triages own posts, case-insensitively, even when they mention the handle', () => {
+    const own = post({ authorHandle: 'MYHANDLE', text: 'note to @MyHandle' });
+    expect(prefilter(own, rules, NOW)).toEqual({ action: 'skip', reason: 'own post' });
+  });
+
   it('triages a fresh engaged post', () => {
     expect(prefilter(post(), rules, NOW)).toEqual({ action: 'triage' });
   });

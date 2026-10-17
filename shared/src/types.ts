@@ -133,3 +133,56 @@ export type DoctorCheck = z.infer<typeof DoctorCheckSchema>;
 
 export const DoctorReportSchema = z.object({ checks: z.array(DoctorCheckSchema).max(20) });
 export type DoctorReport = z.infer<typeof DoctorReportSchema>;
+
+export const VoiceProfileSchema = z.object({
+  tone: z.string().max(300),
+  length: z.string().max(200),
+  vocabulary: z.string().max(300),
+  dos: z.array(z.string().max(200)).max(8),
+  donts: z.array(z.string().max(200)).max(8),
+});
+export type VoiceProfile = z.infer<typeof VoiceProfileSchema>;
+
+export const VoiceViewSchema = z.object({
+  profile: VoiceProfileSchema.nullable(),
+  sampleCount: z.number().int().nonnegative(),
+  minSamples: z.number().int().positive(),
+  failed: z.boolean(),
+  examples: z.object({ positive: z.array(z.string()), negative: z.array(z.string()) }),
+});
+export type VoiceView = z.infer<typeof VoiceViewSchema>;
+
+export const FeedbackRequestSchema = z
+  .object({
+    kind: z.enum(['copy', 'edit', 'up', 'down']),
+    text: z.string().min(1).max(1000).optional(),
+  })
+  .refine((v) => v.kind !== 'edit' || v.text !== undefined, { message: 'edit needs text' });
+export type FeedbackRequest = z.infer<typeof FeedbackRequestSchema>;
+
+export const DigestTrendSchema = z.object({
+  title: z.string().max(120),
+  summary: z.string().max(400),
+  statusIds: z.array(z.string().regex(/^\d+$/)).max(10),
+});
+export type DigestTrend = z.infer<typeof DigestTrendSchema>;
+
+export const DigestIdeaSchema = z.object({
+  id: z.string().regex(/^\d{1,9}-\d$/),
+  text: z.string().max(280),
+  feature: z.string().max(120),
+  polish: PolishInfoSchema.nullable(),
+});
+export type DigestIdea = z.infer<typeof DigestIdeaSchema>;
+
+export const DigestViewSchema = z.object({
+  digest: z
+    .object({
+      createdAt: z.number().int().nonnegative(),
+      trends: z.array(DigestTrendSchema).max(5),
+      ideas: z.array(DigestIdeaSchema).max(3),
+    })
+    .nullable(),
+  failed: z.boolean(),
+});
+export type DigestView = z.infer<typeof DigestViewSchema>;

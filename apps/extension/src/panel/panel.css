@@ -137,3 +137,35 @@ header h1 {
   color: #0f1419;
   overflow-wrap: anywhere;
 }
+.draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0;
+}
+.draft-actions textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 13px;
+}
+.voice {
+  padding: 8px 16px;
+}
+.voice-title {
+  margin: 8px 16px 4px;
+  font-size: 14px;
+}
+.voice .voice-title {
+  margin: 0 0 4px;
+}
+.voice-sub {
+  margin: 8px 0 2px;
+  font-size: 13px;
+}
+.voice-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}

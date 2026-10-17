@@ -6,7 +6,8 @@ import { type AppConfig, type MustFlag, type Result, type StoredPost } from '@xc
 import { parseTriageReply, runOpencode, type TriageReply } from '../llm/opencode';
 import { listUntriagedPosts } from '../posts';
 import { prefilter, rulesFromConfig } from './prefilter';
-import { buildTriagePrompt } from './prompts';
+import type { Style } from '../voice/select-examples';
+import { buildTriagePrompt, NO_STYLE } from './prompts';
 import { errorClass, withRetry } from './retry';
 import { saveError, saveResult, saveSkipped } from './triage-store';
 
@@ -22,9 +23,9 @@ export function readContext(home: string): string {
   }
 }
 
-export function opencodeClassify(config: AppConfig, home: string): Classify {
+export function opencodeClassify(config: AppConfig, home: string, style: () => Style = () => NO_STYLE): Classify {
   return async (posts, mustFlag) => {
-    const prompt = buildTriagePrompt(readContext(home), posts, mustFlag);
+    const prompt = buildTriagePrompt(readContext(home), posts, mustFlag, style());
     const reply = await runOpencode(prompt, config.models.triage, home);
     if (!reply.ok) return reply;
     return parseTriageReply(reply.value, new Set(posts.map((p) => p.statusId)));

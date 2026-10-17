@@ -24,6 +24,11 @@ export function rulesFromConfig(config: AppConfig): PrefilterRules {
   };
 }
 
+export function isOwnAuthor(authorHandle: string, handle: string): boolean {
+  const own = handle.replace(/^@/, '').toLowerCase();
+  return own !== '' && authorHandle.toLowerCase() === own;
+}
+
 function mentionsHandle(text: string, handle: string): boolean {
   const escaped = handle.replace(/[^A-Za-z0-9_]/g, '');
   if (!escaped) return false;
@@ -51,6 +56,7 @@ function mustFlagFor(post: PrefilterPost, rules: PrefilterRules): MustFlag | und
 }
 
 export function prefilter(post: PrefilterPost, rules: PrefilterRules, now: number): PrefilterResult {
+  if (isOwnAuthor(post.authorHandle, rules.handle)) return { action: 'skip', reason: 'own post' };
   const mustFlag = mustFlagFor(post, rules);
   if (mustFlag) return { action: 'triage', mustFlag };
   const age = ageHours(post.postedAt, now);

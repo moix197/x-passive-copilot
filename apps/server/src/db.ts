@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS posts (
   views INTEGER NOT NULL,
   is_reply INTEGER NOT NULL,
   quoted_status_id TEXT,
-  captured_at INTEGER NOT NULL
+  captured_at INTEGER NOT NULL,
+  is_own INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS triage (
   status_id TEXT PRIMARY KEY,
@@ -41,12 +42,41 @@ CREATE TABLE IF NOT EXISTS drafts (
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS voice (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  profile TEXT,
+  sample_count INTEGER NOT NULL,
+  failed INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS examples (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  draft_id TEXT NOT NULL UNIQUE,
+  text TEXT NOT NULL,
+  polarity TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS digests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bucket INTEGER NOT NULL UNIQUE,
+  trends TEXT NOT NULL,
+  ideas TEXT NOT NULL,
+  created_at INTEGER NOT NULL
 )`;
+
+function addMissingColumns(db: DatabaseSync): void {
+  const columns = db.prepare('PRAGMA table_info(posts)').all() as unknown as { name: string }[];
+  if (!columns.some((c) => c.name === 'is_own')) {
+    db.exec('ALTER TABLE posts ADD COLUMN is_own INTEGER NOT NULL DEFAULT 0');
+  }
+}
 
 export function openDb(home: string): DatabaseSync {
   mkdirSync(home, { recursive: true });
   const db = new DatabaseSync(join(home, 'posts.db'));
   db.exec('PRAGMA journal_mode = WAL');
   db.exec(SCHEMA);
+  addMissingColumns(db);
   return db;
 }

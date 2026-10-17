@@ -2,6 +2,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { CapturedPost, MustFlag, PolishInfo, PostBatchResult, PostListResponse, StoredPost } from '@xc/shared';
 import { parseViolations, type DraftKind, type DraftStatus } from './polish/drafts-store';
 import { checkReply, ruleNames } from './polish/guard';
+import { isOwnAuthor } from './triage/prefilter';
 
 const PRUNE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -20,19 +21,25 @@ function updateMetrics(db: DatabaseSync, post: CapturedPost): boolean {
   return Number(result.changes) > 0;
 }
 
-function insertPost(db: DatabaseSync, post: CapturedPost, now: number): void {
+function insertPost(db: DatabaseSync, post: CapturedPost, now: number, ownHandle: string): void {
   const m = post.metrics;
   db.prepare(
     `INSERT INTO posts (status_id, author_name, author_handle, text, posted_at, replies, reposts,
-       likes, views, is_reply, quoted_status_id, captured_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       likes, views, is_reply, quoted_status_id, captured_at, is_own)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     post.statusId, post.authorName, post.authorHandle, post.text, post.postedAt,
     m.replies, m.reposts, m.likes, m.views, post.isReply ? 1 : 0, post.quotedStatusId, now,
+    isOwnAuthor(post.authorHandle, ownHandle) ? 1 : 0,
   );
 }
 
-export function ingestPosts(db: DatabaseSync, posts: CapturedPost[], now: number): PostBatchResult {
+export function ingestPosts(
+  db: DatabaseSync,
+  posts: CapturedPost[],
+  now: number,
+  ownHandle: string,
+): PostBatchResult {
   const result: PostBatchResult = { accepted: 0, duplicates: 0 };
   db.exec('BEGIN');
   try {
@@ -40,7 +47,7 @@ export function ingestPosts(db: DatabaseSync, posts: CapturedPost[], now: number
       if (updateMetrics(db, post)) {
         result.duplicates += 1;
       } else {
-        insertPost(db, post, now);
+        insertPost(db, post, now, ownHandle);
         result.accepted += 1;
       }
     }
