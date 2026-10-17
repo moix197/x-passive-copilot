@@ -7,9 +7,10 @@ export interface Violation {
 }
 
 // Bare domains need a known TLD so code names like Node.js are not taken for links.
+// TLDs that double as file extensions or words (.sh, .so, .in, .cc, ...) are left out so install.sh is not a link.
 const BARE_TLDS =
-  'com|net|org|io|co|app|dev|xyz|ai|gg|me|so|sh|fun|lol|tv|us|uk|ly|to|fm|in|de|es|fr|info|biz|site|' +
-  'online|tech|link|page|cc|eu|ca|pro|club|live|news|blog|shop|store|finance|money|exchange|network|wtf|vip';
+  'com|net|org|io|co|app|dev|xyz|ai|gg|fun|lol|tv|us|uk|ly|fm|de|es|fr|info|biz|site|' +
+  'online|tech|link|page|eu|ca|pro|club|live|news|blog|shop|store|finance|money|exchange|network|wtf|vip';
 const URL_PATTERN = new RegExp(
   String.raw`https?://[^\s]+|(?<![\w@./-])(?:[a-z0-9-]+\.)+(?:${BARE_TLDS})(?![\w-])(?:/[^\s]*)?`,
   'gi',

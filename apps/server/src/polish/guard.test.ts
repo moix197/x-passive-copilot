@@ -65,6 +65,13 @@ describe('foreign URLs and mentions', () => {
     expect(replyLength('foo.app')).toBe(23);
   });
 
+  it('does not treat script filenames as bare domains', () => {
+    expect(rules('run install.sh', 'no links')).toEqual([]);
+    expect(rules('see setup.sh', 'no links')).toEqual([]);
+    expect(rules('build main.cc and lib.so', 'no links')).toEqual([]);
+    expect(rules('try example.com', 'no links')).toEqual(['foreign-url']);
+  });
+
   it('matches source URLs ignoring scheme and trailing punctuation', () => {
     expect(rules('see https://x.co/abc!', 'link: x.co/abc')).toEqual([]);
     expect(rules('see (https://site.io/a).', 'read https://site.io/a')).toEqual([]);
