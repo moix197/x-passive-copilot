@@ -1,0 +1,26 @@
+{
+  "name": "x-passive-copilot",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p apps/server --noEmit && tsc -p apps/extension --noEmit && tsc -p shared --noEmit",
+    "test:unit": "vitest run",
+    "test:e2e": "pnpm build && playwright test",
+    "dev:server": "tsx apps/server/src/main.ts --dev",
+    "check": "pnpm typecheck && pnpm test:unit && pnpm build"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/chrome": "^0.3.5",
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5",
+    "zod": "^4.6.7"
+  }
+}

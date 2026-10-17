@@ -6,4 +6,4 @@ Read protocol: pick the domain(s) matching your task, open that domain's `index.
 
 | Domain | Scope | Active entries |
 | --- | --- | --- |
-| [tooling](tooling/index.md) | Dev tooling, agent workflow, knowledge base mechanics | 2 |
+| [tooling](tooling/index.md) | Dev tooling, agent workflow, knowledge base mechanics | 3 |

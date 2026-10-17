@@ -1,0 +1,48 @@
+# X passive copilot
+
+Chrome side-panel copilot for x.com. It only reads posts you already loaded, sends them to a local
+server, and helps you find posts worth replying to. You copy and post by hand.
+
+## Prerequisites
+
+- Windows, Node 22, pnpm
+- Chrome (load the extension unpacked)
+
+## Scripts
+
+| Script | What it does |
+| --- | --- |
+| `pnpm build` | Bundles the extension into `apps/extension/dist` (esbuild) |
+| `pnpm typecheck` | `tsc` over server, extension, shared |
+| `pnpm test:unit` | vitest (passes with no tests) |
+| `pnpm test:e2e [spec]` | Build, then Playwright |
+| `pnpm dev:server` | Runs the server with tsx on `127.0.0.1:7457` (`--dev --port N --home DIR`) |
+| `pnpm check` | typecheck + test:unit + build |
+
+## First run
+
+1. `pnpm install`
+2. `pnpm build`
+3. Chrome -> `chrome://extensions` -> Developer mode -> Load unpacked -> `apps/extension/dist`
+4. `pnpm dev:server`, then `curl 127.0.0.1:7457/v1/health`
+5. Click the extension icon to open the side panel.
+
+Config lives in `<home>/config.json` (default home `~/.x-passive-copilot`); missing file means defaults.
+
+## v1 trade-offs
+
+This is an internal, personal-use v1 that optimizes for speed and cost. It intentionally deviates
+from CLAUDE.md:
+
+- **Few packages:** `apps/server`, `apps/extension`, `shared/` (types + zod schemas + small
+  helpers). No `packages/*` split, no dependency-direction checker.
+- **Light tests:** unit tests for pure parsers/guard/prefilter; one Playwright smoke test. Not
+  e2e-per-feature; no `@covers` maps; no e2e-regression runs per phase. No lint.
+- **No per-phase code review.** One review of the whole change at the end.
+- **Deferred (not built in v1):** `check-deps` script, Host/Origin/DNS-rebinding checks, persistent
+  job queue (simple in-memory retry instead), claude-haiku fallback chain, idle-RSS measurement,
+  exhaustive edge-case tests, Chromium-registry native-host e2e (manual check instead), passivity
+  e2e spec (replaced by grep check + manual live check), per-package READMEs, forward/backward
+  migration rigor, Telegram, multi-user.
+- **Kept:** passivity invariants, untrusted-tweet containment (stdin only, `shell:false`,
+  zod-parsed output, `textContent` rendering), 127.0.0.1 bind + per-launch token, hard-rule guard.

@@ -1,0 +1,1 @@
+{ "name": "@xc/server", "private": true, "type": "module", "dependencies": { "@xc/shared": "workspace:*" } }

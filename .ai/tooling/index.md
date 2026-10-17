@@ -10,5 +10,6 @@ scope: Dev tooling, agent workflow, knowledge base mechanics
 | Entry | Type | Summary | Tags | Paths |
 | --- | --- | --- | --- | --- |
 | [knowledge-base-layout](knowledge-base-layout.md) | decision | .ai/ is atomic one-question entries in domain folders with script-generated indexes; no monolithic docs, no type-keyed folders | knowledge-base, rag, agent-workflow | `.ai/**` |
+| [lean-v1-scaffold](lean-v1-scaffold.md) | decision | v1 is a lean pnpm workspace (server, extension, shared) run with tsx and bundled with esbuild; lint, check-deps and per-feature e2e are deliberately deferred | scaffold, v1, pnpm, esbuild, tsx | `scripts/build.mjs`, `shared/src/**`, `apps/**` |
 | [testing-strategy](testing-strategy.md) | decision | Features are proven end to end; unit tests only for small pure functions; every change runs the e2e specs whose @covers match its diff | testing, e2e, regression, agent-workflow |  |
 <!-- entries:end -->

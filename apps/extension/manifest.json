@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "X passive copilot",
+  "version": "0.1.0",
+  "description": "Reads posts you already loaded on x.com and helps you find ones worth replying to.",
+  "permissions": ["sidePanel", "storage"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": { "service_worker": "sw.js", "type": "module" },
+  "action": { "default_title": "X passive copilot" },
+  "side_panel": { "default_path": "panel.html" }
+}

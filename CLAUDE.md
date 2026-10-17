@@ -59,9 +59,9 @@ When implementing a feature:
 
 **Commands** (fill in per project; `execute-prd` and the plans use these names):
 
-- `pnpm test:e2e [spec…]` — end-to-end suite, or only the given specs. TODO
-- `pnpm test:unit` — unit tests. TODO
-- `pnpm check` — typecheck + lint + unit tests + build: the single gate. TODO
+- `pnpm test:e2e [spec…]` — builds, then runs the end-to-end suite (or only the given specs).
+- `pnpm test:unit` — unit tests (vitest).
+- `pnpm check` — typecheck + unit tests + build: the single gate (no lint in v1).
 
 **Strategy: end-to-end first.**
 
