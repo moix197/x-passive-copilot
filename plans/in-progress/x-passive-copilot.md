@@ -127,10 +127,10 @@ TS, no build step); `esbuild` (extension bundles); `vitest` (path aliases/extens
 
 **Steps:**
 
-- [ ] Workspace, tsconfig, scripts, vitest/playwright config
-- [ ] `shared/` types + config loader; server health endpoint; extension shell; esbuild script
-- [ ] README with v1 trade-offs; fill CLAUDE.md test commands
-- [ ] `.ai/tooling/lean-v1-scaffold` entry (decision: why lean, what was deferred)
+- [x] Workspace, tsconfig, scripts, vitest/playwright config
+- [x] `shared/` types + config loader; server health endpoint; extension shell; esbuild script
+- [x] README with v1 trade-offs; fill CLAUDE.md test commands
+- [x] `.ai/tooling/lean-v1-scaffold` entry (decision: why lean, what was deferred)
 
 **Tests:**
 
@@ -139,14 +139,14 @@ test that exercises the scaffold end to end.
 
 **Verification:**
 
-- [ ] `pnpm check` passes
-- [ ] `pnpm dev:server` then `curl 127.0.0.1:7457/v1/health` returns ok
+- [x] `pnpm check` passes
+- [x] `pnpm dev:server` then `curl 127.0.0.1:7457/v1/health` returns ok
 
 **Phase checklist:**
 
-- [ ] Steps and Verification ticked in this file
-- [ ] Changes committed: `chore: scaffold lean pnpm workspace (server, extension, shared)`
-- [ ] Phase marked complete
+- [x] Steps and Verification ticked in this file
+- [x] Changes committed: `chore: scaffold lean pnpm workspace (server, extension, shared)`
+- [x] Phase marked complete
 
 ---
 
