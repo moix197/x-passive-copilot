@@ -212,6 +212,25 @@ h1 {
   font-size: 13px;
   color: var(--muted);
 }
+.post-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.view-on-x {
+  flex: none;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.view-on-x:hover {
+  background: var(--surface-hover);
+}
 .score-badge {
   flex: none;
   min-width: 28px;
@@ -350,6 +369,27 @@ h1 {
 }
 .voice-sub {
   margin: 8px 0 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.style-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 16px 0;
+}
+.style-notes textarea {
+  width: 100%;
+  min-height: 90px;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+.style-notes-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
   color: var(--muted);
 }

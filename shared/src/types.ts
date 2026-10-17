@@ -211,3 +211,7 @@ export const DigestViewSchema = z.object({
   failed: z.boolean(),
 });
 export type DigestView = z.infer<typeof DigestViewSchema>;
+
+export const MAX_STYLE_NOTES = 2000;
+export const StyleNotesSchema = z.object({ notes: z.string().max(MAX_STYLE_NOTES) });
+export type StyleNotes = z.infer<typeof StyleNotesSchema>;

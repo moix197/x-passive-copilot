@@ -3,7 +3,7 @@ id: pipeline/voice-and-digest
 type: decision
 summary: Own posts (author == handle) feed a voice profile and style examples injected into triage/polish prompts; a digest runs every N new non-own posts
 tags: [voice, feedback, examples, digest, ideas]
-paths: [apps/server/src/voice/**, apps/server/src/digest/**, apps/server/assets/spacehood-features.md, apps/server/src/triage/prompts.ts, apps/server/src/polish/polish.ts]
+paths: [apps/server/src/text/**, apps/server/src/voice/**, apps/server/src/digest/**, apps/server/assets/spacehood-features.md, apps/server/src/triage/prompts.ts, apps/server/src/polish/polish.ts]
 related: [pipeline/triage-flow, pipeline/polish-flow, security/llm-subprocess-sandbox]
 status: active
 updated: 2026-10-17
@@ -25,6 +25,15 @@ exempt from the prune (voice samples). Digest: bucket = floor(ingest:non_own / e
 in `meta` before the model runs so a bucket never fires twice; unknown statusIds are dropped; failure
 keeps the previous digest and sets `digest:failed`. Idea polish reuses the polish service with a
 `idea-<digestId>-<n>` draft key and an empty guard source (any URL/@mention is a violation).
+
+**Style notes:** the owner's own rules live in the singleton `style_notes` table (db, not a file:
+`loadStyle(db)` already reads the db, writes are atomic, `CREATE IF NOT EXISTS` is the migration).
+`GET|POST /v1/style-notes {notes<=2000}`; the Voice tab textarea sits outside the polled region so
+polling never wipes edits. `renderStyleBlocks` puts them in a `<user-style-rules>` block (`<`
+escaped) labelled as trusted owner rules that never override output format or hard rules, ahead of the
+untrusted voice/examples. **Em dashes:** prompts forbid U+2014 and `text/dashes.ts` `replaceDashes`
+is applied where model text enters (triage reason/roughDraft in `parseTriageReply`, polish reply
+before `checkReply`, digest `clip`).
 
 **Why:** the user's own posts are the best style signal and cost nothing extra to capture; reusing
 triage/polish/guard keeps the sandbox and hard rules identical for new LLM calls.

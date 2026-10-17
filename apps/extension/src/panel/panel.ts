@@ -46,6 +46,12 @@ async function postJson(path: string, body?: unknown): Promise<Response> {
   });
 }
 
+async function saveStyleNotes(notes: string): Promise<unknown> {
+  const res = await postJson('/v1/style-notes', { notes });
+  if (!res.ok) throw new Error(`server ${res.status}`);
+  return res.json();
+}
+
 async function requestPolish(statusId: string, regenerate = false): Promise<void> {
   const query = regenerate ? '?regenerate=1' : '';
   const res = await postJson(`/v1/posts/${encodeURIComponent(statusId)}/polish${query}`);
@@ -93,7 +99,7 @@ function selectView(view: View): void {
 }
 
 function mountView(root: HTMLElement, view: View, load: () => Promise<StoredPost[]>): () => void {
-  if (view === 'voice') return mountVoiceTab(root, () => getJson('/v1/voice'));
+  if (view === 'voice') return mountVoiceTab(root, () => getJson('/v1/voice'), { load: () => getJson('/v1/style-notes'), save: saveStyleNotes });
   if (view === 'digest') {
     return mountDigestSection(root, {
       load: () => getJson('/v1/digest'),

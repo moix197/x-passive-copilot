@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { MAX_DRAFT_VERSIONS, type AppConfig, type PolishReply, type Result, type StoredPost } from '@xc/shared';
 import { runClaude } from '../llm/claude';
 import { getPost } from '../posts';
-import { dataJson, NO_STYLE, renderStyle } from '../triage/prompts';
+import { dataJson, NO_STYLE, renderStyleBlocks } from '../triage/prompts';
 import { errorClass, withRetry } from '../triage/retry';
 import type { Style } from '../voice/select-examples';
 import {
@@ -15,6 +15,7 @@ import {
   settleFailedRegenerate,
   type DraftKind,
 } from './drafts-store';
+import { replaceDashes } from '../text/dashes';
 import { checkReply, ruleNames, type Violation } from './guard';
 
 export interface Idea {
@@ -94,7 +95,7 @@ function alternativesBlock(alternatives: string[]): string {
 }
 
 export function buildPolishPrompt({ subject, previous, alternatives }: GenerateRequest, style: Style = NO_STYLE): string {
-  return [taskBlock(subject), renderStyle(style), alternativesBlock(alternatives), fixBlock(previous)]
+  return [taskBlock(subject), renderStyleBlocks(style), alternativesBlock(alternatives), fixBlock(previous)]
     .filter(Boolean)
     .join('\n\n');
 }
@@ -132,8 +133,8 @@ export function createPolishService(
   async function attempt(subject: Subject, previous: GenerateRequest['previous'], alternatives: string[]) {
     const reply = await withRetry(() => generate({ subject, previous, alternatives }));
     if (!reply.ok) return reply;
-    const violations = checkReply(reply.value.reply, sourceOf(subject));
-    return { ok: true as const, value: { reply: reply.value.reply, violations } };
+    const text = replaceDashes(reply.value.reply);
+    return { ok: true as const, value: { reply: text, violations: checkReply(text, sourceOf(subject)) } };
   }
 
   // Every version goes through the guard, with one regenerate when it fails.

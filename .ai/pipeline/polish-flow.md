@@ -31,6 +31,9 @@ have text and deletes the rest; `openDb` backfills pre-versions drafts as their 
 list query embeds versions via a `json_group_array` subquery (`VERSIONS_SUBQUERY`). Pruning drops
 versions with their post.
 
+**Dashes/notes:** each generated reply passes `replaceDashes` before the guard; the prompt also carries the
+owner's `<user-style-rules>` (see pipeline/voice-and-digest). Post cards show a "View on X" link.
+
 **Why:** Claude subscription limits are shared with interactive use, hence the cap. Rows over the
 cap show a synthetic `cap_reached` status computed at list time (not stored).
 

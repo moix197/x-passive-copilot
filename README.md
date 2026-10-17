@@ -163,6 +163,14 @@ for the digest.
 { "handle": "yourhandle", "voice": { "minSamples": 5 }, "digest": { "everyNPosts": 50 } }
 ```
 
-Routes (all need the bearer token): `GET /v1/voice`, `GET /v1/digest`,
+- **Style notes** (Voice tab): a textarea (max 2000 chars, Save button) for your own writing rules,
+  e.g. "keep it short, lowercase ok". Stored in the server db and injected into the triage and
+  polish prompts in a `<user-style-rules>` block.
+- Model output never keeps the em dash (U+2014): prompts forbid it and `replaceDashes` rewrites it
+  (and spaced/bare en dashes) to commas or hyphens in triage drafts, polished replies, versions and
+  digest text, before the reply guard runs.
+- Every post card has a **View on X ↗** link (new tab) next to the metrics; the time also links.
+
+Routes (all need the bearer token): `GET /v1/voice`, `GET /v1/digest`, `GET|POST /v1/style-notes {notes<=2000}`,
 `POST /v1/drafts/:id/feedback {kind: copy|edit|up|down, text?<=1000}`, `POST /v1/ideas/:id/polish`,
 `POST /v1/posts/:id/polish[?regenerate=1]` (409 at the version cap), `POST /v1/drafts/:id/select {versionId}`.

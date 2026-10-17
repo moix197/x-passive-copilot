@@ -26,6 +26,24 @@ function avatar(post: StoredPost): HTMLElement {
   return img;
 }
 
+function viewOnXLink(post: StoredPost): HTMLAnchorElement {
+  const link = document.createElement('a');
+  link.className = 'view-on-x';
+  link.href = postUrl(post);
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  link.textContent = 'View on X ↗';
+  link.dataset.testid = 'view-on-x-link';
+  return link;
+}
+
+function footer(post: StoredPost): HTMLElement {
+  const foot = document.createElement('div');
+  foot.className = 'post-foot';
+  foot.append(element('span', metricsLine(post.metrics), 'post-metrics'), viewOnXLink(post));
+  return foot;
+}
+
 function timeLink(post: StoredPost, now: number): HTMLAnchorElement {
   const link = document.createElement('a');
   link.className = 'post-time';
@@ -64,7 +82,7 @@ function metricsLine(m: StoredPost['metrics']): string {
   return `${m.replies} replies · ${m.reposts} reposts · ${m.likes} likes · ${m.views} views`;
 }
 
-/** The captured post rendered like an X post: avatar, name, @handle, linked time, text, metrics. */
+/** The captured post rendered like an X post: avatar, name, @handle, linked time, text, metrics, View on X link. */
 export function renderPostCard(post: StoredPost, aside: HTMLElement[] = [], now: number = Date.now()): HTMLElement {
   const card = document.createElement('div');
   card.className = 'post-card';
@@ -73,7 +91,7 @@ export function renderPostCard(post: StoredPost, aside: HTMLElement[] = [], now:
   body.append(
     header(post, now, aside),
     element('p', post.text, 'post-text'),
-    element('div', metricsLine(post.metrics), 'post-metrics'),
+    footer(post),
   );
   card.append(avatar(post), body);
   return card;

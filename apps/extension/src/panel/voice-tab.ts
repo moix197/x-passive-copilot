@@ -1,4 +1,4 @@
-import { VoiceViewSchema, type VoiceView } from '@xc/shared/types';
+import { MAX_STYLE_NOTES, StyleNotesSchema, VoiceViewSchema, type VoiceView } from '@xc/shared/types';
 import { element } from './dom';
 import { pollWhileVisible } from './posts-view';
 
@@ -60,6 +60,64 @@ export function renderVoice(view: VoiceView): HTMLElement[] {
   return [wrap];
 }
 
-export function mountVoiceTab(root: HTMLElement, load: () => Promise<unknown>): () => void {
-  return mountPolled(root, async () => VoiceViewSchema.parse(await load()), renderVoice);
+export interface StyleNotesApi {
+  load: () => Promise<unknown>;
+  save: (notes: string) => Promise<unknown>;
+}
+
+function mountStyleNotes(root: HTMLElement, api: StyleNotesApi): void {
+  const wrap = document.createElement('section');
+  wrap.className = 'style-notes';
+  wrap.dataset.testid = 'style-notes';
+  const label = element('label', 'Style notes') as HTMLLabelElement;
+  label.className = 'voice-sub';
+  label.htmlFor = 'style-notes-input';
+  const input = document.createElement('textarea');
+  input.id = 'style-notes-input';
+  input.maxLength = MAX_STYLE_NOTES;
+  input.rows = 5;
+  input.placeholder = 'Your writing rules, e.g. keep it short, lowercase ok';
+  input.disabled = true;
+  input.dataset.testid = 'style-notes-input';
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.textContent = 'Save';
+  save.disabled = true;
+  save.dataset.testid = 'style-notes-save';
+  const state = element('span', 'Loading...');
+  state.dataset.testid = 'style-notes-state';
+  const setState = (text: string) => (state.textContent = text);
+  const row = document.createElement('div');
+  row.className = 'style-notes-row';
+  row.append(save, state);
+  wrap.append(label, input, row);
+  root.append(wrap);
+
+  api.load().then(
+    (raw) => {
+      input.value = StyleNotesSchema.parse(raw).notes;
+      input.disabled = save.disabled = false;
+      setState('');
+    },
+    () => setState('Could not load style notes.'),
+  );
+  save.addEventListener('click', () => {
+    save.disabled = true;
+    setState('Saving...');
+    api.save(input.value).then(
+      (raw) => {
+        input.value = StyleNotesSchema.parse(raw).notes;
+        setState('Saved');
+      },
+      () => setState('Save failed.'),
+    ).finally(() => (save.disabled = false));
+  });
+}
+
+export function mountVoiceTab(root: HTMLElement, load: () => Promise<unknown>, notes: StyleNotesApi): () => void {
+  const polled = document.createElement('div');
+  root.replaceChildren();
+  mountStyleNotes(root, notes);
+  root.append(polled);
+  return mountPolled(polled, async () => VoiceViewSchema.parse(await load()), renderVoice);
 }

@@ -1,4 +1,4 @@
-// @covers apps/extension/src/panel/**, apps/server/src/polish/**, apps/server/src/posts.ts, apps/server/src/router.ts, apps/server/src/db.ts, apps/server/src/app.ts, apps/server/src/triage/**, apps/server/src/llm/**, apps/server/src/main.ts, apps/server/src/env-file.ts, apps/server/src/doctor.ts, shared/src/types.ts
+// @covers apps/extension/src/panel/**, apps/server/src/text/**, apps/server/src/voice/**, apps/server/src/digest/**, apps/server/src/polish/**, apps/server/src/posts.ts, apps/server/src/router.ts, apps/server/src/db.ts, apps/server/src/app.ts, apps/server/src/triage/**, apps/server/src/llm/**, apps/server/src/main.ts, apps/server/src/env-file.ts, apps/server/src/doctor.ts, shared/src/types.ts
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -59,14 +59,17 @@ function capturedPost(statusId: string, overrides: object) {
   };
 }
 
-async function openFlagged(): Promise<Page> {
+async function openPanelTab(name: string): Promise<Page> {
   const extensionId = await pointExtensionAtServer(context, server.baseUrl);
   const panel = await context.newPage();
   await panel.setViewportSize({ width: 400, height: 1100 });
   await panel.goto(`chrome-extension://${extensionId}/panel.html`);
-  await panel.getByRole('tab', { name: 'Flagged' }).click();
+  await panel.getByRole('tab', { name }).click();
   return panel;
 }
+
+const openFlagged = () => openPanelTab('Flagged');
+const lastPrompt = (cli: 'opencode' | 'claude') => readFileSync(join(binDir, `${cli}-last-prompt.txt`), 'utf8');
 
 // The Gemini key must reach only the opencode child, re-mapped to the google provider's var.
 function expectGeminiEnv(cli: 'opencode' | 'claude', google: string | null) {
@@ -91,6 +94,8 @@ test('flagged card shows the original post like X, then the first draft and the 
   const original = row.getByTestId('original-post');
 
   await expect(row.getByTestId('first-draft')).toContainText('Congrats on shipping!', { timeout: 20_000 });
+  await expect(row.getByTestId('first-draft')).toContainText('The hardest part, was it scope?');
+  await expect(row.getByTestId('first-draft')).not.toContainText('—');
   await expect(row.getByTestId('first-draft')).toContainText('First draft');
   await expect(original).toContainText('Nora Builder');
   await expect(original).toContainText('@nora');
@@ -101,6 +106,11 @@ test('flagged card shows the original post like X, then the first draft and the 
   await expect(time).toHaveAttribute('href', 'https://x.com/nora/status/8101');
   await expect(time).toHaveAttribute('title', /^\d{1,2}:\d{2} [AP]M · [A-Z][a-z]{2} \d{1,2}, \d{4}$/);
   await expect(row.getByTestId('claude-version')).toContainText('Claude version');
+  const viewOnX = original.getByTestId('view-on-x-link');
+  await expect(viewOnX).toHaveText('View on X ↗');
+  await expect(viewOnX).toHaveAttribute('href', 'https://x.com/nora/status/8101');
+  await expect(viewOnX).toHaveAttribute('target', '_blank');
+  await expect(viewOnX).toHaveAttribute('rel', 'noopener noreferrer');
 
   const avatar = panel.locator('[data-status-id="8102"]').getByTestId('original-post').getByTestId('avatar');
   await expect(avatar).toHaveAttribute('src', AVATAR);
@@ -115,7 +125,7 @@ test('regenerate keeps every version, flips between them and persists the pick',
   let claude = panel.locator('[data-status-id="8201"]').getByTestId('claude-version');
 
   await claude.getByTestId('polish-button').click({ timeout: 20_000 });
-  await expect(claude.getByTestId('claude-text')).toHaveText(/^Shipping beats polishing/, { timeout: 20_000 });
+  await expect(claude.getByTestId('claude-text')).toHaveText(/^Shipping beats polishing, what did you cut/, { timeout: 20_000 });
   await expect(claude.getByTestId('version-label')).toHaveCount(0);
 
   await claude.getByTestId('draft-regenerate').click();
@@ -145,4 +155,33 @@ test('regenerate keeps every version, flips between them and persists the pick',
   await expect(claude.getByTestId('version-label')).toHaveText('2/3');
   await expect(claude).not.toContainText('Needs edit');
   await panel.screenshot({ path: test.info().outputPath('flagged-panel.png'), fullPage: true });
+});
+
+test('style notes save, survive a panel reload and reach the triage and polish prompts', async () => {
+  const notes = 'never use em dashes\nkeep it short, lowercase ok';
+  let panel = await openPanelTab('Voice');
+  const input = panel.getByTestId('style-notes-input');
+  await expect(input).toBeEnabled({ timeout: 15_000 });
+  await input.fill(notes);
+  await panel.getByTestId('style-notes-save').click();
+  await expect(panel.getByTestId('style-notes-state')).toHaveText('Saved');
+
+  await panel.close();
+  panel = await openPanelTab('Voice');
+  await expect(panel.getByTestId('style-notes-input')).toHaveValue(notes, { timeout: 15_000 });
+
+  expect((await postJson(server.baseUrl, '/v1/posts', { posts: [capturedPost('8301', { authorHandle: 'mina', text: 'Launching today' })] })).ok).toBe(true);
+  panel = await openFlagged();
+  const claude = panel.locator('[data-status-id="8301"]').getByTestId('claude-version');
+  await expect(panel.locator('[data-status-id="8301"]').getByTestId('first-draft')).toBeVisible({ timeout: 20_000 });
+  expect(lastPrompt('opencode')).toMatch(/<user-style-rules>\nnever use em dashes\nkeep it short, lowercase ok\n<\/user-style-rules>/);
+
+  await claude.getByTestId('polish-button').click();
+  await expect(claude.getByTestId('claude-text')).toBeVisible({ timeout: 20_000 });
+  expect(lastPrompt('claude')).toContain('<user-style-rules>\nnever use em dashes');
+});
+
+test('style notes reject oversized input', async () => {
+  const res = await postJson(server.baseUrl, '/v1/style-notes', { notes: 'x'.repeat(2001) });
+  expect(res.status).toBe(400);
 });

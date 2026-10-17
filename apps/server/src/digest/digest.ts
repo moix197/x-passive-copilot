@@ -18,6 +18,7 @@ import { log } from '../log';
 import { parseViolations } from '../polish/drafts-store';
 import { ideaDraftKey, type Idea } from '../polish/polish';
 import { readIngestCount } from '../posts';
+import { replaceDashes } from '../text/dashes';
 import { dataJson } from '../triage/prompts';
 import { errorClass, safeReason, withRetry } from '../triage/retry';
 import type { RunModel } from '../voice/voice';
@@ -43,6 +44,7 @@ The <features> block lists what the builder's product can do; use it to ground p
 Reply with ONLY a JSON array holding exactly one object:
 [{"trends": [{"title": string, "summary": string, "statusIds": string[]}] (3 to 5 trends, statusIds taken only from the posts given),
 "ideas": [{"text": string (max 280 chars, a post the builder could publish), "feature": string (which product feature it relates to)}] (exactly 3 ideas)}]
+Never use the em dash character (U+2014) anywhere in the output; use commas or periods instead.
 No prose outside the JSON.`;
 
 const RawDigestSchema = z.object({
@@ -50,7 +52,7 @@ const RawDigestSchema = z.object({
   ideas: z.array(z.object({ text: z.string(), feature: z.string() })),
 });
 
-const clip = (text: string, max: number): string => text.trim().slice(0, max);
+const clip = (text: string, max: number): string => replaceDashes(text).trim().slice(0, max);
 
 export function bucketToRun(nonOwnCount: number, everyNPosts: number, lastBucket: number): number | null {
   const bucket = Math.floor(nonOwnCount / everyNPosts);

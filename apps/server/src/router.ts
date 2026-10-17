@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import {
   FeedbackRequestSchema,
   PostBatchSchema,
+  StyleNotesSchema,
   SelectVersionRequestSchema,
   type DigestView,
   type DoctorReport,
@@ -16,6 +17,7 @@ import { log } from './log';
 import { ingestPosts, listFlaggedPosts, listPosts, type PolishContext } from './posts';
 import type { PrefilterRules } from './triage/prefilter';
 import { recordFeedback } from './voice/feedback';
+import { readStyleNotes, saveStyleNotes } from './voice/style-notes';
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const DEFAULT_LIMIT = 50;
@@ -133,6 +135,17 @@ function postFeedback(db: DatabaseSync): ParamHandler {
   };
 }
 
+function postStyleNotes(db: DatabaseSync): Handler {
+  return async (req, res) => {
+    const raw = await readBody(req);
+    if (raw === null) return sendJson(res, 413, { error: 'body too large' });
+    const request = StyleNotesSchema.safeParse(parseJson(raw));
+    if (!request.success) return sendJson(res, 400, { error: 'invalid style notes' });
+    saveStyleNotes(db, request.data.notes, Date.now());
+    sendJson(res, 200, { notes: readStyleNotes(db) });
+  };
+}
+
 function findParamHandler(method: string | undefined, pathname: string, routes: ParamRoute[]): Handler | undefined {
   if (method !== 'POST') return undefined;
   for (const route of routes) {
@@ -165,6 +178,8 @@ export function createRouter(
     'POST /v1/posts': postPosts(db, hooks.ownHandle, hooks.onIngest),
     'GET /v1/doctor': async (_req, res) => sendJson(res, 200, await hooks.doctor()),
     'GET /v1/voice': (_req, res) => sendJson(res, 200, hooks.voiceView()),
+    'GET /v1/style-notes': (_req, res) => sendJson(res, 200, { notes: readStyleNotes(db) }),
+    'POST /v1/style-notes': postStyleNotes(db),
     'GET /v1/digest': (_req, res) => sendJson(res, 200, hooks.digestView()),
   };
   const paramRoutes: ParamRoute[] = [

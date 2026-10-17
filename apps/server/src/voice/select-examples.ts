@@ -27,6 +27,8 @@ export interface Examples {
 
 export interface Style extends Examples {
   voice: VoiceProfile | null;
+  /** The owner's own writing rules (trusted, unlike the generated voice data). */
+  notes: string;
 }
 
 const engagement = (p: OwnPost): number => p.likes + p.reposts + p.replies;

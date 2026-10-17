@@ -1,5 +1,6 @@
 import { err, ok, TriageItemSchema, type Result, type TriageItem } from '@xc/shared';
 import { z } from 'zod';
+import { replaceDashes } from '../text/dashes';
 import { ensureOpencodeSandbox } from '../sandbox';
 import { opencodeEnv, redactKey } from './opencode-env';
 import { resolveCli } from './resolve-cli';
@@ -82,6 +83,10 @@ export interface TriageReply {
   invalidIds: string[];
 }
 
+function withoutDashes(item: TriageItem): TriageItem {
+  return { ...item, reason: replaceDashes(item.reason), roughDraft: replaceDashes(item.roughDraft) };
+}
+
 export function parseTriageReply(text: string, knownIds: ReadonlySet<string>): Result<TriageReply> {
   const json = extractJson(text);
   if (!json.ok) return json;
@@ -94,7 +99,7 @@ export function parseTriageReply(text: string, knownIds: ReadonlySet<string>): R
     seen.add(id);
     // The model often omits roughDraft (live-observed); an absent draft is an empty one.
     const item = TriageItemSchema.safeParse({ roughDraft: '', ...(raw as object) });
-    if (item.success) reply.items.push(item.data);
+    if (item.success) reply.items.push(withoutDashes(item.data));
     else reply.invalidIds.push(id);
   }
   return ok(reply);

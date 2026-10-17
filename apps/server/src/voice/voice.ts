@@ -7,6 +7,7 @@ import { readIngestCount } from '../posts';
 import { dataJson } from '../triage/prompts';
 import { errorClass, withRetry } from '../triage/retry';
 import { listFeedbackExamples } from './feedback';
+import { readStyleNotes } from './style-notes';
 import { selectExamples, type OwnPost, type Style } from './select-examples';
 
 export const REGENERATE_EVERY = 10;
@@ -107,7 +108,7 @@ function recentOwnTexts(db: DatabaseSync): string[] {
 export function loadStyle(db: DatabaseSync): Style {
   const { positives, negatives } = listFeedbackExamples(db);
   const examples = selectExamples({ ownPosts: ownPosts(db, EXAMPLE_POOL), positives, negatives });
-  return { voice: parseStoredProfile(readVoiceRow(db)?.profile ?? null), ...examples };
+  return { voice: parseStoredProfile(readVoiceRow(db)?.profile ?? null), notes: readStyleNotes(db), ...examples };
 }
 
 export function readVoiceView(db: DatabaseSync, config: AppConfig): VoiceView {

@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const REPLIES = [
-  'Shipping beats polishing. What did you cut to get it out the door?',
+  'Shipping beats polishing — what did you cut to get it out the door?',
   'Small releases keep the feedback loop honest. Nice work on v2.',
 ];
 // Breaks the reply guard (hype word + two hashtags), so every later version must come back needs_edit.
