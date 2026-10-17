@@ -1,6 +1,8 @@
 import { DoctorReportSchema, type DoctorCheck, type DoctorReport } from '@xc/shared/types';
 import { element } from './dom';
 
+type Tone = 'ok' | 'warn' | 'bad';
+
 const STATUS_TEXT: Record<DoctorCheck['status'], string> = {
   ok: 'ok',
   missing: 'missing',
@@ -8,20 +10,55 @@ const STATUS_TEXT: Record<DoctorCheck['status'], string> = {
   problem: 'problem',
 };
 
+const STATUS_TONE: Record<DoctorCheck['status'], Tone> = {
+  ok: 'ok',
+  not_logged_in: 'warn',
+  missing: 'bad',
+  problem: 'bad',
+};
+
+function dot(tone: Tone): HTMLElement {
+  const el = element('span', '', 'doctor-dot');
+  el.dataset.tone = tone;
+  el.setAttribute('aria-hidden', 'true');
+  return el;
+}
+
 function renderCheck(check: DoctorCheck): HTMLElement {
   const row = document.createElement('li');
+  row.className = 'doctor-row';
   row.dataset.status = check.status;
-  const detail = check.detail ? ` (${check.detail})` : '';
-  row.append(element('span', `${check.label}: ${STATUS_TEXT[check.status]}${detail}`));
-  if (check.fix) row.append(element('code', check.fix, 'doctor-fix'));
+  const head = element('div', '', 'doctor-row-head');
+  head.append(dot(STATUS_TONE[check.status]), element('span', check.label, 'doctor-label'));
+  head.append(element('span', [STATUS_TEXT[check.status], check.detail].filter(Boolean).join(' · '), 'doctor-detail'));
+  row.append(head);
+  if (check.status !== 'ok' && check.fix) row.append(element('code', check.fix, 'doctor-fix'));
   return row;
 }
 
+function summaryTone(issues: DoctorCheck[]): Tone {
+  if (!issues.length) return 'ok';
+  return issues.some((c) => STATUS_TONE[c.status] === 'bad') ? 'bad' : 'warn';
+}
+
+function summaryText(issueCount: number): string {
+  if (issueCount === 0) return 'All systems ready';
+  return issueCount === 1 ? '1 issue needs attention' : `${issueCount} issues need attention`;
+}
+
 export function renderDoctor(report: DoctorReport): HTMLElement[] {
+  const issues = report.checks.filter((c) => c.status !== 'ok');
+  const details = document.createElement('details');
+  details.className = 'doctor';
+  details.open = issues.length > 0;
+  const summary = element('summary', '', 'doctor-summary');
+  summary.append(dot(summaryTone(issues)), element('span', summaryText(issues.length), 'doctor-summary-text'));
   const list = document.createElement('ul');
   list.className = 'doctor-list';
+  list.setAttribute('aria-label', 'Readiness checks');
   list.append(...report.checks.map(renderCheck));
-  return [element('h2', 'Readiness', 'doctor-title'), list];
+  details.append(summary, list);
+  return [details];
 }
 
 export async function loadDoctor(load: () => Promise<unknown>): Promise<DoctorReport> {

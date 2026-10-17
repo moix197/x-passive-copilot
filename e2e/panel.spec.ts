@@ -335,3 +335,41 @@ test('first draft thumbs and edit are independent of the Claude version, guarded
   const copied = await postJson(server.baseUrl, '/v1/drafts/rough-8801/feedback', { kind: 'copy' });
   expect(copied.status).toBe(200);
 });
+
+function doctorCheck(id: string, status: string, detail: string | null, fix: string | null) {
+  return { id, label: id, status, detail, fix };
+}
+
+async function openReadiness(checks: object[]): Promise<Page> {
+  const extensionId = await pointExtensionAtServer(context, server.baseUrl);
+  const panel = await context.newPage();
+  await panel.setViewportSize({ width: 400, height: 700 });
+  await panel.route('**/v1/doctor', (route) => route.fulfill({ json: { checks } }));
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
+  const worker = context.serviceWorkers()[0]!;
+  await worker.evaluate(() => chrome.storage.session.set({ linkStatus: { state: 'online', message: null } }));
+  return panel;
+}
+
+test('readiness collapses to one summary line when every check is ok', async () => {
+  const panel = await openReadiness([doctorCheck('claude', 'ok', '2.1.0', null), doctorCheck('handle', 'ok', null, null)]);
+  await expect(panel.getByText('All systems ready')).toBeVisible();
+  await expect(panel.getByRole('list', { name: 'Readiness checks' })).toBeHidden();
+  await panel.getByText('All systems ready').click();
+  await expect(panel.getByRole('list', { name: 'Readiness checks' })).toBeVisible();
+  await panel.close();
+});
+
+test('readiness opens with the failing row, its status text and a readable fix hint', async () => {
+  const fix = 'Create /tmp/context.md describing what you build';
+  const panel = await openReadiness([
+    doctorCheck('claude', 'ok', '2.1.0', 'ignored for ok rows'),
+    doctorCheck('context.md', 'missing', null, fix),
+  ]);
+  await expect(panel.getByText('1 issue needs attention')).toBeVisible();
+  await expect(panel.getByText(fix)).toBeVisible();
+  await expect(panel.getByText('missing', { exact: true })).toBeVisible();
+  await expect(panel.getByText('ignored for ok rows')).toHaveCount(0);
+  expect(await panel.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await panel.close();
+});
