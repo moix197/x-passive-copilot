@@ -91,7 +91,7 @@ to; first 8 KB are used) by an LLM through [opencode](https://opencode.ai). Setu
 - Posts whose text mentions `@handle` and posts by `watchlist` authors are always flagged
   (tagged `mention` / `watchlist`), even if scored low, and show in Flagged as "triage pending"
   before triage runs (or when triage is off) and "triage error" if it failed.
-- **Gemini free tier (recommended):** set `"triage": "google/gemini-2.5-flash"`, copy `.env.example` to
+- **Gemini free tier (recommended):** set `"triage": "google/gemini-3.8-flash"`, copy `.env.example` to
   `.env` in the repo root and set `GEMINI_API_KEY=` (free key at https://aistudio.google.com). The server
   loads `.env` at startup and hands the key only to opencode (as `GOOGLE_GENERATIVE_AI_API_KEY`); no
   `opencode auth login` needed. Restart the host after editing `.env`.

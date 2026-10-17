@@ -50,7 +50,7 @@ describe('doctor', () => {
 
 describe('doctor with a google triage model', () => {
   const geminiStatus = async (env: NodeJS.ProcessEnv) => {
-    const config = { ...defaultConfig(), models: { ...defaultConfig().models, triage: 'google/gemini-2.5-flash' } };
+    const config = { ...defaultConfig(), models: { ...defaultConfig().models, triage: 'google/gemini-3.8-flash' } };
     const doctor = createDoctor({
       home: '/nonexistent-home',
       config,

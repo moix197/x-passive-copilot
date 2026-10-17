@@ -27,7 +27,7 @@ shims resolved to `[node, script.js]` (`resolve-cli.ts`); 120s timeout kills the
 dropped, invalid items -> "triage error".
 
 **Provider:** triage now targets Gemini's free API via opencode's built-in `google` provider
-(`models.triage: google/gemini-2.5-flash`) because opencode's free tier rejects requests server-side.
+(`models.triage: google/gemini-3.8-flash`) because opencode's free tier rejects requests server-side.
 `GEMINI_API_KEY` comes from `<repo root>/.env`, loaded at startup by `env-file.ts`
 (`process.loadEnvFile`, existing env wins, missing file fine; root = nearest `pnpm-workspace.yaml`
 above `src/` or `dist/`). Doctor: `google/*` -> opencode ok iff key set, else fix points at `.env`.
