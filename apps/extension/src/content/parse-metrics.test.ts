@@ -44,6 +44,12 @@ describe('parseMetrics', () => {
     expect(parseMetrics('12 Me gusta')).toEqual({ replies: 0, reposts: 0, likes: 12, views: 0 });
   });
 
+  it('parses live labels with omitted zero parts', () => {
+    expect(parseMetrics('38 respuestas, 15 Me gusta, 1484 reproducciones')).toEqual({ replies: 38, reposts: 0, likes: 15, views: 1484 });
+    expect(parseMetrics('3 Me gusta, 289 reproducciones')).toEqual({ replies: 0, reposts: 0, likes: 3, views: 289 });
+    expect(parseMetrics('1 repost').reposts).toBe(1);
+  });
+
   it('handles dot thousands and Spanish mil/M suffixes', () => {
     expect(parseMetrics('1.234 Me gusta, 12.000 reproducciones')).toMatchObject({ likes: 1234, views: 12000 });
     expect(parseMetrics('2 mil reproducciones').views).toBe(2000);
