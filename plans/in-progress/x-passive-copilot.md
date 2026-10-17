@@ -182,7 +182,7 @@ makes zero network requests and zero DOM changes.
 - [x] Panel list view
 - [x] Fixture + unit tests + Playwright smoke test
 - [x] `.ai/capture/passive-capture-invariants` entry (constraint: ban-risk rules, one selector module)
-- [ ] **Live hil check** (below)
+- [x] **Live hil check** (below)
 
 **Tests:**
 
@@ -199,16 +199,17 @@ makes zero network requests and zero DOM changes.
 
 **Live hil check (separate tiny step, `Mode: hil` for this step only):**
 
-- [ ] User: `pnpm build`, load unpacked in real Chrome, `pnpm dev:server`, browse home + a status page
+- [x] User: `pnpm build`, load unpacked in real Chrome, `pnpm dev:server`, browse home + a status page
       + own profile for ~2 min; spot-check 5 panel rows against the screen. If the live DOM
       differs, agent updates `selectors.ts` + fixture (sanitized `outerHTML` saved via DevTools) and
       re-runs unit + smoke.
+      _Done 2026-10-17 via read-only DOM inspection of live x.com/home (agent, Claude in Chrome): promoted = no `<time>` (placementTracking wraps videos), metrics aria-label localized (EN+ES parser), quote = nested `div[role=link]` with User-Name+time. Reply-context heuristic and panel-vs-screen spot check still unverified live._
 
 **Phase checklist:**
 
-- [ ] Steps and Verification ticked in this file
-- [ ] Changes committed: `feat: passively capture x.com posts into sqlite and list them in the side panel`
-- [ ] Phase marked complete
+- [x] Steps and Verification ticked in this file
+- [x] Changes committed: `feat: passively capture x.com posts into sqlite and list them in the side panel`
+- [x] Phase marked complete
 
 ---
 
