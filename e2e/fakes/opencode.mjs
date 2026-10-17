@@ -1,4 +1,7 @@
 // Fake `opencode run --format json` CLI: triages every post in the prompt as reply-worthy.
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 const readStdin = async () => {
   let data = '';
   for await (const chunk of process.stdin) data += chunk;
@@ -9,6 +12,7 @@ if (process.argv[2] !== 'run') {
   process.exit(0);
 }
 const prompt = await readStdin();
+writeFileSync(join(import.meta.dirname, 'opencode-last-env.json'), JSON.stringify({ gemini: process.env.GEMINI_API_KEY ?? null, google: process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? null }));
 const ids = [...new Set([...prompt.matchAll(/"statusId":"(\d+)"/g)].map((m) => m[1]))];
 const items = ids.map((statusId) => ({
   statusId,

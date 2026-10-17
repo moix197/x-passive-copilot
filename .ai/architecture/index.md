@@ -9,5 +9,5 @@ scope: Process model and trust boundaries between the extension, the local serve
 
 | Entry | Type | Summary | Tags | Paths |
 | --- | --- | --- | --- | --- |
-| [server-as-native-host](server-as-native-host.md) | decision | Server is a Chrome native-messaging host started by the panel toggle; per-launch in-memory token on every route, loopback only, exits when Chrome closes stdin | native-messaging, token, auth, lifecycle, loopback, windows | `apps/server/src/native.ts`, `apps/server/src/auth.ts`, `apps/server/src/app.ts`, `apps/server/src/doctor.ts`, `scripts/setup-host.mjs`, `apps/extension/src/background/native-link.ts` |
+| [server-as-native-host](server-as-native-host.md) | decision | Server is a Chrome native-messaging host started by the panel toggle; per-launch in-memory token on every route, loopback only, exits when Chrome closes stdin | native-messaging, token, auth, lifecycle, loopback, windows | `apps/server/src/main.ts`, `apps/server/src/env-file.ts`, `apps/server/src/native.ts`, `apps/server/src/auth.ts`, `apps/server/src/app.ts`, `apps/server/src/doctor.ts`, `scripts/setup-host.mjs`, `apps/extension/src/background/native-link.ts` |
 <!-- entries:end -->

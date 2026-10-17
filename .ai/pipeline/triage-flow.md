@@ -3,7 +3,7 @@ id: pipeline/triage-flow
 type: decision
 summary: Posts are prefiltered then triaged in batches via opencode/DeepSeek: stdin-only prompts, deny-all sandbox, in-memory retry; verified on opencode 1.19.3
 tags: [triage, opencode, deepseek, prefilter, subprocess, untrusted-input]
-paths: [apps/server/src/triage/**, apps/server/src/posts.ts, apps/server/src/doctor.ts, apps/extension/src/panel/flagged-view.ts, apps/server/src/llm/**, apps/server/src/sandbox.ts, fixtures/opencode-run.jsonl]
+paths: [apps/server/src/env-file.ts, apps/server/src/llm/opencode-env.ts, apps/server/src/triage/**, apps/server/src/posts.ts, apps/server/src/doctor.ts, apps/extension/src/panel/flagged-view.ts, apps/server/src/llm/**, apps/server/src/sandbox.ts, fixtures/opencode-run.jsonl]
 related: [capture/passive-capture-invariants, tooling/lean-v1-scaffold]
 status: active
 updated: 2026-10-17
@@ -25,6 +25,12 @@ shims resolved to `[node, script.js]` (`resolve-cli.ts`); 120s timeout kills the
 "untrusted data" instruction; opencode runs in `<home>/sandbox/opencode` whose `opencode.json`
 (rewritten before each run) denies all tools; output is zod-parsed per item, unknown/duplicate ids
 dropped, invalid items -> "triage error".
+
+**Provider:** triage now targets Gemini's free API via opencode's built-in `google` provider
+(`models.triage: google/gemini-2.5-flash`) because opencode's free tier rejects requests server-side.
+`GEMINI_API_KEY` comes from `<repo root>/.env`, loaded at startup by `env-file.ts`
+(`process.loadEnvFile`, existing env wins, missing file fine; root = nearest `pnpm-workspace.yaml`
+above `src/` or `dist/`). Doctor: `google/*` -> opencode ok iff key set, else fix points at `.env`.
 
 **Rejected:** persistent job queue (v1 trade-off); `shell:true` for shims; letting the model see
 tools.

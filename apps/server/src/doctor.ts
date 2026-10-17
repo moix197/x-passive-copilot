@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { type AppConfig, type DoctorCheck, type DoctorReport, type Result } from '@xc/shared';
+import { findRepoRoot } from './env-file';
+import { hasGeminiKey, isGoogleModel } from './llm/opencode-env';
 import { resolveCli } from './llm/resolve-cli';
 import { runCli, type CliOutput } from './llm/run-cli';
 
@@ -16,6 +18,7 @@ export interface DoctorDeps {
   run?: Run;
   resolve?: (name: string) => Result<string[]>;
   now?: () => number;
+  env?: NodeJS.ProcessEnv;
 }
 
 const defaultRun: Run = (argv) => runCli({ argv, stdin: '', timeoutMs: CLI_TIMEOUT_MS });
@@ -64,7 +67,19 @@ export function isFreeOpencodeModel(model: string): boolean {
   return /^opencode\/.+-free$/.test(model);
 }
 
-function allowNoAuthForFreeModel(c: DoctorCheck, triageModel: string): DoctorCheck {
+export function geminiKeyFix(): string {
+  const root = findRepoRoot(import.meta.dirname) ?? '<repo>';
+  return `Add GEMINI_API_KEY to ${join(root, '.env')} (free key at aistudio.google.com)`;
+}
+
+// Free `opencode/*-free` models need no login; `google/*` models need GEMINI_API_KEY instead.
+export function applyTriageAuth(c: DoctorCheck, triageModel: string, env: NodeJS.ProcessEnv): DoctorCheck {
+  if (c.status !== 'ok' && c.status !== 'not_logged_in') return c;
+  if (isGoogleModel(triageModel)) {
+    return hasGeminiKey(env)
+      ? check(c.id, c.label, 'ok', `${c.detail ?? ''} (GEMINI_API_KEY set)`.trim(), null)
+      : check(c.id, c.label, 'not_logged_in', c.detail, geminiKeyFix());
+  }
   if (c.status !== 'not_logged_in' || !isFreeOpencodeModel(triageModel)) return c;
   return check(c.id, c.label, 'ok', `${c.detail ?? ''} (free models only, no auth)`.trim(), null);
 }
@@ -103,12 +118,13 @@ export function createDoctor(deps: DoctorDeps): () => Promise<DoctorReport> {
   const run = deps.run ?? defaultRun;
   const resolve = deps.resolve ?? ((name) => resolveCli(name));
   const now = deps.now ?? Date.now;
+  const env = deps.env ?? process.env;
   let cached: { at: number; report: DoctorReport } | null = null;
   return async () => {
     if (cached && now() - cached.at < CACHE_MS) return cached.report;
     const cliChecks = await Promise.all([
       checkCli({ run, resolve }, 'opencode', ['auth', 'list'], opencodeLoggedIn, 'opencode auth login', 'pnpm add -g opencode-ai')
-        .then((c) => allowNoAuthForFreeModel(c, deps.config.models.triage)),
+        .then((c) => applyTriageAuth(c, deps.config.models.triage, env)),
       checkCli({ run, resolve }, 'claude', ['auth', 'status'], claudeLoggedIn, 'claude, then /login', 'Install Claude Code, see https://claude.com/claude-code'),
     ]);
     const report = { checks: [...cliChecks, ...checkConfig(deps.home, deps.config)] };

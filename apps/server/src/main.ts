@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { loadConfig } from '@xc/shared';
 import { startApp } from './app';
 import { createToken, devTokenFromEnv } from './auth';
+import { loadRepoEnv } from './env-file';
 import { log } from './log';
 import { runNativeHost } from './native';
 
@@ -51,6 +52,7 @@ async function startDev(opts: CliOptions): Promise<void> {
   log(`dev server on 127.0.0.1:${app.port}`);
 }
 
+loadRepoEnv(import.meta.dirname);
 const opts = parseArgs(process.argv.slice(2));
 if (opts.native === opts.dev) {
   log('pass exactly one of --native or --dev');

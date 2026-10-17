@@ -47,3 +47,24 @@ describe('doctor', () => {
     expect(await opencodeStatus('anthropic/claude-x')).toMatchObject({ status: 'not_logged_in' });
   });
 });
+
+describe('doctor with a google triage model', () => {
+  const geminiStatus = async (env: NodeJS.ProcessEnv) => {
+    const config = { ...defaultConfig(), models: { ...defaultConfig().models, triage: 'google/gemini-2.5-flash' } };
+    const doctor = createDoctor({
+      home: '/nonexistent-home',
+      config,
+      env,
+      resolve: () => ok(['opencode']),
+      run: async (argv) => ok({ stdout: argv.includes('auth') ? 'Credentials\n0 credentials\n' : '1.19.3\n', stderr: '' }),
+    });
+    return (await doctor()).checks.find((c) => c.id === 'opencode');
+  };
+
+  it('is ok with GEMINI_API_KEY set and points at .env otherwise', async () => {
+    expect(await geminiStatus({ GEMINI_API_KEY: 'k' })).toMatchObject({ status: 'ok', fix: null });
+    const missing = await geminiStatus({});
+    expect(missing?.status).toBe('not_logged_in');
+    expect(missing?.fix).toMatch(/Add GEMINI_API_KEY to .*\.env \(free key at aistudio\.google\.com\)/);
+  });
+});

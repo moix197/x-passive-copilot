@@ -23,7 +23,9 @@ Tweet text is hostile and both CLIs can have tools, so every call obeys:
   assets/finalize-system.md`; cwd = `spacehoodRepoPath`; **never `--bare`** (it skips the
   subscription login/OAuth). Result read from `.structured_output`.
 - **Env scrubbing:** `ANTHROPIC_API_KEY` removed (any case) so the subscription is used, not the API;
-  `runCli` strips every `XC_*` var (e.g. `XC_DEV_TOKEN`) from all children.
+  `runCli` strips every `XC_*` var (e.g. `XC_DEV_TOKEN`) and `GEMINI_API_KEY` from all children.
+  The Gemini key reaches only opencode, re-mapped to `GOOGLE_GENERATIVE_AI_API_KEY` by `opencodeEnv`
+  (`llm/opencode-env.ts`); `claudeEnv` drops that var; `runOpencode` redacts the key from error text.
 - **opencode:** cwd `<home>/sandbox/opencode` whose `opencode.json` (`tools` `"*": false`,
   `permission` `"*": "deny"`, `mcp: {}`, plus explicit denies; `read` offered but all paths denied,
   required by the free tier, see pipeline/triage-flow) is rewritten before every run. Verified live.

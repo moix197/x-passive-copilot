@@ -5,3 +5,4 @@ test-results/
 .claude/settings.local.json
 .playwright/
 *.log
+!.env.example

@@ -3,13 +3,16 @@ id: architecture/server-as-native-host
 type: decision
 summary: Server is a Chrome native-messaging host started by the panel toggle; per-launch in-memory token on every route, loopback only, exits when Chrome closes stdin
 tags: [native-messaging, token, auth, lifecycle, loopback, windows]
-paths: [apps/server/src/native.ts, apps/server/src/auth.ts, apps/server/src/app.ts, apps/server/src/doctor.ts, scripts/setup-host.mjs, apps/extension/src/background/native-link.ts]
+paths: [apps/server/src/main.ts, apps/server/src/env-file.ts, apps/server/src/native.ts, apps/server/src/auth.ts, apps/server/src/app.ts, apps/server/src/doctor.ts, scripts/setup-host.mjs, apps/extension/src/background/native-link.ts]
 related: [security/llm-subprocess-sandbox, tooling/lean-v1-scaffold]
 status: active
 updated: 2026-10-17
 ---
 
 # Server as native host
+
+Startup (`main.ts`) first calls `loadRepoEnv` so `<repo root>/.env` (e.g. `GEMINI_API_KEY`) is in
+`process.env` for the host launched via `run-host.bat`; see pipeline/triage-flow.
 
 **Decision:** `server.mjs --native` is launched by Chrome (`connectNative`) when the user flips the
 panel toggle. It binds 127.0.0.1 on an ephemeral port, makes `randomBytes(32)` as the token, and

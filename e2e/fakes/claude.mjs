@@ -25,5 +25,6 @@ const prompt = await readStdin();
 const calls = existsSync(counterFile) ? Number(readFileSync(counterFile, 'utf8')) : 0;
 writeFileSync(counterFile, String(calls + 1));
 writeFileSync(join(dir, 'claude-last-prompt.txt'), prompt);
+writeFileSync(join(dir, 'claude-last-env.json'), JSON.stringify({ gemini: process.env.GEMINI_API_KEY ?? null, google: process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? null }));
 const reply = REPLIES[calls] ?? GUARD_BREAKER;
 process.stdout.write(JSON.stringify({ type: 'result', is_error: false, structured_output: { reply, rationale: 'fake' } }));

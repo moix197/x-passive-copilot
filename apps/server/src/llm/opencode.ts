@@ -1,6 +1,7 @@
 import { err, ok, TriageItemSchema, type Result, type TriageItem } from '@xc/shared';
 import { z } from 'zod';
 import { ensureOpencodeSandbox } from '../sandbox';
+import { opencodeEnv, redactKey } from './opencode-env';
 import { resolveCli } from './resolve-cli';
 import { exitFailure, runCli } from './run-cli';
 
@@ -111,12 +112,13 @@ export async function runOpencode(prompt: string, model: string, home: string): 
     argv: buildOpencodeArgv(cli.value, model, dir),
     stdin: prompt,
     cwd: dir,
+    env: opencodeEnv(),
     timeoutMs: TRIAGE_TIMEOUT_MS,
     allowNonZeroExit: true,
   });
-  if (!out.ok) return out;
+  if (!out.ok) return err(redactKey(out.error));
   const events = parseOpencodeEvents(out.value.stdout);
   const reportedError = !events.ok && events.error.startsWith(OPENCODE_ERROR);
-  if (out.value.exitCode !== 0 && !reportedError) return err(exitFailure(out.value.exitCode ?? null, out.value.stderr));
-  return events;
+  if (out.value.exitCode !== 0 && !reportedError) return err(redactKey(exitFailure(out.value.exitCode ?? null, out.value.stderr)));
+  return events.ok ? events : err(redactKey(events.error));
 }

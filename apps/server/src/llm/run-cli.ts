@@ -62,9 +62,14 @@ export function exitFailure(code: number | null, stderr: string): string {
   return `exit ${code}: ${stderr.slice(0, 300)}`;
 }
 
-// XC_* carries our own secrets (e.g. XC_DEV_TOKEN); LLM children never need them.
+// XC_* and GEMINI_API_KEY are our own secrets; children never inherit them (opencode gets the key
+// re-mapped by opencodeEnv).
+function isOwnSecret(upperKey: string): boolean {
+  return upperKey.startsWith('XC_') || upperKey === 'GEMINI_API_KEY';
+}
+
 export function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(env).filter(([key]) => !key.toUpperCase().startsWith('XC_')));
+  return Object.fromEntries(Object.entries(env).filter(([key]) => !isOwnSecret(key.toUpperCase())));
 }
 
 export function runCli(opts: RunCliOptions): Promise<Result<CliOutput>> {

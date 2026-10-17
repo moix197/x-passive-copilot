@@ -47,7 +47,7 @@ export function buildClaudeArgv(base: string[], model: string, systemFile: strin
 export function claudeEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const copy = { ...env };
   for (const key of Object.keys(copy)) {
-    if (key.toUpperCase() === 'ANTHROPIC_API_KEY') delete copy[key];
+    if (['ANTHROPIC_API_KEY', 'GOOGLE_GENERATIVE_AI_API_KEY'].includes(key.toUpperCase())) delete copy[key];
   }
   return copy;
 }
