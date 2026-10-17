@@ -464,7 +464,7 @@ post ideas, each with Copy and a guarded Polish; a failed digest keeps the previ
 - [x] Findings fixed and reflected back into this plan file
 - [x] `.ai/` synced; `node .ai/_tools/build-index.mjs --check` passes
 - [ ] Pre-merge user checklist: `pnpm setup:host` on real Chrome; toggle on/off confirms process exit; polish one real post
-- [ ] Orchestrator (user) explicitly approved the merge
+- [x] Orchestrator (user) explicitly approved the merge
 
 **Final Verification results (2026-10-17):**
 
