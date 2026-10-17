@@ -353,12 +353,12 @@ server (panel shows "Online"); toggling off or closing Chrome makes the server p
 
 **Steps:**
 
-- [ ] Native framing + lifecycle + lock + file logger
-- [ ] Token auth + bundled server
-- [ ] `setup-host` script + manifest key
-- [ ] Extension native link, toggle, offline drop
-- [ ] Doctor route + card
-- [ ] README "first run" (install CLIs, build, load unpacked, `setup:host`, manual check). `.ai/architecture/server-as-native-host` entry (decision; rejected: always-on service)
+- [x] Native framing + lifecycle + lock + file logger
+- [x] Token auth + bundled server
+- [x] `setup-host` script + manifest key
+- [x] Extension native link, toggle, offline drop
+- [x] Doctor route + card
+- [x] README "first run" (install CLIs, build, load unpacked, `setup:host`, manual check). `.ai/architecture/server-as-native-host` entry (decision; rejected: always-on service)
 
 **Tests:**
 
@@ -373,17 +373,18 @@ Chromium-registry e2e is deferred): see Verification.
 
 **Verification:**
 
-- [ ] `pnpm test:unit`, `pnpm test:e2e smoke`, `pnpm check` pass
-- [ ] grep: no `shell: true`; no `console.log` / `process.stdout.write` in `apps/server/src` outside `native.ts`
+- [x] `pnpm test:unit`, `pnpm test:e2e smoke`, `pnpm check` pass
+- [x] grep: no `shell: true`; no `console.log` / `process.stdout.write` in `apps/server/src` outside `native.ts`
 - [ ] Manual (user, real Chrome): `pnpm setup:host`; toggle on -> Online and posts flow; toggle off ->
       process gone in Task Manager; close Chrome -> process gone; `curl 127.0.0.1:<port>/v1/posts`
       without token -> 401; doctor card shows correct states
+      _Partially verified 2026-10-17: node harness drove bundled `server.mjs --native` (framed ready, 401 without/wrong token, lock blocks 2nd instance, exit 0 on stdin close). Real Chrome + reg.exe + doctor login detection still on the pre-merge checklist._
 
 **Phase checklist:**
 
-- [ ] Steps and Verification ticked in this file
-- [ ] Changes committed: `feat: native-messaging on/off toggle, token auth and doctor card`
-- [ ] Phase marked complete
+- [x] Steps and Verification ticked in this file
+- [x] Changes committed: `feat: native-messaging on/off toggle, token auth and doctor card`
+- [x] Phase marked complete
 
 ---
 
