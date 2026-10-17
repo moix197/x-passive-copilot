@@ -10,7 +10,10 @@ export interface DraftCallbacks {
   onCopy: (text: string) => Promise<void>;
   /** Resolves to an error message to show, or null when the edit was accepted. */
   onEdit: (text: string) => Promise<string | null>;
-  onRate: (rating: Rating) => Promise<void>;
+  /** Resolves to an error message to show, or null when the rating was saved. */
+  onRate: (rating: Rating) => Promise<string | null>;
+  /** The draft's saved rating, shown as the selected thumb. */
+  rating?: Rating | null;
   /** When set, a Regenerate button asks for another version; it stays busy until the view re-renders. */
   onRegenerate?: () => Promise<void>;
 }
@@ -37,12 +40,12 @@ export function copyButton(text: string, onCopy: (text: string) => Promise<void>
   });
 }
 
-function rateButton(rating: Rating, callbacks: DraftCallbacks): HTMLButtonElement {
-  const b = button(rating === 'up' ? THUMBS_UP : THUMBS_DOWN, `draft-${rating}`, () => {
-    b.disabled = true;
-    void callbacks.onRate(rating).catch(() => (b.disabled = false));
-  });
+const RATE_SAVED: Record<Rating, string> = { up: 'Saved as good example', down: 'Saved as example to avoid' };
+
+function rateButton(rating: Rating, selected: Rating | null, onPick: (rating: Rating) => void): HTMLButtonElement {
+  const b = button(rating === 'up' ? THUMBS_UP : THUMBS_DOWN, `draft-${rating}`, () => onPick(rating));
   b.setAttribute('aria-label', rating === 'up' ? 'Good reply' : 'Bad reply');
+  b.setAttribute('aria-pressed', String(selected === rating));
   return b;
 }
 
@@ -97,14 +100,27 @@ export function renderDraftActions(
   const bar = document.createElement('div');
   bar.className = 'draft-actions';
   let current = text;
+  let rated = callbacks.rating ?? null;
+  let note: { text: string; error: boolean } | null = null;
+  const rate = (rating: Rating) => {
+    void callbacks
+      .onRate(rating)
+      .catch(() => 'Save failed.')
+      .then((error) => {
+        if (!error) rated = rating;
+        note = { text: error ?? RATE_SAVED[rating], error: error !== null };
+        showButtons();
+      });
+  };
   const showButtons = () => {
     onEditing(false);
     bar.replaceChildren(
       copyButton(current, callbacks.onCopy),
       button('Edit', 'draft-edit', showEditor),
       ...(callbacks.onRegenerate ? [regenerateButton(callbacks.onRegenerate)] : []),
-      rateButton('up', callbacks),
-      rateButton('down', callbacks),
+      rateButton('up', rated, rate),
+      rateButton('down', rated, rate),
+      ...(note ? [element('div', note.text, note.error ? 'needs-edit rate-note' : 'rate-note')] : []),
     );
   };
   const onSaved = (edited: string) => {

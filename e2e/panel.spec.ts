@@ -245,3 +245,37 @@ test('editing a Claude version keeps focus across polls, saves the edit as the s
   await claude.getByTestId('draft-edit').click();
   await expect(claude.getByTestId('draft-editor')).toHaveValue(edited);
 });
+
+test('thumbs show a pressed state with confirmation, switch, survive polls and a reload, and fit one row', async () => {
+  const post = capturedPost('8601', { authorName: 'Tao', authorHandle: 'tao', text: 'What would you ship this week?' });
+  expect((await postJson(server.baseUrl, '/v1/posts', { posts: [post] })).ok).toBe(true);
+  let panel = await openFlagged();
+  let claude = panel.locator('[data-status-id="8601"]').getByTestId('claude-version');
+  await claude.getByTestId('polish-button').click({ timeout: 20_000 });
+  await expect(claude.getByTestId('claude-text')).toBeVisible({ timeout: 20_000 });
+  const up = claude.getByTestId('draft-up');
+  const down = claude.getByTestId('draft-down');
+  await expect(up).toHaveAttribute('aria-pressed', 'false');
+
+  const copyBox = await claude.getByTestId('draft-copy').boundingBox();
+  const downBox = await down.boundingBox();
+  expect(Math.abs((downBox?.y ?? 0) - (copyBox?.y ?? 99))).toBeLessThan(4);
+
+  await up.click();
+  await expect(up).toHaveAttribute('aria-pressed', 'true');
+  await expect(down).toHaveAttribute('aria-pressed', 'false');
+  await expect(claude).toContainText('Saved as good example');
+  await panel.waitForTimeout(3500);
+  await expect(claude.getByTestId('draft-up')).toHaveAttribute('aria-pressed', 'true');
+
+  await claude.getByTestId('draft-down').click();
+  await expect(claude.getByTestId('draft-down')).toHaveAttribute('aria-pressed', 'true');
+  await expect(claude.getByTestId('draft-up')).toHaveAttribute('aria-pressed', 'false');
+  await expect(claude).toContainText('Saved as example to avoid');
+
+  await panel.close();
+  panel = await openFlagged();
+  claude = panel.locator('[data-status-id="8601"]').getByTestId('claude-version');
+  await expect(claude.getByTestId('draft-down')).toHaveAttribute('aria-pressed', 'true', { timeout: 15_000 });
+  await expect(claude.getByTestId('draft-up')).toHaveAttribute('aria-pressed', 'false');
+});

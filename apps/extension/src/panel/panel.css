@@ -350,6 +350,28 @@ h1 {
   color: var(--accent);
 }
 
+/* Compact buttons keep Copy, Edit, Regenerate and the thumbs on one row at ~400px. */
+.draft-actions > button {
+  padding: 4px 9px;
+}
+[data-testid='draft-up'][aria-pressed='true'] {
+  border-color: var(--ok);
+  background: rgba(0, 186, 124, 0.22);
+}
+[data-testid='draft-down'][aria-pressed='true'] {
+  border-color: var(--danger);
+  background: rgba(244, 33, 46, 0.22);
+}
+.draft-actions > .rate-note {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--ok);
+  font-size: 12px;
+}
+.draft-actions > .rate-note.needs-edit {
+  color: var(--danger);
+}
+
 /* Digest ideas */
 .flag-draft,
 .flag-final {

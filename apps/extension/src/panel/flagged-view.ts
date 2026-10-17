@@ -1,6 +1,6 @@
 import { MAX_DRAFT_VERSIONS, type DraftVersion, type PolishInfo, type StoredPost } from '@xc/shared/types';
 import { element } from './dom';
-import { copyButton, copyText, renderDraftActions, type DraftCallbacks } from './draft-actions';
+import { copyButton, copyText, renderDraftActions, type DraftCallbacks, type Rating } from './draft-actions';
 import { renderPostCard } from './post-card';
 import { mountPostsView, type PostsViewOptions } from './posts-view';
 import { renderVersionNav } from './version-nav';
@@ -11,7 +11,7 @@ export interface FlaggedHandlers {
   onPolish: PolishHandler;
   onRegenerate: PolishHandler;
   onSelectVersion: (statusId: string, versionId: number) => Promise<void>;
-  draftCallbacks: (statusId: string) => DraftCallbacks;
+  draftCallbacks: (statusId: string, saved: Rating | null) => DraftCallbacks;
 }
 
 /** Rows with an open editor, kept across polls so typing is not wiped. */
@@ -128,7 +128,7 @@ function showEdited(post: StoredPost, text: string, ctx: RowContext): void {
 function draftActionsFor(post: StoredPost, text: string, ctx: RowContext): HTMLElement {
   const { handlers, editors } = ctx;
   const versions = post.polish?.versions.length ?? 0;
-  const base = handlers.draftCallbacks(post.statusId);
+  const base = handlers.draftCallbacks(post.statusId, post.polish?.feedback ?? null);
   const callbacks: DraftCallbacks = {
     ...base,
     onEdit: async (edited) => {

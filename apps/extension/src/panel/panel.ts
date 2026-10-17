@@ -75,14 +75,22 @@ async function sendFeedback(draftId: string, kind: 'copy' | 'edit' | 'up' | 'dow
   return typeof body.error === 'string' ? body.error : `server ${res.status}`;
 }
 
-function draftCallbacks(draftId: string): DraftCallbacks {
+// Remembers this session's thumbs so a poll that was fetched before the save landed cannot revert them.
+const sessionRatings = new Map<string, Rating>();
+
+function draftCallbacks(draftId: string, saved: Rating | null = null): DraftCallbacks {
   return {
+    rating: sessionRatings.get(draftId) ?? saved,
     onCopy: async (text) => {
       await copyText(text);
       await sendFeedback(draftId, 'copy');
     },
     onEdit: (text) => sendFeedback(draftId, 'edit', text),
-    onRate: async (rating: Rating) => void (await sendFeedback(draftId, rating)),
+    onRate: async (rating: Rating) => {
+      const error = await sendFeedback(draftId, rating);
+      if (!error) sessionRatings.set(draftId, rating);
+      return error;
+    },
   };
 }
 

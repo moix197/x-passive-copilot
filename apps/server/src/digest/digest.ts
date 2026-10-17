@@ -159,7 +159,7 @@ function draftInfo(db: DatabaseSync, ideaId: string): PolishInfo | null {
     | undefined;
   if (!row) return null;
   const { status, text, error } = row;
-  return { status, text, violations: parseViolations(row.violations), topPick: false, error, versions: [], selectedVersion: null };
+  return { status, text, violations: parseViolations(row.violations), topPick: false, error, versions: [], selectedVersion: null, feedback: null };
 }
 
 function toIdeas(db: DatabaseSync, row: DigestRow): DigestIdea[] {

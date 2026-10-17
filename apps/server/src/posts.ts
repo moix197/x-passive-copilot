@@ -141,6 +141,7 @@ interface PostRow {
   d_error: string | null;
   d_selected_version: number | null;
   d_versions: string | null;
+  d_feedback: 'up' | 'down' | null;
 }
 
 export interface PolishContext {
@@ -176,12 +177,13 @@ function toPolish(row: PostRow, ctx: PolishContext): PolishInfo | null {
       versions,
       // Backfilled drafts have no stored selection; their only version is the selected one.
       selectedVersion: row.d_selected_version ?? versions[versions.length - 1]?.id ?? null,
+      feedback: row.d_feedback,
     };
   }
   const eligible = ctx.capReached && row.score !== null && row.score >= ctx.threshold;
   const worthy = row.reply_worthy === 1 || row.must_flag !== null;
   return eligible && worthy
-    ? { status: 'cap_reached', text: null, violations: [], topPick: false, error: null, versions: [], selectedVersion: null }
+    ? { status: 'cap_reached', text: null, violations: [], topPick: false, error: null, versions: [], selectedVersion: null, feedback: null }
     : null;
 }
 
@@ -207,7 +209,8 @@ function toStoredPost(row: PostRow, ctx: PolishContext): StoredPost {
 const SELECT_WITH_TRIAGE = `SELECT p.*, t.status_id AS t_status_id, t.score, t.reason, t.rough_draft,
   t.reply_worthy, t.skip_reason, t.must_flag, t.error,
   d.status AS d_status, d.kind AS d_kind, d.text AS d_text, d.violations AS d_violations, d.error AS d_error,
-  d.selected_version AS d_selected_version, ${VERSIONS_SUBQUERY('p.status_id')} AS d_versions
+  d.selected_version AS d_selected_version, ${VERSIONS_SUBQUERY('p.status_id')} AS d_versions,
+  (SELECT CASE e.polarity WHEN 'positive' THEN 'up' ELSE 'down' END FROM examples e WHERE e.draft_id = d.status_id) AS d_feedback
   FROM posts p LEFT JOIN triage t ON t.status_id = p.status_id
   LEFT JOIN drafts d ON d.status_id = p.status_id`;
 

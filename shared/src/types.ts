@@ -98,6 +98,8 @@ export const PolishInfoSchema = z.object({
   /** Every generated option, oldest first. */
   versions: z.array(DraftVersionSchema).default([]),
   selectedVersion: z.number().int().positive().nullable().default(null),
+  /** The draft's latest thumb rating (an examples row), so the panel can show it as selected. */
+  feedback: z.enum(['up', 'down']).nullable().default(null),
 });
 export type PolishInfo = z.infer<typeof PolishInfoSchema>;
 

@@ -37,6 +37,10 @@ versions with their post.
 **Dashes/notes:** each generated reply passes `replaceDashes` before the guard; the prompt also carries the
 owner's `<user-style-rules>` (see pipeline/voice-and-digest). Post cards show a "View on X" link.
 
+**Thumbs:** `PolishInfo.feedback` ('up'|'down'|null) is the draft's `examples` polarity, joined at list time. The
+panel renders it as `aria-pressed` on 👍/👎 plus an inline "Saved as ..." note; a session map in panel.ts keeps
+the pick if a poll was fetched before the save. Latest wins; copy/edit also write a positive example.
+
 **Why:** Claude subscription limits are shared with interactive use, hence the cap. Rows over the
 cap show a synthetic `cap_reached` status computed at list time (not stored).
 
