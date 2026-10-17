@@ -38,3 +38,40 @@ h1 {
 .post a {
   font-size: 12px;
 }
+.tabs {
+  display: flex;
+  border-bottom: 1px solid #eff3f4;
+}
+.tabs button {
+  flex: 1;
+  padding: 8px;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+.tabs button[aria-selected='true'] {
+  font-weight: 600;
+  border-bottom: 2px solid #1d9bf0;
+}
+.score-badge {
+  display: inline-block;
+  min-width: 28px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: #1d9bf0;
+  color: #fff;
+  font-size: 12px;
+  text-align: center;
+}
+.flag-reason,
+.flag-draft {
+  margin: 6px 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.flag-draft {
+  padding: 6px 8px;
+  background: #f7f9f9;
+  border-radius: 6px;
+}

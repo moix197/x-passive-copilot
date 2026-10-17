@@ -5,6 +5,7 @@ import { loadConfig } from '@xc/shared';
 import { openDb } from './db';
 import { prunePosts } from './posts';
 import { createRouter } from './router';
+import { createTriageService, opencodeClassify } from './triage/triage';
 
 interface CliOptions {
   dev: boolean;
@@ -33,7 +34,10 @@ function main(): void {
   }
   const db = openDb(opts.home);
   prunePosts(db, Date.now());
-  createServer(createRouter(db)).listen(opts.port, '127.0.0.1', () => {
+  const triage = createTriageService(db, config.value, opencodeClassify(config.value, opts.home));
+  if (!config.value.models.triage) console.log('triage disabled: set models.triage in config.json');
+  triage.notify();
+  createServer(createRouter(db, { onIngest: triage.notify })).listen(opts.port, '127.0.0.1', () => {
     console.log(`server listening on 127.0.0.1:${opts.port}${opts.dev ? ' (dev)' : ''}`);
   });
 }

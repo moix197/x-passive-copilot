@@ -7,7 +7,13 @@ export const AppConfigSchema = z.object({
   handle: z.string().default('YOUR_HANDLE'),
   watchlist: z.array(z.string()).default([]),
   spacehoodRepoPath: z.string().default(''),
-  triage: z.object({ batchSize: z.number().int().positive().default(15) }).prefault({}),
+  triage: z
+    .object({
+      batchSize: z.number().int().positive().default(15),
+      maxAgeHours: z.number().positive().default(24),
+      minEngagement: z.number().nonnegative().default(3),
+    })
+    .prefault({}),
   autoPolish: z
     .object({
       threshold: z.number().default(80),

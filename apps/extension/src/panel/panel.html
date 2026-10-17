@@ -8,6 +8,10 @@
   </head>
   <body>
     <header><h1 id="title"></h1></header>
+    <nav role="tablist" class="tabs">
+      <button role="tab" type="button" data-view="all" aria-selected="true">All</button>
+      <button role="tab" type="button" data-view="flagged" aria-selected="false">Flagged</button>
+    </nav>
     <main id="app"></main>
     <script type="module" src="panel.js"></script>
   </body>

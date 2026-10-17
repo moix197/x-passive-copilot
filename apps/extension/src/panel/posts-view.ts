@@ -4,9 +4,11 @@ const POLL_MS = 3000;
 
 export interface PostsViewOptions {
   load: () => Promise<StoredPost[]>;
+  render?: (post: StoredPost) => HTMLElement;
+  emptyText?: string;
 }
 
-function element(tag: string, text: string, className?: string): HTMLElement {
+export function element(tag: string, text: string, className?: string): HTMLElement {
   const el = document.createElement(tag);
   el.textContent = text;
   if (className) el.className = className;
@@ -26,7 +28,14 @@ function tagsFor(post: StoredPost): string[] {
   return [...(post.isReply ? ['reply'] : []), ...(post.quotedStatusId ? ['quote'] : [])];
 }
 
-function openOnXLink(post: StoredPost): HTMLAnchorElement {
+function triageNote(post: StoredPost): string {
+  const t = post.triage;
+  if (!t) return '';
+  if (t.skipReason) return `skipped: ${t.skipReason}`;
+  return t.error ? 'triage error' : '';
+}
+
+export function openOnXLink(post: StoredPost): HTMLAnchorElement {
   const link = document.createElement('a');
   link.textContent = 'Open on X';
   link.href = `https://x.com/${encodeURIComponent(post.authorHandle)}/status/${post.statusId}`;
@@ -35,7 +44,7 @@ function openOnXLink(post: StoredPost): HTMLAnchorElement {
   return link;
 }
 
-function renderPost(post: StoredPost): HTMLElement {
+export function renderPost(post: StoredPost): HTMLElement {
   const row = document.createElement('article');
   row.className = 'post';
   row.dataset.testid = 'post-row';
@@ -44,11 +53,13 @@ function renderPost(post: StoredPost): HTMLElement {
   row.append(head, element('p', post.text, 'post-text'), element('div', metricsLine(post.metrics), 'post-metrics'));
   const tags = tagsFor(post);
   if (tags.length) row.append(element('div', tags.join(' · '), 'post-tags'));
+  const note = triageNote(post);
+  if (note) row.append(element('div', note, 'post-tags'));
   row.append(openOnXLink(post));
   return row;
 }
 
-export function mountPostsView(root: HTMLElement, options: PostsViewOptions): void {
+export function mountPostsView(root: HTMLElement, options: PostsViewOptions): () => void {
   const status = element('p', 'Loading...', 'status');
   const list = document.createElement('div');
   root.replaceChildren(status, list);
@@ -59,8 +70,8 @@ export function mountPostsView(root: HTMLElement, options: PostsViewOptions): vo
     busy = true;
     try {
       const posts = await options.load();
-      list.replaceChildren(...posts.map(renderPost));
-      status.textContent = posts.length ? '' : 'No posts captured yet.';
+      list.replaceChildren(...posts.map(options.render ?? renderPost));
+      status.textContent = posts.length ? '' : (options.emptyText ?? 'No posts captured yet.');
     } catch {
       status.textContent = 'Server offline.';
     } finally {
@@ -68,7 +79,12 @@ export function mountPostsView(root: HTMLElement, options: PostsViewOptions): vo
     }
   };
 
-  document.addEventListener('visibilitychange', () => void refresh());
-  setInterval(() => void refresh(), POLL_MS);
+  const onVisibility = () => void refresh();
+  document.addEventListener('visibilitychange', onVisibility);
+  const timer = setInterval(() => void refresh(), POLL_MS);
   void refresh();
+  return () => {
+    clearInterval(timer);
+    document.removeEventListener('visibilitychange', onVisibility);
+  };
 }

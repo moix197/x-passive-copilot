@@ -1,10 +1,12 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { CapturedPost, PostBatchResult, PostListResponse, StoredPost } from '@xc/shared';
+import type { CapturedPost, MustFlag, PostBatchResult, PostListResponse, StoredPost } from '@xc/shared';
 
 const PRUNE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function prunePosts(db: DatabaseSync, now: number): void {
-  db.prepare('DELETE FROM posts WHERE captured_at < ?').run(now - PRUNE_AFTER_MS);
+  const cutoff = now - PRUNE_AFTER_MS;
+  db.prepare('DELETE FROM triage WHERE status_id IN (SELECT status_id FROM posts WHERE captured_at < ?)').run(cutoff);
+  db.prepare('DELETE FROM posts WHERE captured_at < ?').run(cutoff);
 }
 
 function updateMetrics(db: DatabaseSync, post: CapturedPost): boolean {
@@ -61,6 +63,27 @@ interface PostRow {
   is_reply: number;
   quoted_status_id: string | null;
   captured_at: number;
+  t_status_id: string | null;
+  score: number | null;
+  reason: string | null;
+  rough_draft: string | null;
+  reply_worthy: number | null;
+  skip_reason: string | null;
+  must_flag: MustFlag | null;
+  error: string | null;
+}
+
+function toTriage(row: PostRow): StoredPost['triage'] {
+  if (row.t_status_id === null) return null;
+  return {
+    score: row.score,
+    reason: row.reason,
+    roughDraft: row.rough_draft,
+    replyWorthy: row.reply_worthy === 1,
+    skipReason: row.skip_reason,
+    mustFlag: row.must_flag,
+    error: row.error,
+  };
 }
 
 function toStoredPost(row: PostRow): StoredPost {
@@ -75,14 +98,36 @@ function toStoredPost(row: PostRow): StoredPost {
     isReply: row.is_reply === 1,
     quotedStatusId: row.quoted_status_id,
     capturedAt: row.captured_at,
+    triage: toTriage(row),
   };
 }
 
+const SELECT_WITH_TRIAGE = `SELECT p.*, t.status_id AS t_status_id, t.score, t.reason, t.rough_draft,
+  t.reply_worthy, t.skip_reason, t.must_flag, t.error
+  FROM posts p LEFT JOIN triage t ON t.status_id = p.status_id`;
+
 export function listPosts(db: DatabaseSync, limit: number, before: number | null): PostListResponse {
   const rows = db
-    .prepare('SELECT * FROM posts WHERE seq < ? ORDER BY seq DESC LIMIT ?')
+    .prepare(`${SELECT_WITH_TRIAGE} WHERE p.seq < ? ORDER BY p.seq DESC LIMIT ?`)
     .all(before ?? Number.MAX_SAFE_INTEGER, limit) as unknown as PostRow[];
   const posts = rows.map(toStoredPost);
   const last = posts[posts.length - 1];
   return { posts, nextBefore: posts.length === limit && last ? last.seq : null };
+}
+
+export function listFlaggedPosts(db: DatabaseSync, limit: number): PostListResponse {
+  const rows = db
+    .prepare(
+      `${SELECT_WITH_TRIAGE} WHERE t.must_flag IS NOT NULL OR t.reply_worthy = 1
+       ORDER BY COALESCE(t.score, 0) DESC, p.seq DESC LIMIT ?`,
+    )
+    .all(limit) as unknown as PostRow[];
+  return { posts: rows.map(toStoredPost), nextBefore: null };
+}
+
+export function listUntriagedPosts(db: DatabaseSync): StoredPost[] {
+  const rows = db
+    .prepare(`${SELECT_WITH_TRIAGE} WHERE t.status_id IS NULL ORDER BY p.seq`)
+    .all() as unknown as PostRow[];
+  return rows.map(toStoredPost);
 }

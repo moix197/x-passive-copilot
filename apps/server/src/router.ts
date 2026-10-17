@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import { PostBatchSchema, type HealthResponse } from '@xc/shared';
-import { ingestPosts, listPosts } from './posts';
+import { ingestPosts, listFlaggedPosts, listPosts } from './posts';
 
 const MAX_BODY_BYTES = 1024 * 1024;
 const DEFAULT_LIMIT = 50;
@@ -46,7 +46,7 @@ function parseIntParam(value: string | null, fallback: number): number | null {
   return /^\d{1,15}$/.test(value) ? Number(value) : null;
 }
 
-function postPosts(db: DatabaseSync): Handler {
+function postPosts(db: DatabaseSync, onIngest: () => void): Handler {
   return async (req, res) => {
     const raw = await readBody(req);
     if (raw === null) return sendJson(res, 413, { error: 'body too large' });
@@ -63,15 +63,22 @@ function getPosts(db: DatabaseSync): Handler {
     const limit = parseIntParam(url.searchParams.get('limit'), DEFAULT_LIMIT);
     const before = parseIntParam(url.searchParams.get('before'), 0);
     if (!limit || before === null || limit > MAX_LIMIT) return sendJson(res, 400, { error: 'bad query' });
+    const view = url.searchParams.get('view');
+    if (view === 'flagged') return sendJson(res, 200, listFlaggedPosts(db, limit));
+    if (view !== null && view !== 'all') return sendJson(res, 400, { error: 'bad query' });
     sendJson(res, 200, listPosts(db, limit, before || null));
   };
 }
 
-export function createRouter(db: DatabaseSync): (req: IncomingMessage, res: ServerResponse) => void {
+export interface RouterHooks {
+  onIngest: () => void;
+}
+
+export function createRouter(db: DatabaseSync, hooks: RouterHooks): (req: IncomingMessage, res: ServerResponse) => void {
   const routes: Record<string, Handler> = {
     'GET /v1/health': (_req, res) => sendJson(res, 200, { status: 'ok' } satisfies HealthResponse),
     'GET /v1/posts': getPosts(db),
-    'POST /v1/posts': postPosts(db),
+    'POST /v1/posts': postPosts(db, hooks.onIngest),
   };
   return (req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');

@@ -54,3 +54,30 @@ from CLAUDE.md:
   migration rigor, Telegram, multi-user.
 - **Kept:** passivity invariants, untrusted-tweet containment (stdin only, `shell:false`,
   zod-parsed output, `textContent` rendering), 127.0.0.1 bind + per-launch token, hard-rule guard.
+
+## Triage: context.md, watchlist, config
+
+Posts are prefiltered, then triaged against `<home>/context.md` (what you build and want to reply
+to; first 8 KB are used) by an LLM through [opencode](https://opencode.ai). Setup:
+`pnpm add -g opencode-ai`, `opencode auth login`, then in `<home>/config.json`:
+
+```json
+{
+  "handle": "yourhandle",
+  "watchlist": ["someauthor"],
+  "models": { "triage": "opencode/<model-id>" },
+  "triage": { "batchSize": 15, "maxAgeHours": 24, "minEngagement": 3 }
+}
+```
+
+- `models.triage` is required (provider/model id as shown by `opencode models`); empty = triage off.
+- Posts older than `maxAgeHours` or with likes+reposts+replies below `minEngagement` show
+  "skipped: <reason>" in the All tab and are never sent to the LLM.
+- Posts whose text mentions `@handle` and posts by `watchlist` authors are always flagged
+  (tagged `mention` / `watchlist`), even if scored low.
+- The **Flagged** tab lists reply-worthy posts by score with reason, rough draft and a Copy button.
+- A batch runs at 15 pending posts or 30s after the first pending one. Malformed model output marks
+  those posts "triage error"; the server keeps running.
+- opencode runs in `<home>/sandbox/opencode` with all tools denied; prompts go over stdin only.
+- The opencode event parser is built from the documented format and not yet verified against a live
+  install.

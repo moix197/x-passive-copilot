@@ -42,9 +42,34 @@ export const CaptureMessageSchema = z.object({
 });
 export type CaptureMessage = z.infer<typeof CaptureMessageSchema>;
 
+export const MustFlagSchema = z.enum(['mention', 'watchlist']);
+export type MustFlag = z.infer<typeof MustFlagSchema>;
+
+export const TriageItemSchema = z.object({
+  statusId: z.string().regex(/^\d+$/),
+  relevant: z.boolean(),
+  replyWorthy: z.boolean(),
+  score: z.number().min(0).max(100),
+  reason: z.string().max(300),
+  roughDraft: z.string().max(280),
+});
+export type TriageItem = z.infer<typeof TriageItemSchema>;
+
+export const TriageInfoSchema = z.object({
+  score: z.number().nullable(),
+  reason: z.string().nullable(),
+  roughDraft: z.string().nullable(),
+  replyWorthy: z.boolean(),
+  skipReason: z.string().nullable(),
+  mustFlag: MustFlagSchema.nullable(),
+  error: z.string().nullable(),
+});
+export type TriageInfo = z.infer<typeof TriageInfoSchema>;
+
 export const StoredPostSchema = CapturedPostSchema.extend({
   seq: z.number().int().positive(),
   capturedAt: z.number().int().nonnegative(),
+  triage: TriageInfoSchema.nullable(),
 });
 export type StoredPost = z.infer<typeof StoredPostSchema>;
 

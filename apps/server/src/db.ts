@@ -17,6 +17,17 @@ CREATE TABLE IF NOT EXISTS posts (
   is_reply INTEGER NOT NULL,
   quoted_status_id TEXT,
   captured_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS triage (
+  status_id TEXT PRIMARY KEY,
+  score REAL,
+  reason TEXT,
+  rough_draft TEXT,
+  reply_worthy INTEGER NOT NULL DEFAULT 0,
+  skip_reason TEXT,
+  must_flag TEXT,
+  error TEXT,
+  triaged_at INTEGER NOT NULL
 )`;
 
 export function openDb(home: string): DatabaseSync {
