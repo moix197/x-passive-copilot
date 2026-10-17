@@ -10,7 +10,7 @@ import { bucketToRun, createDigestService, getIdea, readDigestView, sanitizeDige
 const metrics = { replies: 0, reposts: 0, likes: 0, views: 0 };
 const post = (n: number, handle: string) => ({
   statusId: String(n), authorName: 'A', authorHandle: handle, text: `post ${n}`, postedAt: null, metrics,
-  isReply: false, replyTo: [], quotedStatusId: null,
+  isReply: false, replyTo: [], quotedStatusId: null, avatarUrl: null,
 });
 const config = () => ({ ...defaultConfig(), handle: 'me', models: { triage: 'm', final: '' } });
 const reply = (ids: string[]) =>

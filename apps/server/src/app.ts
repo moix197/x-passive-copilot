@@ -71,7 +71,7 @@ function buildHooks(db: DatabaseSync, home: string, config: AppConfig, services:
   const { polish } = services;
   return {
     onIngest: services.notifyAll,
-    onPolish: (statusId) => polish.request(statusId, 'manual').state,
+    onPolish: (statusId, regenerate) => polish.request(statusId, 'manual', regenerate).state,
     onIdeaPolish: (ideaId) => {
       const idea = getIdea(db, ideaId);
       return idea ? polish.requestIdea(ideaId, idea).state : 'unknown';

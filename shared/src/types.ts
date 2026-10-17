@@ -15,6 +15,9 @@ const counts = z.object({
 const xHandle = z.string().regex(/^[A-Za-z0-9_]{1,15}$/);
 const capturedStatusId = z.string().regex(/^\d{1,30}$/);
 
+// Only X's own image CDNs: the panel loads this URL, so any other host would be a tracking beacon.
+export const AVATAR_URL_PATTERN = /^https:\/\/(?:pbs|abs)\.twimg\.com\/[A-Za-z0-9_\-./%]{1,250}$/;
+
 export const CapturedPostSchema = z.object({
   statusId: capturedStatusId,
   authorName: z.string().max(200),
@@ -25,8 +28,9 @@ export const CapturedPostSchema = z.object({
   isReply: z.boolean(),
   replyTo: z.array(xHandle).max(10).default([]),
   quotedStatusId: capturedStatusId.nullable(),
+  avatarUrl: z.string().max(300).regex(AVATAR_URL_PATTERN).nullable().default(null),
 });
-export type CapturedPost = z.infer<typeof CapturedPostSchema>;
+export type CapturedPost= z.infer<typeof CapturedPostSchema>;
 
 export const PostBatchSchema = z.object({ posts: z.array(CapturedPostSchema).max(100) });
 export type PostBatch = z.infer<typeof PostBatchSchema>;
@@ -74,12 +78,26 @@ export type TriageInfo = z.infer<typeof TriageInfoSchema>;
 export const PolishStatusSchema = z.enum(['polishing', 'ready', 'needs_edit', 'error', 'cap_reached']);
 export type PolishStatus = z.infer<typeof PolishStatusSchema>;
 
+export const MAX_DRAFT_VERSIONS = 10;
+
+export const DraftVersionSchema = z.object({
+  id: z.number().int().positive(),
+  text: z.string(),
+  status: z.enum(['ready', 'needs_edit']),
+  violations: z.array(z.string()),
+});
+export type DraftVersion = z.infer<typeof DraftVersionSchema>;
+
 export const PolishInfoSchema = z.object({
   status: PolishStatusSchema,
+  /** The selected version's text (kept while a regenerate is polishing). */
   text: z.string().nullable(),
   violations: z.array(z.string()),
   topPick: z.boolean(),
   error: z.string().nullable(),
+  /** Every generated option, oldest first. */
+  versions: z.array(DraftVersionSchema).default([]),
+  selectedVersion: z.number().int().positive().nullable().default(null),
 });
 export type PolishInfo = z.infer<typeof PolishInfoSchema>;
 
@@ -163,6 +181,9 @@ export const FeedbackRequestSchema = z
   })
   .refine((v) => v.kind !== 'edit' || v.text !== undefined, { message: 'edit needs text' });
 export type FeedbackRequest = z.infer<typeof FeedbackRequestSchema>;
+
+export const SelectVersionRequestSchema = z.object({ versionId: z.number().int().positive() });
+export type SelectVersionRequest = z.infer<typeof SelectVersionRequestSchema>;
 
 export const DigestTrendSchema = z.object({
   title: z.string().max(120),

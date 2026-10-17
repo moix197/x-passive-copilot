@@ -28,14 +28,6 @@ async function loadDoctorReport(): Promise<unknown> {
   return res.json();
 }
 
-async function requestPolish(statusId: string): Promise<void> {
-  const config = await getServerConfig();
-  const res = await fetch(`${config.baseUrl}/v1/posts/${encodeURIComponent(statusId)}/polish`, {
-    method: 'POST',
-    headers: authHeaders(config),
-  });
-  if (!res.ok) throw new Error(`server ${res.status}`);
-}
 
 async function getJson(path: string): Promise<unknown> {
   const config = await getServerConfig();
@@ -52,6 +44,17 @@ async function postJson(path: string, body?: unknown): Promise<Response> {
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+}
+
+async function requestPolish(statusId: string, regenerate = false): Promise<void> {
+  const query = regenerate ? '?regenerate=1' : '';
+  const res = await postJson(`/v1/posts/${encodeURIComponent(statusId)}/polish${query}`);
+  if (!res.ok) throw new Error(`server ${res.status}`);
+}
+
+async function selectVersion(statusId: string, versionId: number): Promise<void> {
+  const res = await postJson(`/v1/drafts/${encodeURIComponent(statusId)}/select`, { versionId });
+  if (!res.ok) throw new Error(`server ${res.status}`);
 }
 
 async function requestIdeaPolish(ideaId: string): Promise<void> {
@@ -98,7 +101,15 @@ function mountView(root: HTMLElement, view: View, load: () => Promise<StoredPost
       draftCallbacks: (ideaId) => draftCallbacks(`idea-${ideaId}`),
     });
   }
-  if (view === 'flagged') return mountFlaggedView(root, { load, onPolish: requestPolish, draftCallbacks });
+  if (view === 'flagged') {
+    return mountFlaggedView(root, {
+      load,
+      onPolish: (statusId) => requestPolish(statusId),
+      onRegenerate: (statusId) => requestPolish(statusId, true),
+      onSelectVersion: selectVersion,
+      draftCallbacks,
+    });
+  }
   return mountPostsView(root, { load });
 }
 

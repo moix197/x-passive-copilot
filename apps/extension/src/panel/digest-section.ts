@@ -1,6 +1,6 @@
 import { DigestViewSchema, type DigestIdea, type DigestTrend, type DigestView } from '@xc/shared/types';
 import { copyButton, copyText, renderDraftActions, type DraftCallbacks } from './draft-actions';
-import { element } from './posts-view';
+import { element } from './dom';
 import { mountPolled } from './voice-tab';
 
 export interface DigestHandlers {

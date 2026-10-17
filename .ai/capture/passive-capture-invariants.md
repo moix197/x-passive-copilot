@@ -3,7 +3,7 @@ id: capture/passive-capture-invariants
 type: constraint
 summary: Content script only reads the DOM and calls sendMessage (no fetch, click, scroll, events, DOM writes, localhost); all X selectors live in selectors.ts
 tags: [ban-risk, content-script, passivity, selectors, untrusted-input]
-paths: [apps/extension/src/content/**, apps/extension/src/background/sw.ts, apps/extension/src/panel/posts-view.ts]
+paths: [apps/extension/src/content/**, apps/extension/src/background/sw.ts, apps/extension/src/panel/posts-view.ts, apps/extension/src/panel/post-card.ts, shared/src/types.ts]
 related: [tooling/lean-v1-scaffold]
 status: active
 updated: 2026-10-17
@@ -29,7 +29,14 @@ read via `ownMatch` so quoted posts never leak their author/text into the outer 
 **Untrusted input:** captured text is hostile. The SW re-validates each post with the shared zod
 schema (statusId digits, handle `[A-Za-z0-9_]{1,15}`, text <= 4000) before sending; the server
 validates again (1 MB cap, batch <= 100) and logs statusIds only; the panel renders with
-`textContent` only and rebuilds "Open on X" links from validated handle + statusId.
+`textContent` only and rebuilds the post link (the header time) from validated handle + statusId.
+
+**Avatar:** `parse-article` reads the outer `[data-testid="Tweet-User-Avatar"] img` `src`
+attribute (`getAttribute` only; the content script never fetches it) and keeps it only when it
+matches the shared `AVATAR_URL_PATTERN` (`https://pbs|abs.twimg.com/...`), else `null`. The schema
+re-checks it, because the panel loads that URL in an `<img>` (no-referrer; initials fallback on
+error): any other host would be a tracking beacon. MV3's default extension CSP has no `img-src`
+limit, so no manifest change was needed. Selector unverified live.
 
 **Extension imports `@xc/shared/types`, never `@xc/shared`:** the index re-exports `config.ts`,
 which uses Node APIs and would break extension typecheck and bundling.

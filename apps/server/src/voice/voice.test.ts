@@ -12,7 +12,7 @@ const freshDb = () => openDb(mkdtempSync(join(tmpdir(), 'xc-voice-')));
 const metrics = { replies: 0, reposts: 0, likes: 0, views: 0 };
 const post = (statusId: string, text: string) => ({
   statusId, authorName: 'A', authorHandle: 'someone', text, postedAt: null, metrics,
-  isReply: false, replyTo: [], quotedStatusId: null,
+  isReply: false, replyTo: [], quotedStatusId: null, avatarUrl: null,
 });
 
 describe('shouldRegenerate', () => {

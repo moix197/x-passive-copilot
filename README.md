@@ -41,7 +41,10 @@ messaging. Server logs go to `<home>/logs/server.log`. Without Chrome's host, ru
 ## Capture usage
 
 With the switch on (or a dev server running), browse https://x.com normally: posts you scroll past are captured
-and listed newest first in the side panel (polls every 3s while open). Posts are stored in
+and listed newest first in the side panel (polls every 3s while open). Each post is shown like on X:
+avatar (the `src` X already rendered, kept only when it is on `pbs`/`abs.twimg.com`; otherwise an
+initials circle), name, @handle, relative time (absolute on hover) linking to the post, text and
+metrics. The panel is dark-only. Posts are stored in
 `<home>/posts.db` (30-day prune). The extension targets `http://127.0.0.1:7457` by default; to use
 another server set it from the service worker DevTools console:
 `chrome.storage.local.set({ serverUrl: 'http://127.0.0.1:PORT' })`.
@@ -55,8 +58,9 @@ from CLAUDE.md:
 
 - **Few packages:** `apps/server`, `apps/extension`, `shared/` (types + zod schemas + small
   helpers). No `packages/*` split, no dependency-direction checker.
-- **Light tests:** unit tests for pure parsers/guard/prefilter; one Playwright smoke test. Not
-  e2e-per-feature; no `@covers` maps; no e2e-regression runs per phase. No lint.
+- **Light tests:** unit tests for pure parsers/guard/prefilter/formatters; Playwright specs
+  (`e2e/smoke.spec.ts`, `e2e/panel.spec.ts`) with `@covers` headers. The LLM CLIs are faked at the
+  process boundary by `e2e/fakes/` (put first on PATH by `installFakeClis` in `e2e/harness.ts`). No lint.
 - **No per-phase code review.** One review of the whole change at the end.
 - **Deferred (not built in v1):** `check-deps` script, Host/Origin/DNS-rebinding checks, persistent
   job queue (simple in-memory retry instead), claude-haiku fallback chain, idle-RSS measurement,
@@ -121,6 +125,13 @@ from its environment so it never bills the API. Double clicks run one job.
   one regeneration with the violations listed; still failing -> "Needs edit: <rules>". Rough drafts
   get a "draft warning" tag.
 - `models.final` and `spacehoodRepoPath` are required; otherwise polish shows "Polish failed: config...".
+- A flagged card has three labeled sections: the **original post**, the **First draft** (triage
+  model: reason + rough draft) and the **Claude version** (polished).
+- **Regenerate** on a Claude version asks for another option (the earlier ones are in the prompt as
+  "already written") without discarding any: every version is guarded, stored in `draft_versions`
+  and kept across reloads. **‹ 2/3 ›** flips between them; the shown version is the selected one
+  (persisted) that Copy/Edit/feedback use. Max 10 versions per draft. A failed regenerate keeps the
+  selected version and shows "Regenerate failed".
 
 ## Seeding your voice / digest
 
@@ -148,4 +159,5 @@ for the digest.
 ```
 
 Routes (all need the bearer token): `GET /v1/voice`, `GET /v1/digest`,
-`POST /v1/drafts/:id/feedback {kind: copy|edit|up|down, text?<=1000}`, `POST /v1/ideas/:id/polish`.
+`POST /v1/drafts/:id/feedback {kind: copy|edit|up|down, text?<=1000}`, `POST /v1/ideas/:id/polish`,
+`POST /v1/posts/:id/polish[?regenerate=1]` (409 at the version cap), `POST /v1/drafts/:id/select {versionId}`.

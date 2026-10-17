@@ -9,5 +9,5 @@ scope: Passive x.com capture (content script), ban-risk rules, selectors
 
 | Entry | Type | Summary | Tags | Paths |
 | --- | --- | --- | --- | --- |
-| [passive-capture-invariants](passive-capture-invariants.md) | constraint | Content script only reads the DOM and calls sendMessage (no fetch, click, scroll, events, DOM writes, localhost); all X selectors live in selectors.ts | ban-risk, content-script, passivity, selectors, untrusted-input | `apps/extension/src/content/**`, `apps/extension/src/background/sw.ts`, `apps/extension/src/panel/posts-view.ts` |
+| [passive-capture-invariants](passive-capture-invariants.md) | constraint | Content script only reads the DOM and calls sendMessage (no fetch, click, scroll, events, DOM writes, localhost); all X selectors live in selectors.ts | ban-risk, content-script, passivity, selectors, untrusted-input | `apps/extension/src/content/**`, `apps/extension/src/background/sw.ts`, `apps/extension/src/panel/posts-view.ts`, `apps/extension/src/panel/post-card.ts`, `shared/src/types.ts` |
 <!-- entries:end -->

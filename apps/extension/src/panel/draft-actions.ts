@@ -1,4 +1,4 @@
-import { element } from './posts-view';
+import { element } from './dom';
 
 const COPIED_MS = 1500;
 const THUMBS_UP = String.fromCodePoint(0x1f44d);
@@ -11,6 +11,8 @@ export interface DraftCallbacks {
   /** Resolves to an error message to show, or null when the edit was accepted. */
   onEdit: (text: string) => Promise<string | null>;
   onRate: (rating: Rating) => Promise<void>;
+  /** When set, a Regenerate button asks for another version; it stays busy until the view re-renders. */
+  onRegenerate?: () => Promise<void>;
 }
 
 const NOOP = (): void => undefined;
@@ -44,6 +46,17 @@ function rateButton(rating: Rating, callbacks: DraftCallbacks): HTMLButtonElemen
   return b;
 }
 
+function regenerateButton(onRegenerate: () => Promise<void>): HTMLButtonElement {
+  return button('Regenerate', 'draft-regenerate', (b) => {
+    b.disabled = true;
+    b.textContent = 'Regenerating...';
+    void onRegenerate().catch(() => {
+      b.disabled = false;
+      b.textContent = 'Regenerate';
+    });
+  });
+}
+
 function editor(text: string, callbacks: DraftCallbacks, close: () => void): HTMLElement {
   const box = document.createElement('div');
   const area = document.createElement('textarea');
@@ -71,6 +84,7 @@ export function renderDraftActions(
     bar.replaceChildren(
       copyButton(text, callbacks.onCopy),
       button('Edit', 'draft-edit', showEditor),
+      ...(callbacks.onRegenerate ? [regenerateButton(callbacks.onRegenerate)] : []),
       rateButton('up', callbacks),
       rateButton('down', callbacks),
     );

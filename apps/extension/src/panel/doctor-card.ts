@@ -1,5 +1,5 @@
 import { DoctorReportSchema, type DoctorCheck, type DoctorReport } from '@xc/shared/types';
-import { element } from './posts-view';
+import { element } from './dom';
 
 const STATUS_TEXT: Record<DoctorCheck['status'], string> = {
   ok: 'ok',

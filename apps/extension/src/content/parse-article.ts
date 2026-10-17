@@ -1,4 +1,4 @@
-import type { CapturedPost } from '@xc/shared/types';
+import { AVATAR_URL_PATTERN, type CapturedPost } from '@xc/shared/types';
 import { parseMetrics } from './parse-metrics';
 import { MAX_REPLY_TO, REPLY_CONTEXT_MAX_CHARS, REPLY_HANDLE, REPLY_PREFIX, SEL } from './selectors';
 
@@ -31,6 +31,12 @@ function readStatusPath(anchor: Element | null | undefined): { handle: string; s
 function readAuthorName(article: Element): string {
   const name = ownMatch(article, SEL.userName)?.querySelector(SEL.userNameLink)?.textContent ?? '';
   return name.trim().slice(0, 200);
+}
+
+// Read-only: the attribute X already rendered; anything off X's image CDN is dropped, not sent.
+function readAvatarUrl(article: Element): string | null {
+  const src = ownMatch(article, SEL.avatarImage)?.getAttribute('src') ?? '';
+  return AVATAR_URL_PATTERN.test(src) ? src : null;
 }
 
 function readText(article: Element): string {
@@ -75,5 +81,6 @@ export function parseArticle(article: Element): CapturedPost | null {
     isReply: replyContext !== null,
     replyTo: replyContext ? readReplyTargets(replyContext) : [],
     quotedStatusId: readQuotedStatusId(article),
+    avatarUrl: readAvatarUrl(article),
   };
 }

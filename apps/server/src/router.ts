@@ -3,12 +3,14 @@ import type { DatabaseSync } from 'node:sqlite';
 import {
   FeedbackRequestSchema,
   PostBatchSchema,
+  SelectVersionRequestSchema,
   type DigestView,
   type DoctorReport,
   type HealthResponse,
   type VoiceView,
 } from '@xc/shared';
 import { isAuthorized } from './auth';
+import { selectVersion } from './polish/drafts-store';
 import type { PolishState } from './polish/polish';
 import { log } from './log';
 import { ingestPosts, listFlaggedPosts, listPosts, type PolishContext } from './posts';
@@ -92,13 +94,29 @@ function getPosts(db: DatabaseSync, polishContext: () => PolishContext, flagRule
 const POLISH_PATH = /^\/v1\/posts\/(\d{1,30})\/polish$/;
 
 const FEEDBACK_PATH = /^\/v1\/drafts\/(\d{1,30}|idea-\d{1,9}-\d)\/feedback$/;
+const SELECT_PATH = /^\/v1\/drafts\/(\d{1,30}|idea-\d{1,9}-\d)\/select$/;
 const IDEA_POLISH_PATH = /^\/v1\/ideas\/(\d{1,9}-\d)\/polish$/;
 
-function postPolish(onPolish: (id: string) => PolishState): ParamHandler {
-  return (id) => (_req, res) => {
-    const state = onPolish(id);
+const POLISH_STATUS: Record<PolishState, number> = { started: 202, already: 202, unknown: 404, limit: 409 };
+
+function postPolish(onPolish: (id: string, regenerate: boolean) => PolishState): ParamHandler {
+  return (id) => (_req, res, url) => {
+    const state = onPolish(id, url.searchParams.get('regenerate') === '1');
     if (state === 'unknown') return sendJson(res, 404, { error: 'not found' });
-    sendJson(res, 202, { state });
+    sendJson(res, POLISH_STATUS[state], { state });
+  };
+}
+
+const SELECT_STATUS = { ok: 200, not_found: 404, busy: 409 } as const;
+
+function postSelect(db: DatabaseSync): ParamHandler {
+  return (draftId) => async (req, res) => {
+    const raw = await readBody(req);
+    if (raw === null) return sendJson(res, 413, { error: 'body too large' });
+    const request = SelectVersionRequestSchema.safeParse(parseJson(raw));
+    if (!request.success) return sendJson(res, 400, { error: 'invalid selection' });
+    const outcome = selectVersion(db, draftId, request.data.versionId);
+    sendJson(res, SELECT_STATUS[outcome], outcome === 'ok' ? { ok: true } : { error: outcome });
   };
 }
 
@@ -126,7 +144,7 @@ function findParamHandler(method: string | undefined, pathname: string, routes: 
 
 export interface RouterHooks {
   onIngest: () => void;
-  onPolish: (statusId: string) => PolishState;
+  onPolish: (statusId: string, regenerate: boolean) => PolishState;
   onIdeaPolish: (ideaId: string) => PolishState;
   polishContext: () => PolishContext;
   doctor: () => Promise<DoctorReport>;
@@ -153,6 +171,7 @@ export function createRouter(
     { pattern: POLISH_PATH, handler: postPolish(hooks.onPolish) },
     { pattern: IDEA_POLISH_PATH, handler: postPolish(hooks.onIdeaPolish) },
     { pattern: FEEDBACK_PATH, handler: postFeedback(db) },
+    { pattern: SELECT_PATH, handler: postSelect(db) },
   ];
   return (req, res) => {
     if (!isAuthorized(req.headers.authorization, token)) return sendJson(res, 401, { error: 'unauthorized' });

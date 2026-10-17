@@ -6,7 +6,7 @@ tags: [testing, e2e, regression, agent-workflow]
 paths: []
 related: []
 status: active
-updated: 2026-10-16
+updated: 2026-10-17
 ---
 
 # Testing strategy: end-to-end first, coverage-mapped regression
@@ -44,6 +44,10 @@ selection mechanical instead of a judgment call.
 
 ## Project setup
 
-Add this project's specifics here (or as linked entries) once they exist:
-e2e tool and config path, how test data is seeded and reset, how tests sign in,
-which third-party services are faked and where.
+Playwright (`playwright.config.ts`, specs in `e2e/`, one worker). `e2e/harness.ts` starts a dev
+server per spec file on a free port with a temp home and its own `config.json`, launches Chromium
+with the built extension (`pnpm test:e2e` builds first) and hands it the dev token. Tests seed data
+through the real API (`POST /v1/posts`) or the x.com fixture (`e2e/fixtures/x-home.html`, routed).
+Faked third parties: `claude` and `opencode` CLIs via `installFakeClis` (scripts in `e2e/fakes/`,
+npm-style `.cmd` shim on Windows, sh shim elsewhere, prepended to PATH) and `pbs.twimg.com`
+images (`fakeTwimg`). The fake claude scripts its replies by call count (3rd+ break the guard).

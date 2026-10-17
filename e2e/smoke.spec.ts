@@ -1,90 +1,31 @@
-import { chromium, expect, test, type BrowserContext } from '@playwright/test';
-import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+// @covers apps/extension/src/content/**, apps/extension/src/background/**, apps/extension/src/panel/**, apps/extension/src/server-config.ts, apps/extension/manifest.json, apps/server/src/**, shared/src/**
+import { expect, test, type BrowserContext } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { authHeader, fakeTwimg, launchExtension, pointExtensionAtServer, removeTempDirs, root, startServer, type TestServer } from './harness';
 
-const root = resolve(import.meta.dirname, '..');
-const extensionDir = join(root, 'apps/extension/dist');
 const fixtureHtml = readFileSync(join(root, 'e2e/fixtures/x-home.html'), 'utf8');
 
-let server: ChildProcess;
+let server: TestServer;
 let baseUrl: string;
-const devToken = 'e2e-dev-token-0123456789';
-const authHeader = { authorization: `Bearer ${devToken}` };
 let context: BrowserContext;
-const tempDirs: string[] = [];
-
-function makeTempDir(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), prefix));
-  tempDirs.push(dir);
-  return dir;
-}
-
-function findFreePort(): Promise<number> {
-  return new Promise((resolvePort, reject) => {
-    const probe = createServer();
-    probe.once('error', reject);
-    probe.listen(0, '127.0.0.1', () => {
-      const { port } = probe.address() as { port: number };
-      probe.close(() => resolvePort(port));
-    });
-  });
-}
-
-async function startServer(): Promise<void> {
-  const port = await findFreePort();
-  baseUrl = `http://127.0.0.1:${port}`;
-  const args = ['--import', 'tsx', 'apps/server/src/main.ts', '--dev', '--port', String(port)];
-  const home = makeTempDir('xc-home-');
-  // Triage stays disabled (no models.triage), so must-flag posts can only show as pending.
-  writeFileSync(join(home, 'config.json'), JSON.stringify({ handle: 'e2eowner', watchlist: ['watched'] }));
-  server = spawn(process.execPath, [...args, '--home', home], {
-    cwd: root,
-    env: { ...process.env, XC_DEV_TOKEN: devToken },
-    stdio: 'ignore',
-  });
-  await expect
-    .poll(() => fetch(`${baseUrl}/v1/health`, { headers: authHeader }).then((r) => r.ok, () => false), { timeout: 20_000 })
-    .toBe(true);
-}
-
-async function stopServer(): Promise<void> {
-  if (!server || server.exitCode !== null) return;
-  const exited = new Promise((done) => server.once('exit', done));
-  server.kill();
-  await exited;
-}
-
-async function launchExtension(): Promise<BrowserContext> {
-  return chromium.launchPersistentContext(makeTempDir('xc-profile-'), {
-    channel: 'chromium',
-    headless: true,
-    args: [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`],
-  });
-}
-
-async function pointExtensionAtServer(ctx: BrowserContext): Promise<string> {
-  const worker = ctx.serviceWorkers()[0] ?? (await ctx.waitForEvent('serviceworker'));
-  await worker.evaluate((serverUrl) => chrome.storage.local.set({ serverUrl }), baseUrl);
-  await worker.evaluate((token) => chrome.storage.session.set({ token }), devToken);
-  return new URL(worker.url()).host;
-}
 
 test.beforeAll(async () => {
-  await startServer();
+  // Triage stays disabled (no models.triage), so must-flag posts can only show as pending.
+  server = await startServer({ handle: 'e2eowner', watchlist: ['watched'] });
+  baseUrl = server.baseUrl;
   context = await launchExtension();
+  await fakeTwimg(context);
 });
 
 test.afterAll(async () => {
   await context?.close();
-  await stopServer();
-  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+  await server?.stop();
+  removeTempDirs();
 });
 
 test('captures timeline posts passively and lists them in the panel', async () => {
-  const extensionId = await pointExtensionAtServer(context);
+  const extensionId = await pointExtensionAtServer(context, baseUrl);
   await context.route('https://x.com/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: fixtureHtml }),
   );
@@ -116,11 +57,12 @@ test('captures timeline posts passively and lists them in the panel', async () =
   await expect(row('1001')).toContainText('1200 views');
   await expect(row('1006')).toContainText('1449 views');
   await expect(row('1005')).toContainText('<img src=x onerror=alert(1)>');
-  await expect(panel.locator('img')).toHaveCount(0);
-  await expect(row('1001').getByRole('link', { name: 'Open on X' })).toHaveAttribute(
-    'href',
-    'https://x.com/alice/status/1001',
-  );
+  await expect(panel.locator('img:not([data-testid="avatar"])')).toHaveCount(0);
+  await expect(row('1001').getByTestId('post-time-link')).toHaveAttribute('href', 'https://x.com/alice/status/1001');
+  await expect(row('1001').getByTestId('avatar')).toHaveAttribute('src', 'https://pbs.twimg.com/profile_images/1/alice_normal.png');
+  // The quoted author's avatar never leaks into the outer post.
+  await expect(row('1002').getByTestId('avatar')).toHaveCount(0);
+  await expect(row('1002').getByTestId('avatar-initials')).toHaveText('BQ');
 
   expect(pageRequests.filter((url) => url.includes('127.0.0.1'))).toEqual([]);
 });
@@ -159,7 +101,7 @@ test('mention and watchlist posts show in Flagged as pending before any triage',
   expect(byId.get('7002')?.triage?.mustFlag).toBe('watchlist');
   expect(byId.has('7003')).toBe(false);
 
-  const extensionId = await pointExtensionAtServer(context);
+  const extensionId = await pointExtensionAtServer(context, baseUrl);
   const panel = await context.newPage();
   await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await panel.getByRole('tab', { name: 'Flagged' }).click();

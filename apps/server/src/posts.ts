@@ -8,7 +8,13 @@ import {
   type PostListResponse,
   type StoredPost,
 } from '@xc/shared';
-import { parseViolations, type DraftKind, type DraftStatus } from './polish/drafts-store';
+import {
+  parseVersions,
+  parseViolations,
+  VERSIONS_SUBQUERY,
+  type DraftKind,
+  type DraftStatus,
+} from './polish/drafts-store';
 import { checkReply, ruleNames } from './polish/guard';
 import { isOwnAuthor, mustFlagFor, type PrefilterRules } from './triage/prefilter';
 
@@ -19,6 +25,7 @@ const INGEST_COUNTER = { own: 'ingest:own', nonOwn: 'ingest:non_own' } as const;
 // Own posts are voice samples, so they outlive the prune window.
 export function prunePosts(db: DatabaseSync, now: number): void {
   const cutoff = now - PRUNE_AFTER_MS;
+  db.prepare(`DELETE FROM draft_versions WHERE draft_key IN (${PRUNABLE})`).run(cutoff);
   db.prepare(`DELETE FROM drafts WHERE status_id IN (${PRUNABLE})`).run(cutoff);
   db.prepare(`DELETE FROM triage WHERE status_id IN (${PRUNABLE})`).run(cutoff);
   db.prepare('DELETE FROM posts WHERE captured_at < ? AND is_own = 0').run(cutoff);
@@ -53,9 +60,13 @@ function parseReplyTo(raw: string): string[] {
 
 function updateMetrics(db: DatabaseSync, post: CapturedPost): boolean {
   const { replies, reposts, likes, views } = post.metrics;
+  // Re-captures also fill in an avatar that an older capture (or extension version) lacked.
   const result = db
-    .prepare('UPDATE posts SET replies = ?, reposts = ?, likes = ?, views = ? WHERE status_id = ?')
-    .run(replies, reposts, likes, views, post.statusId);
+    .prepare(
+      `UPDATE posts SET replies = ?, reposts = ?, likes = ?, views = ?, avatar_url = COALESCE(?, avatar_url)
+       WHERE status_id = ?`,
+    )
+    .run(replies, reposts, likes, views, post.avatarUrl, post.statusId);
   return Number(result.changes) > 0;
 }
 
@@ -64,12 +75,12 @@ function insertPost(db: DatabaseSync, post: CapturedPost, now: number, ownHandle
   const own = isOwnAuthor(post.authorHandle, ownHandle);
   db.prepare(
     `INSERT INTO posts (status_id, author_name, author_handle, text, posted_at, replies, reposts,
-       likes, views, is_reply, quoted_status_id, captured_at, is_own, reply_to)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       likes, views, is_reply, quoted_status_id, captured_at, is_own, reply_to, avatar_url)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     post.statusId, post.authorName, post.authorHandle, post.text, post.postedAt,
     m.replies, m.reposts, m.likes, m.views, post.isReply ? 1 : 0, post.quotedStatusId, now,
-    own ? 1 : 0, JSON.stringify(post.replyTo),
+    own ? 1 : 0, JSON.stringify(post.replyTo), post.avatarUrl,
   );
   bumpIngestCount(db, own);
 }
@@ -113,6 +124,7 @@ interface PostRow {
   is_reply: number;
   reply_to: string;
   quoted_status_id: string | null;
+  avatar_url: string | null;
   captured_at: number;
   t_status_id: string | null;
   score: number | null;
@@ -127,6 +139,8 @@ interface PostRow {
   d_text: string | null;
   d_violations: string | null;
   d_error: string | null;
+  d_selected_version: number | null;
+  d_versions: string | null;
 }
 
 export interface PolishContext {
@@ -152,18 +166,22 @@ function toTriage(row: PostRow): StoredPost['triage'] {
 
 function toPolish(row: PostRow, ctx: PolishContext): PolishInfo | null {
   if (row.d_status) {
+    const versions = parseVersions(row.d_versions);
     return {
       status: row.d_status,
       text: row.d_text,
       violations: parseViolations(row.d_violations),
       topPick: row.d_kind === 'auto',
       error: row.d_error,
+      versions,
+      // Backfilled drafts have no stored selection; their only version is the selected one.
+      selectedVersion: row.d_selected_version ?? versions[versions.length - 1]?.id ?? null,
     };
   }
   const eligible = ctx.capReached && row.score !== null && row.score >= ctx.threshold;
   const worthy = row.reply_worthy === 1 || row.must_flag !== null;
   return eligible && worthy
-    ? { status: 'cap_reached', text: null, violations: [], topPick: false, error: null }
+    ? { status: 'cap_reached', text: null, violations: [], topPick: false, error: null, versions: [], selectedVersion: null }
     : null;
 }
 
@@ -179,6 +197,7 @@ function toStoredPost(row: PostRow, ctx: PolishContext): StoredPost {
     isReply: row.is_reply === 1,
     replyTo: parseReplyTo(row.reply_to),
     quotedStatusId: row.quoted_status_id,
+    avatarUrl: row.avatar_url,
     capturedAt: row.captured_at,
     triage: toTriage(row),
     polish: toPolish(row, ctx),
@@ -187,7 +206,8 @@ function toStoredPost(row: PostRow, ctx: PolishContext): StoredPost {
 
 const SELECT_WITH_TRIAGE = `SELECT p.*, t.status_id AS t_status_id, t.score, t.reason, t.rough_draft,
   t.reply_worthy, t.skip_reason, t.must_flag, t.error,
-  d.status AS d_status, d.kind AS d_kind, d.text AS d_text, d.violations AS d_violations, d.error AS d_error
+  d.status AS d_status, d.kind AS d_kind, d.text AS d_text, d.violations AS d_violations, d.error AS d_error,
+  d.selected_version AS d_selected_version, ${VERSIONS_SUBQUERY('p.status_id')} AS d_versions
   FROM posts p LEFT JOIN triage t ON t.status_id = p.status_id
   LEFT JOIN drafts d ON d.status_id = p.status_id`;
 

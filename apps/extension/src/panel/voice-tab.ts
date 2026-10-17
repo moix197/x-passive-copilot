@@ -1,5 +1,6 @@
 import { VoiceViewSchema, type VoiceView } from '@xc/shared/types';
-import { element, pollWhileVisible } from './posts-view';
+import { element } from './dom';
+import { pollWhileVisible } from './posts-view';
 
 export function mountPolled<T>(
   root: HTMLElement,

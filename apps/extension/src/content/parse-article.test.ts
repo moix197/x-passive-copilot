@@ -25,6 +25,7 @@ describe('parseArticle', () => {
       isReply: false,
       replyTo: [],
       quotedStatusId: null,
+      avatarUrl: null,
     });
   });
 
@@ -112,5 +113,19 @@ describe('parseArticle', () => {
   it('keeps markup in text as literal characters', () => {
     const hostile = '<div data-testid="tweetText"><span>&lt;img src=x onerror=alert(1)&gt;</span></div>';
     expect(parseArticle(articleFrom(AUTHOR + hostile + METRICS))?.text).toBe('<img src=x onerror=alert(1)>');
+  });
+
+  it('reads the outer author avatar from the X image CDN only', () => {
+    const src = 'https://pbs.twimg.com/profile_images/123/a-b_normal.jpg';
+    const avatar = (url: string) => `<div data-testid="Tweet-User-Avatar"><img src="${url}" alt=""></div>`;
+    expect(parseArticle(articleFrom(avatar(src) + AUTHOR + TEXT))?.avatarUrl).toBe(src);
+    expect(parseArticle(articleFrom(avatar('https://evil.example/x.png') + AUTHOR + TEXT))?.avatarUrl).toBeNull();
+    expect(parseArticle(articleFrom(avatar('javascript:alert(1)') + AUTHOR + TEXT))?.avatarUrl).toBeNull();
+  });
+
+  it('does not take a quoted author avatar for the outer post', () => {
+    const quote = `<div role="link"><div data-testid="Tweet-User-Avatar"><img src="https://pbs.twimg.com/q.jpg"></div>
+      <div data-testid="User-Name"><a href="/carol">Carol</a></div><a href="/carol/status/2002"><time>x</time></a></div>`;
+    expect(parseArticle(articleFrom(AUTHOR + TEXT + quote))?.avatarUrl).toBeNull();
   });
 });

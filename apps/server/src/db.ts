@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS posts (
   quoted_status_id TEXT,
   captured_at INTEGER NOT NULL,
   is_own INTEGER NOT NULL DEFAULT 0,
-  reply_to TEXT NOT NULL DEFAULT '[]'
+  reply_to TEXT NOT NULL DEFAULT '[]',
+  avatar_url TEXT
 );
 CREATE TABLE IF NOT EXISTS triage (
   status_id TEXT PRIMARY KEY,
@@ -39,7 +40,8 @@ CREATE TABLE IF NOT EXISTS drafts (
   status TEXT NOT NULL,
   violations TEXT NOT NULL DEFAULT '[]',
   error TEXT,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  selected_version INTEGER
 );
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
@@ -65,16 +67,37 @@ CREATE TABLE IF NOT EXISTS digests (
   trends TEXT NOT NULL,
   ideas TEXT NOT NULL,
   created_at INTEGER NOT NULL
-)`;
+);
+CREATE TABLE IF NOT EXISTS draft_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  draft_key TEXT NOT NULL,
+  text TEXT NOT NULL,
+  status TEXT NOT NULL,
+  violations TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS draft_versions_key ON draft_versions (draft_key, id)`;
+
+const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
+  { table: 'posts', column: 'is_own', definition: 'INTEGER NOT NULL DEFAULT 0' },
+  { table: 'posts', column: 'reply_to', definition: "TEXT NOT NULL DEFAULT '[]'" },
+  { table: 'posts', column: 'avatar_url', definition: 'TEXT' },
+  { table: 'drafts', column: 'selected_version', definition: 'INTEGER' },
+];
 
 function addMissingColumns(db: DatabaseSync): void {
-  const columns = db.prepare('PRAGMA table_info(posts)').all() as unknown as { name: string }[];
-  if (!columns.some((c) => c.name === 'is_own')) {
-    db.exec('ALTER TABLE posts ADD COLUMN is_own INTEGER NOT NULL DEFAULT 0');
+  for (const { table, column, definition } of ADDED_COLUMNS) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
+    if (!columns.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
   }
-  if (!columns.some((c) => c.name === 'reply_to')) {
-    db.exec("ALTER TABLE posts ADD COLUMN reply_to TEXT NOT NULL DEFAULT '[]'");
-  }
+}
+
+// Drafts written before versions existed become their own first version, so regenerating keeps them.
+function backfillDraftVersions(db: DatabaseSync): void {
+  db.exec(`INSERT INTO draft_versions (draft_key, text, status, violations, created_at)
+    SELECT status_id, text, status, violations, created_at FROM drafts
+    WHERE text IS NOT NULL AND status IN ('ready', 'needs_edit')
+      AND status_id NOT IN (SELECT draft_key FROM draft_versions)`);
 }
 
 export function openDb(home: string): DatabaseSync {
@@ -84,6 +107,7 @@ export function openDb(home: string): DatabaseSync {
   db.exec('PRAGMA synchronous = NORMAL');
   db.exec(SCHEMA);
   addMissingColumns(db);
+  backfillDraftVersions(db);
   seedIngestCounters(db);
   return db;
 }

@@ -1,12 +1,20 @@
 import { log } from '../log';
 import type { DatabaseSync } from 'node:sqlite';
-import { type AppConfig, type PolishReply, type Result, type StoredPost } from '@xc/shared';
+import { MAX_DRAFT_VERSIONS, type AppConfig, type PolishReply, type Result, type StoredPost } from '@xc/shared';
 import { runClaude } from '../llm/claude';
 import { getPost } from '../posts';
 import { dataJson, NO_STYLE, renderStyle } from '../triage/prompts';
 import { errorClass, withRetry } from '../triage/retry';
 import type { Style } from '../voice/select-examples';
-import { getDraftStatus, saveDraft, type DraftKind } from './drafts-store';
+import {
+  addVersion,
+  getDraft,
+  listVersionTexts,
+  markRegenerating,
+  saveDraft,
+  settleFailedRegenerate,
+  type DraftKind,
+} from './drafts-store';
 import { checkReply, ruleNames, type Violation } from './guard';
 
 export interface Idea {
@@ -19,11 +27,13 @@ export type Subject = { kind: 'post'; post: StoredPost } | { kind: 'idea'; idea:
 export interface GenerateRequest {
   subject: Subject;
   previous: { reply: string; violations: Violation[] } | null;
+  /** Earlier versions of this draft; a regenerate must offer something different. */
+  alternatives: string[];
 }
 
 export type Generate = (request: GenerateRequest) => Promise<Result<PolishReply>>;
 
-export type PolishState = 'started' | 'already' | 'unknown';
+export type PolishState = 'started' | 'already' | 'unknown' | 'limit';
 
 export interface PolishJob {
   state: PolishState;
@@ -31,7 +41,8 @@ export interface PolishJob {
 }
 
 export interface PolishService {
-  request(statusId: string, kind: DraftKind): PolishJob;
+  /** `regenerate` adds a version to a finished draft instead of answering 'already'. */
+  request(statusId: string, kind: DraftKind, regenerate?: boolean): PolishJob;
   requestIdea(ideaId: string, idea: Idea): PolishJob;
 }
 
@@ -77,8 +88,15 @@ function fixBlock(previous: GenerateRequest['previous']): string {
   return `Your previous reply was rejected.\n${dataJson(rejected)}\nWrite a new reply that fixes every violation.`;
 }
 
-export function buildPolishPrompt({ subject, previous }: GenerateRequest, style: Style = NO_STYLE): string {
-  return [taskBlock(subject), renderStyle(style), fixBlock(previous)].filter(Boolean).join('\n\n');
+function alternativesBlock(alternatives: string[]): string {
+  if (!alternatives.length) return '';
+  return `Options already written (write a clearly different one):\n${dataJson(alternatives)}`;
+}
+
+export function buildPolishPrompt({ subject, previous, alternatives }: GenerateRequest, style: Style = NO_STYLE): string {
+  return [taskBlock(subject), renderStyle(style), alternativesBlock(alternatives), fixBlock(previous)]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 export function claudeGenerate(config: AppConfig, style: () => Style = () => NO_STYLE): Generate {
@@ -89,6 +107,15 @@ function configError(config: AppConfig): string | null {
   if (!config.models.final) return 'config: models.final is not set';
   return config.spacehoodRepoPath ? null : 'config: spacehoodRepoPath is not set';
 }
+
+interface Job {
+  key: string;
+  subject: Subject;
+  kind: DraftKind;
+  regenerating: boolean;
+}
+
+type JobPlan = { ok: false; state: PolishState } | { ok: true; regenerating: boolean; kind: DraftKind | null };
 
 export function createPolishService(
   db: DatabaseSync,
@@ -102,55 +129,65 @@ export function createPolishService(
     saveDraft(db, { statusId: key, kind, status: 'polishing', text: null, violations: [], error: null, ...fields }, now());
   }
 
-  async function attempt(subject: Subject, previous: GenerateRequest['previous']) {
-    const reply = await withRetry(() => generate({ subject, previous }));
+  async function attempt(subject: Subject, previous: GenerateRequest['previous'], alternatives: string[]) {
+    const reply = await withRetry(() => generate({ subject, previous, alternatives }));
     if (!reply.ok) return reply;
     const violations = checkReply(reply.value.reply, sourceOf(subject));
     return { ok: true as const, value: { reply: reply.value.reply, violations } };
   }
 
-  async function generateChecked(subject: Subject) {
-    const first = await attempt(subject, null);
+  // Every version goes through the guard, with one regenerate when it fails.
+  async function generateChecked(subject: Subject, alternatives: string[]) {
+    const first = await attempt(subject, null, alternatives);
     if (!first.ok || first.value.violations.length === 0) return first;
-    return attempt(subject, first.value);
+    return attempt(subject, first.value, alternatives);
   }
 
-  async function runJob(key: string, subject: Subject, kind: DraftKind): Promise<boolean> {
-    const outcome = await generateChecked(subject);
-    if (!outcome.ok) {
-      const kindOfError = errorClass(outcome.error);
-      save(key, kind, { status: 'error', error: kindOfError });
-      log(`polish ${key} failed: ${kindOfError}`);
-      return false;
-    }
-    const { reply, violations } = outcome.value;
-    const status = violations.length ? 'needs_edit' : 'ready';
-    save(key, kind, { status, text: reply, violations: ruleNames(violations) });
-    log(`polish ${key} ${status}`);
-    return true;
-  }
-
-  async function failFast(key: string, kind: DraftKind, problem: string): Promise<boolean> {
-    save(key, kind, { status: 'error', error: problem });
+  // A failed regenerate keeps the selected version and only reports the error.
+  function finishFailed(job: Job, problem: string): boolean {
+    if (job.regenerating) settleFailedRegenerate(db, job.key, problem);
+    else save(job.key, job.kind, { status: 'error', error: problem });
+    log(`polish ${job.key} failed: ${problem}`);
     return false;
   }
 
-  function start(key: string, subject: Subject, kind: DraftKind): PolishJob {
-    const existing = getDraftStatus(db, key);
-    if (inFlight.has(key) || (existing !== null && existing !== 'error')) {
-      return { state: 'already', done: NOT_STARTED };
-    }
-    const configProblem = configError(config);
+  async function runJob(job: Job): Promise<boolean> {
+    const outcome = await generateChecked(job.subject, listVersionTexts(db, job.key));
+    if (!outcome.ok) return finishFailed(job, errorClass(outcome.error));
+    const { reply, violations } = outcome.value;
+    const status = violations.length ? 'needs_edit' : 'ready';
+    const version = { text: reply, status, violations: ruleNames(violations) } as const;
+    const selectedVersion = addVersion(db, job.key, version, now());
+    save(job.key, job.kind, { ...version, selectedVersion });
+    log(`polish ${job.key} ${status}`);
+    return true;
+  }
+
+  function planJob(key: string, regenerate: boolean): JobPlan {
+    const draft = getDraft(db, key);
+    if (inFlight.has(key) || draft?.status === 'polishing') return { ok: false, state: 'already' };
+    if (!draft || draft.status === 'error') return { ok: true, regenerating: false, kind: null };
+    if (!regenerate) return { ok: false, state: 'already' };
+    if (listVersionTexts(db, key).length >= MAX_DRAFT_VERSIONS) return { ok: false, state: 'limit' };
+    return { ok: true, regenerating: true, kind: draft.kind };
+  }
+
+  function start(key: string, subject: Subject, kind: DraftKind, regenerate = false): PolishJob {
+    const plan = planJob(key, regenerate);
+    if (!plan.ok) return { state: plan.state, done: NOT_STARTED };
+    const job: Job = { key, subject, kind: plan.kind ?? kind, regenerating: plan.regenerating };
     inFlight.add(key);
-    save(key, kind, { status: 'polishing' });
-    const run = configProblem ? failFast(key, kind, configProblem) : runJob(key, subject, kind);
+    if (job.regenerating) markRegenerating(db, key);
+    else save(key, job.kind, { status: 'polishing' });
+    const configProblem = configError(config);
+    const run = configProblem ? Promise.resolve(finishFailed(job, configProblem)) : runJob(job);
     const done = run.catch(() => false).finally(() => inFlight.delete(key));
     return { state: 'started', done };
   }
 
-  function request(statusId: string, kind: DraftKind): PolishJob {
+  function request(statusId: string, kind: DraftKind, regenerate = false): PolishJob {
     const post = getPost(db, statusId);
-    return post ? start(statusId, { kind: 'post', post }, kind) : { state: 'unknown', done: NOT_STARTED };
+    return post ? start(statusId, { kind: 'post', post }, kind, regenerate) : { state: 'unknown', done: NOT_STARTED };
   }
 
   function requestIdea(ideaId: string, idea: Idea): PolishJob {

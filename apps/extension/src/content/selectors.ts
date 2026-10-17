@@ -4,6 +4,8 @@ export const SEL = {
   quoteCandidate: 'div[role="link"]',
   userName: '[data-testid="User-Name"]',
   userNameLink: 'a',
+  // Live DOM unverified: the outer author's avatar; quoted posts use other containers and ownMatch drops them anyway.
+  avatarImage: '[data-testid="Tweet-User-Avatar"] img',
   tweetText: '[data-testid="tweetText"]',
   time: 'time',
   metrics: '[role="group"][aria-label]',

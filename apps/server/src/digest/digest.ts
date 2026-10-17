@@ -156,7 +156,8 @@ function draftInfo(db: DatabaseSync, ideaId: string): PolishInfo | null {
     | { status: PolishInfo['status']; text: string | null; violations: string; error: string | null }
     | undefined;
   if (!row) return null;
-  return { status: row.status, text: row.text, violations: parseViolations(row.violations), topPick: false, error: row.error };
+  const { status, text, error } = row;
+  return { status, text, violations: parseViolations(row.violations), topPick: false, error, versions: [], selectedVersion: null };
 }
 
 function toIdeas(db: DatabaseSync, row: DigestRow): DigestIdea[] {
