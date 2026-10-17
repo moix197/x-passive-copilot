@@ -457,14 +457,40 @@ post ideas, each with Copy and a guarded Polish; a failed digest keeps the previ
 
 **Steps:**
 
-- [ ] Every preceding phase's Steps/Verification checkboxes are ticked in the plan file
-- [ ] `pnpm check` and `pnpm test:e2e` pass
-- [ ] Security grep sweep: `shell: true`, `innerHTML`, `--bare`, `fetch(` in content script, token/post text in log calls: all absent
-- [ ] **Single** code review of the whole change (opus), green with zero blocking findings; focus on passivity, subprocess safety, native host + token, guard. Nits may be deferred to a follow-up list.
-- [ ] Findings fixed and reflected back into this plan file
-- [ ] `.ai/` synced; `node .ai/_tools/build-index.mjs --check` passes
+- [x] Every preceding phase's Steps/Verification checkboxes are ticked in the plan file
+- [x] `pnpm check` and `pnpm test:e2e` pass
+- [x] Security grep sweep: `shell: true`, `innerHTML`, `--bare`, `fetch(` in content script, token/post text in log calls: all absent
+- [x] **Single** code review of the whole change (opus), green with zero blocking findings; focus on passivity, subprocess safety, native host + token, guard. Nits may be deferred to a follow-up list.
+- [x] Findings fixed and reflected back into this plan file
+- [x] `.ai/` synced; `node .ai/_tools/build-index.mjs --check` passes
 - [ ] Pre-merge user checklist: `pnpm setup:host` on real Chrome; toggle on/off confirms process exit; polish one real post
 - [ ] Orchestrator (user) explicitly approved the merge
+
+**Final Verification results (2026-10-17):**
+
+- Review round 0 (opus): red, 3 blocking + 16 nits. Blocking fixed in `732ba49`: reply-to-handle capture
+  (`replyTo` parsed from "Replying to"/"En respuesta a", matched server-side); opencode sandbox now
+  `tools["*"]: false`, `permission["*"]: "deny"`, `mcp: {}`; digest/voice use monotonic `meta` ingest
+  counters and own posts are exempt from the 30-day prune. All 16 nits fixed in the same commit except the
+  two deferred below.
+- Review round 1 (opus): 0 blocking, 1 nit (short bare TLDs like `.sh` flagged as foreign URLs) → fixed `0b8a689`.
+- Flaky unit tests (5s timeouts from WAL fsync on each commit + a real 6s retry sleep) → `PRAGMA synchronous=NORMAL`,
+  injectable digest wait; fixed `b1f1829`; 10/10 green runs.
+- Final: `pnpm check` green, `pnpm test:e2e` 3/3, 105 unit tests, security grep sweep clean, `.ai` index check OK.
+
+**Deferred follow-ups:**
+
+- Auto-polish has no restart catch-up (only runs after a triage batch).
+- Guard length is not emoji/weighted-char aware (X counts some chars as 2).
+- Claude `Grep`/`Glob` are allowed unscoped (only `Read(./**)` is path-scoped); may reach outside the repo.
+- opencode wildcard deny (`"*"`) support unverified (opencode not installed).
+
+**Pre-merge user checklist (manual, real Chrome / real CLIs):**
+
+- `pnpm add -g opencode-ai` + `opencode auth login`; verify triage parser against real `opencode run --format json` output and that the sandbox blocks tools.
+- `pnpm build`, `pnpm setup:host`, reload unpacked extension; toggle on → Online + doctor card; toggle off and close Chrome → node process gone; `curl` without token → 401.
+- Polish one real flagged post (≤280, read-only tools).
+- Spot-check panel rows vs screen, incl. a reply to you and a quote post; visit own profile → voice samples counted.
 
 ## Documentation
 
