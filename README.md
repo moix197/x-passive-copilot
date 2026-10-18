@@ -154,13 +154,29 @@ for the digest.
 3. **Injection:** the profile plus up to 8 examples (feedback first, then your most engaged posts of
    20-280 chars) are added to the triage and Claude prompts as delimited, untrusted style data.
 4. **Digest:** every `digest.everyNPosts` (default 50) new non-own posts the triage model writes 3-5
-   trends (linked to captured posts only) and 3 post ideas grounded in
-   `apps/server/assets/spacehood-features.md` (edit it with the real feature list; rebuild to ship
-   the change). Each idea has **Copy** and a guarded **Polish** (same guard, no source post, so any
-   URL or @mention is rejected). A failed refresh keeps the previous digest and shows a notice.
+   trends (linked to captured posts only) and 3 post ideas. Ideas are build-in-public and
+   educational (the LONG ecosystem, how `product.name` tracks things and why, lessons, decisions),
+   never sales/CTA posts or feature ads; the idea Polish prompt carries the same rules. Each idea has
+   **Copy** and a guarded **Polish** (same guard, no source post, so any URL or @mention is
+   rejected). A failed refresh keeps the previous digest and shows a notice.
+5. **Product context** is gathered fresh on every digest run, read-only, and sent as untrusted data
+   in a `<product-context>` block (8 KB total, in this priority order):
+   - `README.md` of `spacehoodRepoPath` (first 1 KB);
+   - from `announcementsPath`: `brief.md` of the 5 newest `YYYY-MM-DD_<slug>` folders, newest
+     first (1.2 KB each), each tagged with its `tracker.csv` status (discord/x/video, notes) so the
+     model knows what is already posted;
+   - the last 15 commit subjects with dates (`git log`, 5s timeout; skipped if git or the repo is missing).
+   Files must resolve inside their folder (symlink/`..` escapes refused) and be <= 256 KB; media and
+   draft files are never read. Either path may be unset; the digest uses whatever exists.
 
 ```json
-{ "handle": "yourhandle", "voice": { "minSamples": 5 }, "digest": { "everyNPosts": 50 } }
+{
+  "handle": "yourhandle",
+  "voice": { "minSamples": 5 },
+  "digest": { "everyNPosts": 50 },
+  "announcementsPath": "H:/path/to/spacehood-announcements",
+  "product": { "name": "Spacehub" }
+}
 ```
 
 - **Style notes** (Voice tab): a textarea (max 2000 chars, Save button) for your own writing rules,

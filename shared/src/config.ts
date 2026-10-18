@@ -7,6 +7,8 @@ export const AppConfigSchema = z.object({
   handle: z.string().default('YOUR_HANDLE'),
   watchlist: z.array(z.string()).default([]),
   spacehoodRepoPath: z.string().default(''),
+  announcementsPath: z.string().default(''),
+  product: z.object({ name: z.string().trim().min(1).max(60).default('Spacehub') }).prefault({}),
   triage: z
     .object({
       batchSize: z.number().int().positive().default(15),

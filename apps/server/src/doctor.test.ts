@@ -23,6 +23,7 @@ describe('doctor', () => {
     expect(JSON.stringify(report)).not.toContain('a@b.c');
     expect(byId.handle?.status).toBe('problem');
     expect(byId.context?.status).toBe('missing');
+    expect(byId.announcements?.status).toBe('missing');
     const before = calls;
     now = 59_000;
     await doctor();

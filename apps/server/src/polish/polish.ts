@@ -16,6 +16,7 @@ import {
   type DraftKind,
 } from './drafts-store';
 import { replaceDashes } from '../text/dashes';
+import { ideaToneRules } from '../digest/idea-tone';
 import { checkReply, ruleNames, type Violation } from './guard';
 
 export interface Idea {
@@ -73,9 +74,9 @@ function sourceOf(subject: Subject): string {
   return subject.kind === 'post' ? replySource(subject.post) : '';
 }
 
-function taskBlock(subject: Subject): string {
+function taskBlock(subject: Subject, product: string): string {
   if (subject.kind === 'idea') {
-    return `Write one standalone X post (not a reply) from this idea.\n<idea>\n${dataJson(subject.idea)}\n</idea>`;
+    return `Write one standalone X post (not a reply) from this idea.\n${ideaToneRules(product)}\n<idea>\n${dataJson(subject.idea)}\n</idea>`;
   }
   const { post } = subject;
   const data = {
@@ -101,14 +102,14 @@ function alternativesBlock(alternatives: string[]): string {
   return `Options already written (write a clearly different one):\n${dataJson(alternatives)}`;
 }
 
-export function buildPolishPrompt({ subject, previous, alternatives }: GenerateRequest, style: Style = NO_STYLE): string {
-  return [taskBlock(subject), renderStyleBlocks(style), alternativesBlock(alternatives), fixBlock(previous)]
+export function buildPolishPrompt({ subject, previous, alternatives }: GenerateRequest, style: Style, product: string): string {
+  return [taskBlock(subject, product), renderStyleBlocks(style), alternativesBlock(alternatives), fixBlock(previous)]
     .filter(Boolean)
     .join('\n\n');
 }
 
 export function claudeGenerate(config: AppConfig, style: () => Style = () => NO_STYLE): Generate {
-  return (request) => runClaude(buildPolishPrompt(request, style()), config.models.final, config.spacehoodRepoPath);
+  return (request) => runClaude(buildPolishPrompt(request, style(), config.product.name), config.models.final, config.spacehoodRepoPath);
 }
 
 function configError(config: AppConfig): string | null {

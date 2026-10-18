@@ -92,6 +92,10 @@ function isFile(path: string): boolean {
   }
 }
 
+function isDirectory(path: string): boolean {
+  return path !== '' && existsSync(path) && statSync(path).isDirectory();
+}
+
 export function checkConfig(home: string, config: AppConfig): DoctorCheck[] {
   const contextPath = join(home, 'context.md');
   const repo = config.spacehoodRepoPath;
@@ -102,9 +106,12 @@ export function checkConfig(home: string, config: AppConfig): DoctorCheck[] {
     config.handle && config.handle !== 'YOUR_HANDLE'
       ? check('handle', 'handle', 'ok', null, null)
       : check('handle', 'handle', 'problem', 'still the placeholder', `Set "handle" in ${join(home, 'config.json')}`),
-    repo && existsSync(repo) && statSync(repo).isDirectory()
+    isDirectory(repo)
       ? check('repo', 'spacehoodRepoPath', 'ok', null, null)
       : check('repo', 'spacehoodRepoPath', 'problem', repo ? 'not a directory' : 'not set', `Set "spacehoodRepoPath" in ${join(home, 'config.json')}`),
+    isDirectory(config.announcementsPath)
+      ? check('announcements', 'announcementsPath', 'ok', null, null)
+      : check('announcements', 'announcementsPath', 'missing', config.announcementsPath ? 'not a directory' : 'not set', `Optional: set "announcementsPath" in ${join(home, 'config.json')} so digest ideas use your announcement briefs`),
     config.models.triage
       ? check('model-triage', 'models.triage', 'ok', null, null)
       : check('model-triage', 'models.triage', 'problem', 'not set', 'Set "models.triage" (see `opencode models`)'),

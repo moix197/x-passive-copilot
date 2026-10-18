@@ -4,9 +4,9 @@ type: constraint
 summary: LLM CLIs get stdin-only prompts, shell:false, a read-only flag profile or deny-all sandbox, scrubbed env, hard timeouts; output is zod-parsed then guarded
 tags: [subprocess, stdin, shell-false, claude, opencode, env-scrubbing, untrusted-input, guard]
 paths: [apps/server/src/llm/**, apps/server/src/sandbox.ts, apps/server/src/polish/**, apps/server/assets/finalize-system.md]
-related: [pipeline/triage-flow]
+related: [pipeline/triage-flow, pipeline/digest-product-context]
 status: active
-updated: 2026-10-17
+updated: 2026-10-18
 ---
 
 # LLM subprocess sandbox
@@ -36,6 +36,7 @@ Tweet text is hostile and both CLIs can have tools, so every call obeys:
 - **Output is never trusted:** zod-parsed, then the pure `checkReply` guard (`polish/guard.ts`);
   panel renders with `textContent`. Logs carry statusIds and error classes only.
 
+**Read-only git:** the digest runs `git log` the same way (`runCli`, argv, 5s, see pipeline/digest-product-context).
 **Constraint:** any new LLM integration must reuse `runCli`/`resolveCli` and this profile.
 **Unverified:** `--max-turns` is absent from `claude --help` (hidden flag); not exercised live.
 `Read(./**)` scoping follows `--allowedTools` rule syntax from `claude --help`; Grep/Glob stay
