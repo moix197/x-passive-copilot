@@ -58,7 +58,7 @@ function createServices(db: DatabaseSync, home: string, config: AppConfig) {
     voice.notify();
     digest.notify();
   };
-  return { polish, notifyAll };
+  return { polish, notifyAll, runDigestNow: digest.runNow };
 }
 
 type Services = ReturnType<typeof createServices>;
@@ -78,6 +78,7 @@ function buildHooks(db: DatabaseSync, home: string, config: AppConfig, services:
     },
     voiceView: () => readVoiceView(db, config),
     digestView: () => readDigestView(db),
+    runDigestNow: services.runDigestNow,
     ownHandle: config.handle,
     flagRules: rulesFromConfig(config),
     polishContext: () => ({ threshold: config.autoPolish.threshold, capReached: capReached(db, config) }),

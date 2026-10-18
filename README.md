@@ -158,7 +158,11 @@ for the digest.
    educational (the LONG ecosystem, how `product.name` tracks things and why, lessons, decisions),
    never sales/CTA posts or feature ads; the idea Polish prompt carries the same rules. Each idea has
    **Copy** and a guarded **Polish** (same guard, no source post, so any URL or @mention is
-   rejected). A failed refresh keeps the previous digest and shows a notice.
+   rejected). A failed refresh keeps the previous digest and shows a notice. The Digest tab also has a
+   **Generate new ideas** button: runs a digest now from the latest captured non-own posts (needs >= 3),
+   independent of the automatic counter. One run at a time (409), at least `digest.manualMinIntervalSec`
+   (default 60) between manual runs (429, retry-after shown in the button tooltip and under it); a
+   failure shows the reason inline and keeps the previous ideas.
 5. **Product context** is gathered fresh on every digest run, read-only, and sent as untrusted data
    in a `<product-context>` block (8 KB total, in this priority order):
    - `README.md` of `spacehoodRepoPath` (first 1 KB);
@@ -173,7 +177,7 @@ for the digest.
 {
   "handle": "yourhandle",
   "voice": { "minSamples": 5 },
-  "digest": { "everyNPosts": 50 },
+  "digest": { "everyNPosts": 50, "manualMinIntervalSec": 60 },
   "announcementsPath": "H:/path/to/spacehood-announcements",
   "product": { "name": "Spacehub" }
 }
@@ -187,6 +191,6 @@ for the digest.
   digest text, before the reply guard runs.
 - Every post card has a **View on X ↗** link (new tab) next to the metrics; the time also links.
 
-Routes (all need the bearer token): `GET /v1/voice`, `GET /v1/digest`, `GET|POST /v1/style-notes {notes<=2000}`,
+Routes (all need the bearer token): `GET /v1/voice`, `GET /v1/digest`, `POST /v1/digest/run` (200, 409 busy, 422 too few posts, 429 + `Retry-After`, 502 failed), `GET|POST /v1/style-notes {notes<=2000}`,
 `POST /v1/drafts/:id/feedback {kind: copy|edit|up|down, text?<=1000}`, `POST /v1/ideas/:id/polish`,
 `POST /v1/posts/:id/polish[?regenerate=1]` (409 at the version cap), `POST /v1/drafts/:id/select {versionId}`.

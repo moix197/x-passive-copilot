@@ -24,7 +24,12 @@ export const AppConfigSchema = z.object({
       dailyCap: z.number().int().nonnegative().default(10),
     })
     .prefault({}),
-  digest: z.object({ everyNPosts: z.number().int().positive().default(50) }).prefault({}),
+  digest: z
+    .object({
+      everyNPosts: z.number().int().positive().default(50),
+      manualMinIntervalSec: z.number().int().nonnegative().default(60),
+    })
+    .prefault({}),
   voice: z.object({ minSamples: z.number().int().positive().default(5) }).prefault({}),
   models: z
     .object({ triage: z.string().default(''), final: z.string().default('') })

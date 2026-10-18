@@ -7,7 +7,7 @@ import { openDb } from '../db';
 import { buildPolishPrompt } from '../polish/polish';
 import { NO_STYLE } from '../triage/prompts';
 import { ingestPosts, prunePosts, readIngestCount } from '../posts';
-import { bucketToRun, buildDigestPrompt, createDigestService, getIdea, readDigestView, sanitizeDigest } from './digest';
+import { bucketToRun, buildDigestPrompt, manualRetryAfterSec, createDigestService, getIdea, readDigestView, sanitizeDigest } from './digest';
 
 const metrics = { replies: 0, reposts: 0, likes: 0, views: 0 };
 const post = (n: number, handle: string) => ({
@@ -124,5 +124,13 @@ describe('idea polish prompt', () => {
     const prompt = buildPolishPrompt(request, NO_STYLE, 'Acme');
     expect(prompt).toContain('Post ideas are build-in-public and educational, never promotional.');
     expect(prompt).toContain('Check out Acme today.');
+  });
+});
+
+describe('manualRetryAfterSec', () => {
+  it('is 0 before the first run and counts down to 0', () => {
+    expect(manualRetryAfterSec(null, 1000, 60_000)).toBe(0);
+    expect(manualRetryAfterSec(1000, 1001, 60_000)).toBe(60);
+    expect(manualRetryAfterSec(1000, 61_000, 60_000)).toBe(0);
   });
 });

@@ -5,6 +5,8 @@ import { mountPolled } from './voice-tab';
 
 export interface DigestHandlers {
   load: () => Promise<unknown>;
+  /** Resolves to an error message, or null when the new digest was generated. */
+  onGenerate: () => Promise<string | null>;
   onPolishIdea: (ideaId: string) => Promise<void>;
   draftCallbacks: (ideaId: string) => DraftCallbacks;
 }
@@ -81,8 +83,37 @@ export function renderDigest(view: DigestView, handlers: DigestHandlers): HTMLEl
   ];
 }
 
+function generateControls(onGenerate: DigestHandlers['onGenerate']): HTMLElement {
+  const wrap = document.createElement('div');
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = 'Generate new ideas';
+  button.dataset.testid = 'digest-generate';
+  const message = element('p', '', 'needs-edit');
+  message.dataset.testid = 'digest-generate-error';
+  message.setAttribute('role', 'alert');
+  button.addEventListener('click', () => {
+    button.disabled = true;
+    button.textContent = 'Generating...';
+    message.textContent = '';
+    button.title = '';
+    void onGenerate()
+      .catch(() => 'Server offline.')
+      .then((error) => {
+        message.textContent = error ?? '';
+        button.title = error ?? '';
+        button.disabled = false;
+        button.textContent = 'Generate new ideas';
+      });
+  });
+  wrap.append(button, message);
+  return wrap;
+}
+
 export function mountDigestSection(root: HTMLElement, handlers: DigestHandlers): () => void {
   const load = async () => DigestViewSchema.parse(await handlers.load());
-  const editing = () => root.querySelector('textarea') !== null;
-  return mountPolled(root, load, (view) => renderDigest(view, handlers), editing);
+  const polled = document.createElement('div');
+  root.replaceChildren(generateControls(handlers.onGenerate), polled);
+  const editing = () => polled.querySelector('textarea') !== null;
+  return mountPolled(polled, load, (view) => renderDigest(view, handlers), editing);
 }

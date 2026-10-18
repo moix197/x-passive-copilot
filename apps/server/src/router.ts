@@ -11,6 +11,7 @@ import {
   type VoiceView,
 } from '@xc/shared';
 import { isAuthorized } from './auth';
+import type { ManualDigestOutcome } from './digest/digest';
 import { selectVersion } from './polish/drafts-store';
 import type { PolishState } from './polish/polish';
 import { log } from './log';
@@ -146,6 +147,27 @@ function postStyleNotes(db: DatabaseSync): Handler {
   };
 }
 
+function postDigestRun(runNow: () => Promise<ManualDigestOutcome>): Handler {
+  return async (_req, res) => {
+    const outcome = await runNow();
+    switch (outcome.status) {
+      case 'ok':
+        return sendJson(res, 200, { ok: true });
+      case 'busy':
+        return sendJson(res, 409, { error: 'A digest is already running' });
+      case 'unavailable':
+        return sendJson(res, 503, { error: 'No triage model configured' });
+      case 'too_few':
+        return sendJson(res, 422, { error: `Not enough captured posts yet (need at least ${outcome.needed})` });
+      case 'throttled':
+        res.setHeader('retry-after', String(outcome.retryAfterSec));
+        return sendJson(res, 429, { error: 'Please wait before generating again', retryAfterSec: outcome.retryAfterSec });
+      case 'failed':
+        return sendJson(res, 502, { error: `Digest generation failed: ${outcome.reason}` });
+    }
+  };
+}
+
 function findParamHandler(method: string | undefined, pathname: string, routes: ParamRoute[]): Handler | undefined {
   if (method !== 'POST') return undefined;
   for (const route of routes) {
@@ -163,6 +185,7 @@ export interface RouterHooks {
   doctor: () => Promise<DoctorReport>;
   voiceView: () => VoiceView;
   digestView: () => DigestView;
+  runDigestNow: () => Promise<ManualDigestOutcome>;
   ownHandle: string;
   flagRules: PrefilterRules;
 }
@@ -181,6 +204,7 @@ export function createRouter(
     'GET /v1/style-notes': (_req, res) => sendJson(res, 200, { notes: readStyleNotes(db) }),
     'POST /v1/style-notes': postStyleNotes(db),
     'GET /v1/digest': (_req, res) => sendJson(res, 200, hooks.digestView()),
+    'POST /v1/digest/run': postDigestRun(hooks.runDigestNow),
   };
   const paramRoutes: ParamRoute[] = [
     { pattern: POLISH_PATH, handler: postPolish(hooks.onPolish) },

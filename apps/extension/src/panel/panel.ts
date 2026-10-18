@@ -63,6 +63,14 @@ async function selectVersion(statusId: string, versionId: number): Promise<void>
   if (!res.ok) throw new Error(`server ${res.status}`);
 }
 
+async function generateDigest(): Promise<string | null> {
+  const res = await postJson('/v1/digest/run');
+  if (res.ok) return null;
+  const body = (await res.json().catch(() => ({}))) as { error?: unknown; retryAfterSec?: unknown };
+  const reason = typeof body.error === 'string' ? body.error : `server ${res.status}`;
+  return typeof body.retryAfterSec === 'number' ? `${reason} (try again in ${body.retryAfterSec}s)` : reason;
+}
+
 async function requestIdeaPolish(ideaId: string): Promise<void> {
   const res = await postJson(`/v1/ideas/${encodeURIComponent(ideaId)}/polish`);
   if (!res.ok) throw new Error(`server ${res.status}`);
@@ -111,6 +119,7 @@ function mountView(root: HTMLElement, view: View, load: () => Promise<StoredPost
   if (view === 'digest') {
     return mountDigestSection(root, {
       load: () => getJson('/v1/digest'),
+      onGenerate: generateDigest,
       onPolishIdea: requestIdeaPolish,
       draftCallbacks: (ideaId) => draftCallbacks(`idea-${ideaId}`),
     });

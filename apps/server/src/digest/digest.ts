@@ -182,9 +182,25 @@ export function getIdea(db: DatabaseSync, ideaId: string): Idea | null {
   return row ? (parseStored(row.ideas, StoredIdeasSchema)[Number(match[2])] ?? null) : null;
 }
 
+export const MIN_MANUAL_POSTS = 3;
+
+export type ManualDigestOutcome =
+  | { status: 'ok' }
+  | { status: 'busy' }
+  | { status: 'unavailable' }
+  | { status: 'too_few'; needed: number }
+  | { status: 'throttled'; retryAfterSec: number }
+  | { status: 'failed'; reason: string };
+
+export function manualRetryAfterSec(lastRunAt: number | null, now: number, minIntervalMs: number): number {
+  if (lastRunAt === null) return 0;
+  return Math.max(0, Math.ceil((lastRunAt + minIntervalMs - now) / 1000));
+}
+
 export interface DigestService {
   notify(): void;
   run(): Promise<void>;
+  runNow(): Promise<ManualDigestOutcome>;
 }
 
 export function createDigestService(
@@ -196,6 +212,7 @@ export function createDigestService(
   wait?: (ms: number) => Promise<void>,
 ): DigestService {
   let running = false;
+  let lastManualAt: number | null = null;
 
   async function generate(): Promise<Result<DigestContent>> {
     const posts = recentPosts(db);
@@ -223,5 +240,34 @@ export function createDigestService(
     }
   }
 
-  return { notify: () => void run(), run };
+  function manualRefusal(): ManualDigestOutcome | null {
+    if (!config.models.triage) return { status: 'unavailable' };
+    if (running) return { status: 'busy' };
+    const retryAfterSec = manualRetryAfterSec(lastManualAt, now(), config.digest.manualMinIntervalSec * 1000);
+    if (retryAfterSec > 0) return { status: 'throttled', retryAfterSec };
+    if (recentPosts(db).length < MIN_MANUAL_POSTS) return { status: 'too_few', needed: MIN_MANUAL_POSTS };
+    return null;
+  }
+
+  // Manual digests use a negative, unique bucket so they never touch the automatic bucket counter.
+  async function runNow(): Promise<ManualDigestOutcome> {
+    const refused = manualRefusal();
+    if (refused) return refused;
+    running = true;
+    lastManualAt = now();
+    try {
+      const result = await generate();
+      if (!result.ok) {
+        log(`manual digest failed: ${errorClass(result.error)} (${safeReason(result.error)})`);
+        return { status: 'failed', reason: errorClass(result.error) };
+      }
+      saveDigest(db, -now(), result.value, now());
+      setMeta(db, META_FAILED, 0);
+      return { status: 'ok' };
+    } finally {
+      running = false;
+    }
+  }
+
+  return { notify: () => void run(), run, runNow };
 }

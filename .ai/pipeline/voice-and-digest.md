@@ -3,7 +3,7 @@ id: pipeline/voice-and-digest
 type: decision
 summary: Own posts (author == handle) feed a voice profile and style examples injected into triage/polish prompts; a digest runs every N new non-own posts
 tags: [voice, feedback, examples, digest, ideas]
-paths: [apps/server/src/text/**, apps/server/src/voice/**, apps/server/src/digest/**, apps/server/src/digest/idea-tone.ts, apps/server/src/triage/prompts.ts, apps/server/src/polish/polish.ts]
+paths: [apps/extension/src/panel/digest-section.ts, apps/server/src/text/**, apps/server/src/voice/**, apps/server/src/digest/**, apps/server/src/digest/idea-tone.ts, apps/server/src/triage/prompts.ts, apps/server/src/polish/polish.ts]
 related: [pipeline/triage-flow, pipeline/polish-flow, pipeline/digest-product-context, security/llm-subprocess-sandbox]
 status: active
 updated: 2026-10-18
@@ -24,7 +24,7 @@ example. Counts are monotonic `meta` counters (`ingest:non_own`, `ingest:own`), 
 and seeded from live rows on first open, because the 30-day prune shrinks `posts`; own posts are
 exempt from the prune (voice samples). Digest: bucket = floor(ingest:non_own / everyNPosts); the bucket is stored
 in `meta` before the model runs so a bucket never fires twice; unknown statusIds are dropped; failure
-keeps the previous digest and sets `digest:failed`. Rough-draft feedback uses key `rough-<statusId>` (text from `triage.rough_draft`, guard source = the post). Idea polish reuses the polish service with a
+keeps the previous digest and sets `digest:failed`. Manual run: `POST /v1/digest/run` (`runNow`) shares the `running` flag with the automatic run (busy -> 409), saves with a unique negative bucket (never touches `digest:bucket`), needs >= 3 recent non-own posts (422), is throttled by `digest.manualMinIntervalSec` (429 + Retry-After, in-memory), and on failure returns 502 without changing `digest:failed` or the previous digest. Rough-draft feedback uses key `rough-<statusId>` (text from `triage.rough_draft`, guard source = the post). Idea polish reuses the polish service with a
 `idea-<digestId>-<n>` draft key and an empty guard source (any URL/@mention is a violation).
 
 **Style notes:** the owner's own rules live in the singleton `style_notes` table (db, not a file:
