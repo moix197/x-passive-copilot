@@ -1,4 +1,5 @@
 import { log } from '../log';
+import { existsSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
 import { MAX_DRAFT_VERSIONS, type AppConfig, type PolishReply, type Result, type StoredPost } from '@xc/shared';
 import { runClaude } from '../llm/claude';
@@ -17,7 +18,9 @@ import {
 } from './drafts-store';
 import { replaceDashes } from '../text/dashes';
 import { ideaToneRules } from '../digest/idea-tone';
-import { checkReply, ruleNames, type Violation } from './guard';
+import { replyToneRules } from '../triage/reply-tone';
+import { ensureClaudeReplySandbox, REPLY_VOICE_FILE } from '../sandbox';
+import { checkReply, productMention, ruleNames, type Violation } from './guard';
 
 export interface Idea {
   text: string;
@@ -74,9 +77,12 @@ function sourceOf(subject: Subject): string {
   return subject.kind === 'post' ? replySource(subject.post) : '';
 }
 
+const IDEA_FILES = '`.claude/skills/announce/voice.md` (voice and tone), `.ai/product/index.md` (what the product is)';
+const REPLY_FILES = `\`${REPLY_VOICE_FILE}\` (voice and tone)`;
+
 function taskBlock(subject: Subject, product: string): string {
   if (subject.kind === 'idea') {
-    return `Write one standalone X post (not a reply) from this idea.\n${ideaToneRules(product)}\n<idea>\n${dataJson(subject.idea)}\n</idea>`;
+    return `Write one standalone X post (not a reply) from this idea.\nFiles you may read: ${IDEA_FILES}.\n${ideaToneRules(product)}\n<idea>\n${dataJson(subject.idea)}\n</idea>`;
   }
   const { post } = subject;
   const data = {
@@ -85,7 +91,7 @@ function taskBlock(subject: Subject, product: string): string {
     roughDraft: post.triage?.roughDraft ?? '',
     note: post.triage?.reason ?? '',
   };
-  return `Write the final reply to this post.\n<post>\n${dataJson(data)}\n</post>`;
+  return `Write the final reply to this post.\nFiles you may read: ${REPLY_FILES}.\n${replyToneRules(product)}\n<post>\n${dataJson(data)}\n</post>`;
 }
 
 function fixBlock(previous: GenerateRequest['previous']): string {
@@ -108,8 +114,23 @@ export function buildPolishPrompt({ subject, previous, alternatives }: GenerateR
     .join('\n\n');
 }
 
-export function claudeGenerate(config: AppConfig, style: () => Style = () => NO_STYLE): Generate {
-  return (request) => runClaude(buildPolishPrompt(request, style(), config.product.name), config.models.final, config.spacehoodRepoPath);
+// Ideas may read product docs in the repo; replies run in a sandbox holding only the voice guide.
+// A missing repo is passed through so runClaude reports the config error as before.
+function polishCwd(config: AppConfig, home: string, subject: Subject): string {
+  const repo = config.spacehoodRepoPath;
+  if (subject.kind === 'idea' || !repo || !existsSync(repo)) return repo;
+  return ensureClaudeReplySandbox(home, repo);
+}
+
+export function claudeGenerate(config: AppConfig, home: string, style: () => Style = () => NO_STYLE): Generate {
+  return (request) =>
+    runClaude(buildPolishPrompt(request, style(), config.product.name), config.models.final, polishCwd(config, home, request.subject));
+}
+
+function violationsFor(text: string, subject: Subject, product: string): Violation[] {
+  const source = sourceOf(subject);
+  const pitch = subject.kind === 'post' ? productMention(text, source, product) : [];
+  return [...checkReply(text, source), ...pitch];
 }
 
 function configError(config: AppConfig): string | null {
@@ -142,7 +163,7 @@ export function createPolishService(
     const reply = await withRetry(() => generate({ subject, previous, alternatives }));
     if (!reply.ok) return reply;
     const text = replaceDashes(reply.value.reply);
-    return { ok: true as const, value: { reply: text, violations: checkReply(text, sourceOf(subject)) } };
+    return { ok: true as const, value: { reply: text, violations: violationsFor(text, subject, config.product.name) } };
   }
 
   // Every version goes through the guard, with one regenerate when it fails.

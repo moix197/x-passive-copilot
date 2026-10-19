@@ -1,5 +1,6 @@
 import type { StoredPost } from '@xc/shared';
 import type { Style } from '../voice/select-examples';
+import { replyToneRules } from './reply-tone';
 
 export const MAX_CONTEXT_BYTES = 8 * 1024;
 
@@ -60,10 +61,12 @@ export function buildTriagePrompt(
   context: string,
   posts: StoredPost[],
   mustFlag: ReadonlyMap<string, string>,
+  product: string,
   style: Style = NO_STYLE,
 ): string {
   return [
     INSTRUCTIONS,
+    `Rules for roughDraft:\n${replyToneRules(product)}`,
     `<context>\n${truncateContext(context)}\n</context>`,
     renderStyleBlocks(style),
     `<posts>\n${postsAsJson(posts, mustFlag)}\n</posts>`,

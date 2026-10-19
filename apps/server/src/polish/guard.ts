@@ -93,6 +93,14 @@ export function checkReply(text: string, source: string): Violation[] {
   ];
 }
 
+const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** A reply naming the product when the post does not is almost always a pitch; flagged, not blocked. */
+export function productMention(text: string, source: string, product: string): Violation[] {
+  const pattern = new RegExp(`(?<![\\w])${escapeRegExp(product)}(?![\\w])`, 'i');
+  return pattern.test(text) && !pattern.test(source) ? [{ rule: 'product-mention', detail: product }] : [];
+}
+
 export function ruleNames(violations: Violation[]): string[] {
   return [...new Set(violations.map((v) => v.rule))];
 }

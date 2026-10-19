@@ -1,7 +1,7 @@
-// @covers apps/extension/src/panel/**, apps/server/src/text/**, apps/server/src/voice/**, apps/server/src/digest/**, apps/server/src/polish/**, apps/server/src/posts.ts, apps/server/src/router.ts, apps/server/src/db.ts, apps/server/src/app.ts, apps/server/src/triage/**, apps/server/src/llm/**, apps/server/src/main.ts, apps/server/src/env-file.ts, apps/server/src/doctor.ts, shared/src/types.ts
+// @covers apps/extension/src/panel/**, apps/server/src/text/**, apps/server/src/voice/**, apps/server/src/digest/**, apps/server/src/polish/**, apps/server/src/posts.ts, apps/server/src/router.ts, apps/server/src/db.ts, apps/server/src/app.ts, apps/server/src/triage/**, apps/server/src/llm/**, apps/server/src/sandbox.ts, apps/server/assets/**, apps/server/src/main.ts, apps/server/src/env-file.ts, apps/server/src/doctor.ts, shared/src/types.ts
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import {
   authHeader,
   fakeTwimg,
@@ -26,9 +26,13 @@ let binDir: string;
 test.beforeAll(async () => {
   const fakes = installFakeClis();
   binDir = fakes.binDir;
+  const repo = makeTempDir('xc-repo-');
+  mkdirSync(join(repo, '.claude/skills/announce'), { recursive: true });
+  writeFileSync(join(repo, '.claude/skills/announce/voice.md'), 'voice guide');
+  writeFileSync(join(repo, 'CLAUDE.md'), 'product repo instructions');
   const config = {
     handle: 'e2eowner',
-    spacehoodRepoPath: makeTempDir('xc-repo-'),
+    spacehoodRepoPath: repo,
     models: { triage: 'google/fake-flash', final: 'fake-final' },
     triage: { batchSize: 1 },
   };
@@ -154,6 +158,25 @@ test('regenerate keeps every version, flips between them and persists the pick',
   await expect(claude.getByTestId('version-label')).toHaveText('2/3');
   await expect(claude).not.toContainText('Needs edit');
   await panel.screenshot({ path: test.info().outputPath('flagged-panel.png'), fullPage: true });
+});
+
+test('a reply that pitches the product is flagged, and reply polish runs outside the product repo', async () => {
+  const post = capturedPost('8251', { authorHandle: 'tara', text: 'pitch-probe: how do you tell a real burn from dust?' });
+  expect((await postJson(server.baseUrl, '/v1/posts', { posts: [post] })).ok).toBe(true);
+  const panel = await openFlagged();
+  const claude = panel.locator('[data-status-id="8251"]').getByTestId('claude-version');
+
+  await claude.getByTestId('polish-button').click({ timeout: 20_000 });
+  await expect(claude.getByTestId('claude-text')).toHaveText(/^We built Spacehub/, { timeout: 20_000 });
+  await expect(claude).toContainText('Needs edit: product-mention');
+  expect(lastPrompt('claude')).toContain("DON'T: pitch, plug or mention Spacehub");
+  expect(lastPrompt('claude')).not.toContain('.ai/product');
+
+  const cwd = readFileSync(join(binDir, 'claude-last-cwd.txt'), 'utf8');
+  expect([basename(dirname(cwd)), basename(cwd)]).toEqual(['sandbox', 'claude-reply']);
+  expect(readFileSync(join(cwd, 'voice.md'), 'utf8')).toBe('voice guide');
+  expect(existsSync(join(cwd, 'CLAUDE.md'))).toBe(false);
+  await panel.close();
 });
 
 test('style notes save, survive a panel reload and reach the triage and polish prompts', async () => {

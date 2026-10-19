@@ -8,6 +8,9 @@ const REPLIES = [
 ];
 // Breaks the reply guard (hype word + two hashtags), so every later version must come back needs_edit.
 const GUARD_BREAKER = 'lfg #ship #now';
+// A post containing this marker gets a product pitch, outside the scripted sequence.
+const PITCH_PROBE = 'pitch-probe';
+const PITCH = 'We built Spacehub to track exactly this, check it out.';
 
 const dir = import.meta.dirname;
 const counterFile = join(dir, 'claude-calls.txt');
@@ -22,6 +25,11 @@ if (!process.argv.includes('-p')) {
   process.exit(0);
 }
 const prompt = await readStdin();
+writeFileSync(join(dir, 'claude-last-cwd.txt'), process.cwd());
+if (prompt.includes(PITCH_PROBE)) {
+  process.stdout.write(JSON.stringify({ type: 'result', is_error: false, structured_output: { reply: PITCH, rationale: 'fake' } }));
+  process.exit(0);
+}
 const calls = existsSync(counterFile) ? Number(readFileSync(counterFile, 'utf8')) : 0;
 writeFileSync(counterFile, String(calls + 1));
 writeFileSync(join(dir, 'claude-last-prompt.txt'), prompt);

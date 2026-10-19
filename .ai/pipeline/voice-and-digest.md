@@ -4,9 +4,9 @@ type: decision
 summary: Own posts (author == handle) feed a voice profile and style examples injected into triage/polish prompts; a digest runs every N new non-own posts
 tags: [voice, feedback, examples, digest, ideas]
 paths: [apps/extension/src/panel/digest-section.ts, apps/server/src/text/**, apps/server/src/voice/**, apps/server/src/digest/**, apps/server/src/digest/idea-tone.ts, apps/server/src/triage/prompts.ts, apps/server/src/polish/polish.ts]
-related: [pipeline/triage-flow, pipeline/polish-flow, pipeline/digest-product-context, security/llm-subprocess-sandbox]
+related: [pipeline/triage-flow, pipeline/polish-flow, pipeline/digest-product-context, pipeline/reply-tone, security/llm-subprocess-sandbox]
 status: active
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Voice profile, feedback examples and digest
@@ -41,4 +41,4 @@ triage/polish/guard keeps the sandbox and hard rules identical for new LLM calls
 
 **Constraints it creates:** model outputs for voice/digest are wrapped as a one-element JSON array so
 `extractJson` is reused. `is_own` is not backfilled when `handle` changes. Digest product context is gathered per run (see
-pipeline/digest-product-context); `finalize-system.md` still says "reply" for idea polish.
+pipeline/digest-product-context). Reply tone (no product pitch) is pipeline/reply-tone.

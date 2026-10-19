@@ -25,7 +25,7 @@ export function readContext(home: string): string {
 
 export function opencodeClassify(config: AppConfig, home: string, style: () => Style = () => NO_STYLE): Classify {
   return async (posts, mustFlag) => {
-    const prompt = buildTriagePrompt(readContext(home), posts, mustFlag, style());
+    const prompt = buildTriagePrompt(readContext(home), posts, mustFlag, config.product.name, style());
     const reply = await runOpencode(prompt, config.models.triage, home);
     if (!reply.ok) return reply;
     return parseTriageReply(reply.value, new Set(posts.map((p) => p.statusId)));

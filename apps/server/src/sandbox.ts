@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Explicit names stay alongside "*" in case a CLI version ignores the wildcard; "*" also covers
@@ -47,5 +47,22 @@ export function ensureOpencodeSandbox(home: string): string {
     // first run
   }
   if (current !== wanted) writeFileSync(file, wanted);
+  return dir;
+}
+
+export const REPLY_VOICE_FILE = 'voice.md';
+const REPO_VOICE_FILE = join('.claude', 'skills', 'announce', 'voice.md');
+
+/**
+ * Reply polish runs here instead of the product repo, so Claude never sees product docs or the
+ * repo's CLAUDE.md while answering someone else's post. Only the voice guide is copied in.
+ */
+export function ensureClaudeReplySandbox(home: string, repoPath: string): string {
+  const dir = join(home, 'sandbox', 'claude-reply');
+  mkdirSync(dir, { recursive: true });
+  const source = join(repoPath, REPO_VOICE_FILE);
+  const target = join(dir, REPLY_VOICE_FILE);
+  if (existsSync(source)) copyFileSync(source, target);
+  else rmSync(target, { force: true });
   return dir;
 }

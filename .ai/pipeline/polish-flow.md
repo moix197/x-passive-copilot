@@ -4,9 +4,9 @@ type: decision
 summary: Polish guards each reply (one auto-retry); Regenerate appends guarded versions with a persisted pick; auto top picks use a per-day meta counter
 tags: [polish, claude, guard, daily-cap, auto-polish, versions, regenerate]
 paths: [apps/server/src/polish/**, apps/server/src/llm/claude.ts, apps/server/src/posts.ts, apps/server/src/db.ts, apps/extension/src/panel/flagged-view.ts, apps/extension/src/panel/version-nav.ts, apps/extension/src/panel/draft-actions.ts, apps/extension/src/panel/posts-view.ts]
-related: [security/llm-subprocess-sandbox, pipeline/triage-flow]
+related: [security/llm-subprocess-sandbox, pipeline/triage-flow, pipeline/reply-tone]
 status: active
-updated: 2026-10-17
+updated: 2026-10-19
 ---
 
 # Polish flow
@@ -45,4 +45,4 @@ the pick if a poll was fetched before the save. Latest wins; copy/edit also writ
 cap show a synthetic `cap_reached` status computed at list time (not stored).
 
 **Constraints it creates:** startup deletes stale `polishing` rows (no persistent queue).
-`models.final` and `spacehoodRepoPath` must be set or polish errors with a config message.
+`models.final` and `spacehoodRepoPath` must be set or polish errors with a config message. Reply guard adds `product-mention` (pipeline/reply-tone).

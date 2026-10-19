@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkReply, replyLength } from './guard';
+import { checkReply, productMention, replyLength } from './guard';
 
 const rules = (text: string, source = 'a post about tools') => checkReply(text, source).map((v) => v.rule);
 
@@ -80,5 +80,17 @@ describe('foreign URLs and mentions', () => {
   it('allows the ones in the source, case-insensitively', () => {
     const source = 'read https://site.example/a.  cc @Builder';
     expect(rules('good read https://site.example/a, thanks @builder', source)).toEqual([]);
+  });
+});
+
+describe('productMention', () => {
+  it('flags the product name only when the post does not mention it', () => {
+    expect(productMention('We built Spacehub to track exactly this', 'burns are up', 'Spacehub')).toEqual([
+      { rule: 'product-mention', detail: 'Spacehub' },
+    ]);
+    expect(productMention('spacehub.', 'burns are up', 'Spacehub')).toHaveLength(1);
+    expect(productMention('Spacehub does that', 'anyone tried Spacehub?', 'Spacehub')).toEqual([]);
+    expect(productMention('a spacehubby word', 'x', 'Spacehub')).toEqual([]);
+    expect(productMention('Acme (beta) rocks', 'x', 'Acme (beta)')).toHaveLength(1);
   });
 });

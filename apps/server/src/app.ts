@@ -48,7 +48,7 @@ function openPreparedDb(home: string): DatabaseSync {
 function createServices(db: DatabaseSync, home: string, config: AppConfig) {
   const style = () => loadStyle(db);
   const model = opencodeModel(config, home);
-  const polish = createPolishService(db, config, claudeGenerate(config, style));
+  const polish = createPolishService(db, config, claudeGenerate(config, home, style));
   const voice = createVoiceService(db, config, model);
   const digest = createDigestService(db, config, model);
   const autoPolish = createAutoPolish(db, config, polish);
