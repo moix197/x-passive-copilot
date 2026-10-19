@@ -247,3 +247,22 @@ test('Generate new ideas: a failed run shows the failure reason in the step list
   await expect(panel.getByTestId('digest-step').nth(2)).toContainText('Quota reached on fake-flash, no model left');
   await expect(panel.getByTestId('digest-progress')).toBeHidden({ timeout: 15_000 });
 });
+
+test('Generate new ideas: new ideas replace the shown ones without a reload, for manual and automatic runs', async () => {
+  await startWithPosts(3, 0, { everyNPosts: 4 });
+  const panel = await openDigest();
+  await panel.getByTestId('digest-generate').click();
+  await expect(panel.getByTestId('digest-idea').first()).toContainText('Fake idea 1');
+  await expect(panel.getByTestId('digest-generate')).toBeEnabled();
+
+  await panel.getByTestId('digest-generate').click();
+  await expect(panel.getByTestId('digest-progress-title')).toHaveText('Done — 1 idea');
+  await expect(panel.getByTestId('digest-idea').first()).toContainText('Fake idea 2');
+  await expect(panel.getByTestId('digest-generated')).toHaveText(/^Generated \d{1,2}:\d{2} [AP]M/);
+  // Regression: the model re-suggested the same topics because earlier ideas never reached the prompt.
+  expect(readFileSync(join(binDir, 'opencode-digest-prompt.txt'), 'utf8')).toMatch(/<previous-ideas>[^]*Fake idea 1[^]*<\/previous-ideas>/);
+
+  const posts = [capturedPost('9300')];
+  expect((await postJson(server.baseUrl, '/v1/posts', { posts })).ok).toBe(true);
+  await expect(panel.getByTestId('digest-idea').first()).toContainText('Fake idea 3');
+});

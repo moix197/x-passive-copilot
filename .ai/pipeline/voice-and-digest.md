@@ -43,3 +43,8 @@ triage/polish/guard keeps the sandbox and hard rules identical for new LLM calls
 **Constraints it creates:** model outputs for voice/digest are wrapped as a one-element JSON array so
 `extractJson` is reused. `is_own` is not backfilled when `handle` changes. Digest product context is gathered per run (see
 pipeline/digest-product-context). Reply tone (no product pitch) is pipeline/reply-tone.
+
+**Fresh ideas, not repeats:** the digest prompt carries the idea texts of the last 5 digests in a
+`<previous-ideas>` untrusted block with an instruction to cover clearly different topics (without it the
+model re-suggested the same 3 themes every run, which looked like the panel not updating; the panel and
+`GET /v1/digest` were correct: latest row by `id`). The Digest view shows "Generated <time>" so staleness is visible.

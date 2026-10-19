@@ -9,6 +9,9 @@ function causeText(failure: NonNullable<DigestView['failure']>): string {
   return `${describeModelFailure(failure.kind)}${resumes}${retry}`;
 }
 
+/** When the shown digest was made, so a stale digest is never mistaken for a fresh one. */
+export const generatedText = (createdAt: number): string => `Generated ${at(createdAt)}`;
+
 /** Banner for a failed refresh: why it failed in plain words and when a digest last succeeded. */
 export function refreshFailedText(view: DigestView): string {
   const why = view.failure ? `Last refresh failed: ${causeText(view.failure)}.` : 'Last refresh failed.';

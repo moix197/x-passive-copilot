@@ -1,5 +1,5 @@
 import { DigestViewSchema, type DigestIdea, type DigestTrend, type DigestView } from '@xc/shared/types';
-import { refreshFailedText } from './digest-notice';
+import { generatedText, refreshFailedText } from './digest-notice';
 import { digestProgressBox, paintDigestProgress } from './digest-progress';
 import { copyButton, copyText, renderDraftActions, type DraftCallbacks } from './draft-actions';
 import { element } from './dom';
@@ -77,6 +77,12 @@ function noticeLine(text: string): HTMLElement {
   return note;
 }
 
+function generatedLine(createdAt: number): HTMLElement {
+  const line = element('p', generatedText(createdAt), 'status');
+  line.dataset.testid = 'digest-generated';
+  return line;
+}
+
 export function renderDigest(view: DigestView, handlers: DigestHandlers): HTMLElement[] {
   const note = view.failed ? [noticeLine(refreshFailedText(view))] : [];
   if (!view.digest) {
@@ -87,6 +93,7 @@ export function renderDigest(view: DigestView, handlers: DigestHandlers): HTMLEl
     element('h2', 'Trends', 'voice-title'),
     ...view.digest.trends.map(renderTrend),
     element('h2', 'Post ideas', 'voice-title'),
+    generatedLine(view.digest.createdAt),
     ...view.digest.ideas.map((idea) => renderIdea(idea, handlers)),
   ];
 }

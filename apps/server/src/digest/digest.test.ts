@@ -140,6 +140,8 @@ describe('buildDigestPrompt', () => {
     expect(prompt).toContain('Post ideas are build-in-public and educational, never promotional.');
     expect(prompt).toContain('DON\'T: sales or call-to-action posts ("come to our platform", "track tokens with us", "check out\nAcme")');
     expect(prompt).toMatch(/Good \(tone example only[^\n]*\nBad \(a pitch\): "[^"]*Check out Acme today\."/);
+    const withHistory = buildDigestPrompt('Acme', '', [], ['old idea']);
+    expect(withHistory).toContain('<previous-ideas>\n["old idea"]\n</previous-ideas>');
     const empty = Buffer.byteLength(buildDigestPrompt('Acme', '', []));
     expect(Buffer.byteLength(buildDigestPrompt('Acme', 'é'.repeat(10_000), [])) - empty).toBe(8 * 1024);
   });
