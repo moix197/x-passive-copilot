@@ -14,6 +14,7 @@ describe('replaceDashes', () => {
 
   it('keeps number ranges as hyphens', () => {
     expect(replaceDashes('2020–2021 and 5 – 10')).toBe('2020-2021 and 5-10');
+    expect(replaceDashes('5—10 posts')).toBe('5-10 posts');
   });
 
   it('avoids doubled punctuation and dangling edge commas', () => {
@@ -25,6 +26,12 @@ describe('replaceDashes', () => {
   it('collapses runs of dashes and leaves clean text alone', () => {
     expect(replaceDashes('a —— b')).toBe('a, b');
     expect(replaceDashes('plain - hyphen text')).toBe('plain - hyphen text');
-    expect(replaceDashes('line one\n— line two')).toBe('line one, line two');
+  });
+
+  it('never swallows line breaks around a dash', () => {
+    expect(replaceDashes('a —\n\nb')).toBe('a\n\nb');
+    expect(replaceDashes('line one\n— line two')).toBe('line one\nline two');
+    expect(replaceDashes('one — two\nthree')).toBe('one, two\nthree');
+    expect(replaceDashes('Wait. —\r\nok')).toBe('Wait.\r\nok');
   });
 });

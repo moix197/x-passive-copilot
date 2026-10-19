@@ -23,6 +23,9 @@ import { activeMustFlag, isOwnAuthor, isWithinAgeLimit, type PrefilterRules } fr
 const PRUNE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
 const PRUNABLE = 'SELECT status_id FROM posts WHERE captured_at < ? AND is_own = 0 AND replied_at IS NULL';
 const INGEST_COUNTER = { own: 'ingest:own', nonOwn: 'ingest:non_own' } as const;
+// Idea draft keys are `idea-<digestId>-<index>`; keys whose digest row no longer exists are orphans.
+const isOrphanIdeaKey = (column: string) =>
+  `${column} LIKE 'idea-%' AND CAST(substr(${column}, 6, instr(substr(${column}, 6), '-') - 1) AS INTEGER) NOT IN (SELECT id FROM digests)`;
 
 // Own posts are voice samples and replied posts are the user's history, so both outlive the prune window.
 export function prunePosts(db: DatabaseSync, now: number): void {
@@ -31,6 +34,12 @@ export function prunePosts(db: DatabaseSync, now: number): void {
   db.prepare(`DELETE FROM drafts WHERE status_id IN (${PRUNABLE})`).run(cutoff);
   db.prepare(`DELETE FROM triage WHERE status_id IN (${PRUNABLE})`).run(cutoff);
   db.prepare('DELETE FROM posts WHERE captured_at < ? AND is_own = 0 AND replied_at IS NULL').run(cutoff);
+  pruneOrphanIdeaDrafts(db);
+}
+
+function pruneOrphanIdeaDrafts(db: DatabaseSync): void {
+  db.exec(`DELETE FROM draft_versions WHERE ${isOrphanIdeaKey('draft_key')}`);
+  db.exec(`DELETE FROM drafts WHERE ${isOrphanIdeaKey('status_id')}`);
 }
 
 // Monotonic: digest buckets and voice regen must keep advancing after pruning shrinks the table.

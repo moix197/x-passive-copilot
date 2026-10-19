@@ -30,7 +30,7 @@ export const CapturedPostSchema = z.object({
   quotedStatusId: capturedStatusId.nullable(),
   avatarUrl: z.string().max(300).regex(AVATAR_URL_PATTERN).nullable().default(null),
 });
-export type CapturedPost= z.infer<typeof CapturedPostSchema>;
+export type CapturedPost = z.infer<typeof CapturedPostSchema>;
 
 export const PostBatchSchema = z.object({ posts: z.array(CapturedPostSchema).max(100) });
 export type PostBatch = z.infer<typeof PostBatchSchema>;

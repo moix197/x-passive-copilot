@@ -16,8 +16,10 @@ export interface FlaggedHandlers {
   draftCallbacks: (statusId: string, saved: Rating | null) => DraftCallbacks;
 }
 
-/** Rows with an open editor, kept across polls so typing is not wiped. */
-type OpenEditors = Map<string, HTMLElement>;
+type DraftKind = 'rough' | 'claude';
+
+/** Rows with at least one open editor, kept across polls so typing is not wiped. */
+type OpenEditors = Map<string, { row: HTMLElement; kinds: Set<DraftKind> }>;
 
 interface RowContext {
   handlers: FlaggedHandlers;
@@ -107,11 +109,20 @@ function triageStatus(t: NonNullable<StoredPost['triage']>): HTMLElement[] {
   return t.roughDraft ? [] : [element('div', 'No draft suggested.', 'post-tags')];
 }
 
-function trackEditing(ctx: RowContext, statusId: string): (editing: boolean) => void {
+// A row stays pinned while any of its editors is open, so closing one never wipes the other.
+function trackEditing(ctx: RowContext, statusId: string, kind: DraftKind): (editing: boolean) => void {
   return (editing) => {
-    if (editing) ctx.editors.set(statusId, ctx.row);
+    const open = ctx.editors.get(statusId)?.kinds ?? new Set<DraftKind>();
+    if (editing) open.add(kind);
+    else open.delete(kind);
+    if (open.size) ctx.editors.set(statusId, { row: ctx.row, kinds: open });
     else ctx.editors.delete(statusId);
   };
+}
+
+function forgetDepartedEditors(editors: OpenEditors, posts: StoredPost[]): void {
+  const present = new Set(posts.map((post) => post.statusId));
+  for (const statusId of [...editors.keys()]) if (!present.has(statusId)) editors.delete(statusId);
 }
 
 // The rough draft is rated and edited under its own `rough-<statusId>` key, apart from the Claude version.
@@ -126,7 +137,7 @@ function roughDraftActions(post: StoredPost, text: HTMLElement, rating: Rating |
       return error;
     },
   };
-  return renderDraftActions(text.textContent ?? '', copyMarksReplied(post, callbacks, ctx), trackEditing(ctx, post.statusId));
+  return renderDraftActions(text.textContent ?? '', copyMarksReplied(post, callbacks, ctx), trackEditing(ctx, post.statusId, 'rough'));
 }
 
 function firstDraftSection(post: StoredPost, ctx: RowContext): HTMLElement | null {
@@ -184,7 +195,7 @@ function draftActionsFor(post: StoredPost, text: string, ctx: RowContext): HTMLE
     },
     ...(versions < MAX_DRAFT_VERSIONS ? { onRegenerate: () => handlers.onRegenerate(post.statusId) } : {}),
   };
-  return renderDraftActions(text, copyMarksReplied(post, callbacks, ctx), trackEditing(ctx, post.statusId));
+  return renderDraftActions(text, copyMarksReplied(post, callbacks, ctx), trackEditing(ctx, post.statusId, 'claude'));
 }
 
 // While a regenerate runs, the selected version stays readable but cannot be acted on.
@@ -245,6 +256,11 @@ export function mountFlaggedView(
   options: Pick<PostsViewOptions, 'load' | 'emptyText'> & FlaggedHandlers,
 ): () => void {
   const editors: OpenEditors = new Map();
-  const render = (post: StoredPost) => editors.get(post.statusId) ?? renderFlagged(post, options, editors);
-  return mountPostsView(root, { load: options.load, render, emptyText: options.emptyText });
+  const load = async () => {
+    const posts = await options.load();
+    forgetDepartedEditors(editors, posts);
+    return posts;
+  };
+  const render = (post: StoredPost) => editors.get(post.statusId)?.row ?? renderFlagged(post, options, editors);
+  return mountPostsView(root, { load, render, emptyText: options.emptyText });
 }

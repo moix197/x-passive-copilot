@@ -14,6 +14,7 @@ import {
   startServer,
   type TestServer,
 } from './harness';
+import { MAX_DRAFT_VERSIONS } from '../shared/src/types';
 
 const HOUR = 3_600_000;
 const FAKE_GEMINI_KEY = 'fake-gemini-key-for-e2e';
@@ -78,6 +79,12 @@ const lastPrompt = (cli: 'opencode' | 'claude') => readFileSync(join(binDir, `${
 function expectGeminiEnv(cli: 'opencode' | 'claude', google: string | null) {
   const seen = JSON.parse(readFileSync(join(binDir, `${cli}-last-env.json`), 'utf8')) as Record<string, string | null>;
   expect(seen).toEqual({ gemini: null, google });
+}
+
+// Polls never overlap, so the second response means the first one has been fully rendered.
+async function nextFullPoll(panel: Page): Promise<void> {
+  await panel.waitForResponse((r) => r.url().includes('/v1/posts'));
+  await panel.waitForResponse((r) => r.url().includes('/v1/posts'));
 }
 
 async function storedVersions(statusId: string) {
@@ -236,8 +243,7 @@ test('editing a Claude version keeps focus across polls, saves the edit as the s
   const scrollY = await panel.evaluate(() => window.scrollY);
   expect(scrollY).toBeGreaterThan(0);
   await panel.keyboard.type(' fir');
-  await panel.waitForResponse((r) => r.url().includes('/v1/posts'));
-  await panel.waitForResponse((r) => r.url().includes('/v1/posts'));
+  await nextFullPoll(panel);
   await expect(editor).toBeFocused();
   await panel.keyboard.type('st');
   await expect(editor).toHaveValue('Cut the settings page first');
@@ -287,7 +293,7 @@ test('thumbs show a pressed state with confirmation, switch, survive polls and a
   await expect(up).toHaveAttribute('aria-pressed', 'true');
   await expect(down).toHaveAttribute('aria-pressed', 'false');
   await expect(claude).toContainText('Saved as good example');
-  await panel.waitForTimeout(3500);
+  await nextFullPoll(panel);
   await expect(claude.getByTestId('draft-up')).toHaveAttribute('aria-pressed', 'true');
 
   await claude.getByTestId('draft-down').click();
@@ -309,7 +315,8 @@ test('a high-score post is never polished automatically by default', async () =>
   const row = panel.locator('[data-status-id="8701"]');
   await expect(row.getByTestId('first-draft')).toContainText('Congrats on shipping!', { timeout: 20_000 });
   await expect(row.getByTestId('polish-button')).toBeVisible();
-  await panel.waitForTimeout(3500);
+  await nextFullPoll(panel);
+  await expect(row.getByTestId('polish-button')).toBeVisible();
   await expect(row.getByTestId('claude-text')).toHaveCount(0);
   await expect(row.getByTestId('claude-version')).not.toContainText('Top pick');
 });
@@ -413,4 +420,51 @@ test('flagged list is newest-captured first and a post flagged while the panel i
 
   expect((await postJson(server.baseUrl, '/v1/posts', { posts: [mention('7103')] })).ok).toBe(true);
   await expect.poll(() => order(panel)).toEqual(['7103', '7102', '7101']);
+});
+
+test('closing one draft editor keeps the other open editor and its unsaved text across polls', async () => {
+  const post = capturedPost('8901', { authorName: 'Wen', authorHandle: 'wen', text: 'What did you drop from the roadmap?' });
+  expect((await postJson(server.baseUrl, '/v1/posts', { posts: [post] })).ok).toBe(true);
+  const panel = await openFlagged();
+  const row = panel.locator('[data-status-id="8901"]');
+  const rough = row.getByTestId('first-draft');
+  const claude = row.getByTestId('claude-version');
+  await claude.getByTestId('polish-button').click({ timeout: 20_000 });
+  await expect(claude.getByTestId('claude-text')).toBeVisible({ timeout: 20_000 });
+
+  await rough.getByTestId('draft-edit').click();
+  await rough.getByTestId('draft-editor').fill('unsaved first draft edit');
+  await claude.getByTestId('draft-edit').click();
+  await claude.getByTestId('draft-editor').fill('unsaved claude edit');
+  await claude.getByTestId('draft-cancel').click();
+  await expect(claude.getByTestId('draft-editor')).toHaveCount(0);
+
+  await nextFullPoll(panel);
+  await expect(rough.getByTestId('draft-editor')).toHaveValue('unsaved first draft edit');
+  await panel.close();
+});
+
+test('regenerate stops at the version cap with 409 limit and the panel hides the button', async () => {
+  const id = '8951';
+  expect((await postJson(server.baseUrl, '/v1/posts', { posts: [capturedPost(id, { authorHandle: 'cap', text: 'Cap probe' })] })).ok).toBe(true);
+  const polish = (regenerate: boolean) => postJson(server.baseUrl, `/v1/posts/${id}/polish${regenerate ? '?regenerate=1' : ''}`, {});
+  // Asking again while a job runs answers "already", so each step re-asks until the next version lands.
+  for (let n = 1; n <= MAX_DRAFT_VERSIONS; n++) {
+    const askNext = async () => {
+      const count = (await storedVersions(id)).length;
+      if (count < n) await polish(n > 1);
+      return count;
+    };
+    await expect.poll(askNext, { timeout: 20_000 }).toBe(n);
+  }
+  await expect.poll(async () => (await storedVersions(id)).length).toBe(MAX_DRAFT_VERSIONS);
+  const capped = await polish(true);
+  expect(capped.status).toBe(409);
+  expect(await capped.json()).toEqual({ state: 'limit' });
+
+  const panel = await openFlagged();
+  const claude = panel.locator(`[data-status-id="${id}"]`).getByTestId('claude-version');
+  await expect(claude.getByTestId('version-label')).toHaveText(`${MAX_DRAFT_VERSIONS}/${MAX_DRAFT_VERSIONS}`, { timeout: 15_000 });
+  await expect(claude.getByTestId('draft-regenerate')).toHaveCount(0);
+  await panel.close();
 });

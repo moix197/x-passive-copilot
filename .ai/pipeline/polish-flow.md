@@ -22,7 +22,9 @@ slot and stops the loop; a candidate already in flight is skipped (slot released
 **Versions:** every successful job appends a row to `draft_versions` (each one guarded, with the
 same regenerate-once) and points `drafts.selected_version` at it; `drafts.text/status/violations`
 always mirror the selected version, so feedback, edit and examples keep reading `drafts`.
-Panel Edit: the open editor row is reused across the 3s poll and `posts-view` reconciles rows in
+Panel Edit: a row with any open editor (first draft and Claude version are tracked separately, so
+closing one keeps the row pinned for the other) is reused across the 3s poll; entries for posts that
+leave the list are dropped. `posts-view` reconciles rows in
 place (never detaching a reused row), so focus, caret and scroll survive refreshes; Esc cancels,
 Ctrl/Cmd+Enter saves.
 `POST /v1/posts/:id/polish?regenerate=1` on a ready/needs_edit draft keeps the text visible
@@ -32,7 +34,7 @@ restores the status (ready/needs_edit from violations) and sets `error` instead 
 `MAX_DRAFT_VERSIONS` (10, shared) -> state `limit`/409. Startup settles stale `polishing` rows that
 have text and deletes the rest; `openDb` backfills pre-versions drafts as their first version. The
 list query embeds versions via a `json_group_array` subquery (`VERSIONS_SUBQUERY`). Pruning drops
-versions with their post.
+versions with their post, and idea drafts/versions (`idea-<digestId>-<i>`) whose digest row is gone.
 
 **Dashes/notes:** each generated reply passes `replaceDashes` before the guard; the prompt also carries the
 owner's `<user-style-rules>` (see pipeline/voice-and-digest). Post cards show a "View on X" link.

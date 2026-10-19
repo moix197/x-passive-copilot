@@ -34,7 +34,8 @@ polling never wipes edits. `renderStyleBlocks` puts them in a `<user-style-rules
 escaped) labelled as trusted owner rules that never override output format or hard rules, ahead of the
 untrusted voice/examples. **Em dashes:** prompts forbid U+2014 and `text/dashes.ts` `replaceDashes`
 is applied where model text enters (triage reason/roughDraft in `parseTriageReply`, polish reply
-before `checkReply`, digest `clip`).
+before `checkReply`, digest `clip`). Only horizontal spaces around a dash are consumed (a dash at a line
+edge is dropped, the line break kept); a dash between digits becomes `-`.
 
 **Why:** the user's own posts are the best style signal and cost nothing extra to capture; reusing
 triage/polish/guard keeps the sandbox and hard rules identical for new LLM calls.
