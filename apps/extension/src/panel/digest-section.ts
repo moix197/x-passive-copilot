@@ -85,6 +85,7 @@ export function renderDigest(view: DigestView, handlers: DigestHandlers): HTMLEl
 
 function generateControls(onGenerate: DigestHandlers['onGenerate']): HTMLElement {
   const wrap = document.createElement('div');
+  wrap.className = 'digest-controls';
   const button = document.createElement('button');
   button.type = 'button';
   button.textContent = 'Generate new ideas';

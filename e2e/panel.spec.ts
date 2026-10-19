@@ -373,3 +373,21 @@ test('readiness opens with the failing row, its status text and a readable fix h
   expect(await panel.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await panel.close();
 });
+
+test('flagged list is newest-captured first and a post flagged while the panel is open appears at the top', async () => {
+  const mention = (id: string) => capturedPost(id, { text: `@e2eowner order check ${id}`, authorHandle: 'orderer' });
+  const mine = ['7101', '7102', '7103'];
+  const order = (panel: Page) =>
+    panel
+      .getByTestId('flagged-row')
+      .evaluateAll((rows) => rows.map((r) => (r as HTMLElement).dataset.statusId ?? ''))
+      .then((ids) => ids.filter((id) => mine.includes(id)));
+
+  expect((await postJson(server.baseUrl, '/v1/posts', { posts: [mention('7101')] })).ok).toBe(true);
+  expect((await postJson(server.baseUrl, '/v1/posts', { posts: [mention('7102')] })).ok).toBe(true);
+  const panel = await openFlagged();
+  await expect.poll(() => order(panel)).toEqual(['7102', '7101']);
+
+  expect((await postJson(server.baseUrl, '/v1/posts', { posts: [mention('7103')] })).ok).toBe(true);
+  await expect.poll(() => order(panel)).toEqual(['7103', '7102', '7101']);
+});

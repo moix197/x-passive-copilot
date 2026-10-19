@@ -126,3 +126,14 @@ test('Generate new ideas: too few captured posts gives a clear message', async (
   await expect(panel.getByTestId('digest-generate-error')).toContainText('Not enough captured posts yet');
   expect(existsSync(join(binDir, 'digest-calls.txt'))).toBe(false);
 });
+
+test('Generate new ideas button keeps breathing room below the tab bar', async () => {
+  await startWithPosts(3, 0);
+  const panel = await openDigest();
+  await panel.setViewportSize({ width: 400, height: 800 });
+  const button = panel.getByTestId('digest-generate');
+  await expect(button).toBeVisible();
+  const tabsBottom = (await panel.getByRole('tablist').boundingBox())!.y + (await panel.getByRole('tablist').boundingBox())!.height;
+  expect((await button.boundingBox())!.y - tabsBottom).toBeGreaterThanOrEqual(12);
+  await panel.screenshot({ path: process.env.DIGEST_SHOT ?? test.info().outputPath('digest-button.png') });
+});

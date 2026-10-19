@@ -110,6 +110,14 @@ h1 {
   color: var(--muted);
 }
 
+/* Digest */
+.digest-controls {
+  padding: 16px 16px 0;
+}
+.digest-controls .needs-edit:empty {
+  display: none;
+}
+
 /* Doctor */
 #doctor:not(:empty) {
   padding: 8px 16px;

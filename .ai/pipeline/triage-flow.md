@@ -39,8 +39,7 @@ tools.
 **Constraints it creates:** logs carry statusIds, error classes and a `safeReason` (<= 200 chars of
 CLI/provider error text: exit code + stderr, or opencode's `error` event name/message); never prompt
 or model text. Stored `triage.error` stays the coarse class. Flagged hides stored must-flag rows past their age limit (`isWithinAgeLimit`, by `posted_at`). Must-flag posts with no triage row are
-added to the Flagged list at read time (`listFlaggedPosts` + `mustFlagFor`, scan of the newest 500
-untriaged posts) with a synthetic triage (`score: null`, no error) the panel labels "triage pending".
+merged into the Flagged list at read time (`listFlaggedPosts` + `mustFlagFor`) with a synthetic triage (`score: null`, no error) the panel labels "triage pending". Flagged is ordered newest captured first (`seq DESC`, never by score); the age filter runs while paging the SQL (batches of 200) until the page holds `limit` eligible posts, so stale rows cannot crowd out fresh ones.
 Live model quirks absorbed by the parser: missing `roughDraft` = `""`; a bad array followed by a
 "corrected" one falls back to the last `[{`. `models.triage` empty
 disables triage (posts stay pending). `context.md` (<= 8 KB, `<home>/context.md`) is read per batch.

@@ -231,23 +231,12 @@ export function listPosts(
   return { posts, nextBefore: posts.length === limit && last ? last.seq : null };
 }
 
-const PENDING_SCAN_LIMIT = 500;
+const FLAGGED_BATCH = 200;
 
 /** Untriaged (or triage-disabled) mention/watchlist posts: they must show in Flagged before triage. */
-function listPendingMustFlagPosts(
-  db: DatabaseSync,
-  rules: PrefilterRules,
-  ctx: PolishContext,
-  now: number,
-): StoredPost[] {
-  const rows = db
-    .prepare(`${SELECT_WITH_TRIAGE} WHERE t.status_id IS NULL ORDER BY p.seq DESC LIMIT ?`)
-    .all(PENDING_SCAN_LIMIT) as unknown as PostRow[];
-  return rows.flatMap((row) => {
-    const post = toStoredPost(row, ctx);
-    const mustFlag = activeMustFlag(post, rules, now);
-    return mustFlag ? [{ ...post, triage: pendingTriage(mustFlag) }] : [];
-  });
+function asPendingMustFlag(post: StoredPost, rules: PrefilterRules, now: number): StoredPost | null {
+  const mustFlag = activeMustFlag(post, rules, now);
+  return mustFlag ? { ...post, triage: pendingTriage(mustFlag) } : null;
 }
 
 function pendingTriage(mustFlag: MustFlag): StoredPost['triage'] {
@@ -257,15 +246,18 @@ function pendingTriage(mustFlag: MustFlag): StoredPost['triage'] {
   };
 }
 
-const byScoreThenNewest = (a: StoredPost, b: StoredPost): number =>
-  (b.triage?.score ?? 0) - (a.triage?.score ?? 0) || b.seq - a.seq;
-
 /** Stored must-flag rows hide once past their age limit; reply-worthy-only rows were age-filtered by prefilter. */
 function isStaleMustFlag(post: StoredPost, rules: PrefilterRules | null, now: number): boolean {
   const mustFlag = post.triage?.mustFlag ?? undefined;
   return !!rules && !!mustFlag && !isWithinAgeLimit(post.postedAt, mustFlag, rules, now);
 }
 
+function eligibleFlagged(post: StoredPost, rules: PrefilterRules | null, now: number): StoredPost | null {
+  if (post.triage) return isStaleMustFlag(post, rules, now) ? null : post;
+  return rules ? asPendingMustFlag(post, rules, now) : null;
+}
+
+/** Newest captured first: a post's place is when it reached us, whatever its triage score. */
 export function listFlaggedPosts(
   db: DatabaseSync,
   limit: number,
@@ -273,15 +265,24 @@ export function listFlaggedPosts(
   rules: PrefilterRules | null = null,
   now: number = Date.now(),
 ): PostListResponse {
-  const rows = db
-    .prepare(
-      `${SELECT_WITH_TRIAGE} WHERE t.must_flag IS NOT NULL OR t.reply_worthy = 1
-       ORDER BY COALESCE(t.score, 0) DESC, p.seq DESC LIMIT ?`,
-    )
-    .all(limit) as unknown as PostRow[];
-  const triaged = rows.map((row) => toStoredPost(row, ctx)).filter((post) => !isStaleMustFlag(post, rules, now));
-  const pending = rules ? listPendingMustFlagPosts(db, rules, ctx, now) : [];
-  return { posts: [...triaged, ...pending].sort(byScoreThenNewest).slice(0, limit), nextBefore: null };
+  const query = db.prepare(
+    `${SELECT_WITH_TRIAGE} WHERE p.seq < ? AND (t.must_flag IS NOT NULL OR t.reply_worthy = 1 OR t.status_id IS NULL)
+     ORDER BY p.seq DESC LIMIT ?`,
+  );
+  const posts: StoredPost[] = [];
+  let before = Number.MAX_SAFE_INTEGER;
+  // Stale rows are dropped after the SQL limit, so keep paging until the page is full of eligible posts.
+  while (posts.length < limit) {
+    const rows = query.all(before, FLAGGED_BATCH) as unknown as PostRow[];
+    for (const row of rows) {
+      const post = eligibleFlagged(toStoredPost(row, ctx), rules, now);
+      if (post && posts.length < limit) posts.push(post);
+    }
+    const last = rows[rows.length - 1];
+    if (rows.length < FLAGGED_BATCH || !last) break;
+    before = last.seq;
+  }
+  return { posts, nextBefore: null };
 }
 
 export function listUntriagedPosts(db: DatabaseSync): StoredPost[] {
