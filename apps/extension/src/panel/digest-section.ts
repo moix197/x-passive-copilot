@@ -1,4 +1,4 @@
-import { DigestViewSchema, type DigestIdea, type DigestTrend, type DigestView } from '@xc/shared/types';
+import { DigestViewSchema, type DigestIdea, type DigestTrend, type EarlierDigest, type DigestView } from '@xc/shared/types';
 import { generatedText, refreshFailedText } from './digest-notice';
 import { digestProgressBox, paintDigestProgress } from './digest-progress';
 import { copyButton, copyText, renderDraftActions, type DraftCallbacks } from './draft-actions';
@@ -77,13 +77,46 @@ function noticeLine(text: string): HTMLElement {
   return note;
 }
 
-function generatedLine(createdAt: number): HTMLElement {
+function generatedLine(createdAt: number, testId = 'digest-generated'): HTMLElement {
   const line = element('p', generatedText(createdAt), 'status');
-  line.dataset.testid = 'digest-generated';
+  line.dataset.testid = testId;
   return line;
 }
 
-export function renderDigest(view: DigestView, handlers: DigestHandlers): HTMLElement[] {
+/** Whether earlier ideas are open; owned by the mount so it survives each poll re-render. */
+export interface EarlierState {
+  expanded: boolean;
+}
+
+function earlierGroup(digest: EarlierDigest, handlers: DigestHandlers): HTMLElement[] {
+  return [generatedLine(digest.createdAt, 'digest-earlier-generated'), ...digest.ideas.map((idea) => renderIdea(idea, handlers))];
+}
+
+function earlierToggle(count: number, state: EarlierState, repaint: () => void): HTMLButtonElement {
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.dataset.testid = 'digest-show-more';
+  toggle.textContent = state.expanded ? 'Hide earlier ideas' : `Show earlier ideas (${count})`;
+  toggle.addEventListener('click', () => {
+    state.expanded = !state.expanded;
+    repaint();
+  });
+  return toggle;
+}
+
+function earlierIdeas(earlier: EarlierDigest[], handlers: DigestHandlers, state: EarlierState): HTMLElement[] {
+  if (earlier.length === 0) return [];
+  const box = document.createElement('div');
+  const count = earlier.reduce((sum, d) => sum + d.ideas.length, 0);
+  const repaint = () => {
+    const groups = state.expanded ? earlier.flatMap((d) => earlierGroup(d, handlers)) : [];
+    box.replaceChildren(...groups, earlierToggle(count, state, repaint));
+  };
+  repaint();
+  return [box];
+}
+
+export function renderDigest(view: DigestView, handlers: DigestHandlers, state: EarlierState): HTMLElement[] {
   const note = view.failed ? [noticeLine(refreshFailedText(view))] : [];
   if (!view.digest) {
     return [...note, element('p', 'No digest yet. It refreshes after enough new posts are captured.', 'status')];
@@ -95,6 +128,7 @@ export function renderDigest(view: DigestView, handlers: DigestHandlers): HTMLEl
     element('h2', 'Post ideas', 'voice-title'),
     generatedLine(view.digest.createdAt),
     ...view.digest.ideas.map((idea) => renderIdea(idea, handlers)),
+    ...earlierIdeas(view.earlier, handlers, state),
   ];
 }
 
@@ -164,5 +198,6 @@ export function mountDigestSection(root: HTMLElement, handlers: DigestHandlers):
   root.replaceChildren(controls.root, polled);
   const editing = () => polled.querySelector('textarea') !== null;
   const intervalMs = () => (controls.isActive() ? ACTIVE_POLL_MS : IDLE_POLL_MS);
-  return mountPolled(polled, load, (view) => renderDigest(view, handlers), editing, intervalMs);
+  const earlier: EarlierState = { expanded: false };
+  return mountPolled(polled, load, (view) => renderDigest(view, handlers, earlier), editing, intervalMs);
 }

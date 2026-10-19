@@ -6,6 +6,7 @@ const SUCCESS = new Date(2026, 9, 19, 9, 5).getTime();
 const RESUME = new Date(2026, 9, 20, 0, 0).getTime();
 const view = (failure: DigestView['failure'], withDigest = true): DigestView => ({
   digest: withDigest ? { createdAt: SUCCESS, trends: [], ideas: [] } : null,
+  earlier: [],
   failed: true,
   failure,
   running: false,

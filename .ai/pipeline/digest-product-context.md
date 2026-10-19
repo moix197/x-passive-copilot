@@ -6,7 +6,7 @@ tags: [digest, product-context, announcements, tracker, git-log, untrusted-input
 paths: [apps/server/src/digest/product-context.ts, apps/server/src/digest/idea-tone.ts, apps/server/src/digest/digest.ts, shared/src/config.ts, e2e/digest-context.spec.ts]
 related: [pipeline/voice-and-digest, security/llm-subprocess-sandbox]
 status: active
-updated: 2026-10-18
+updated: 2026-10-19
 ---
 
 # Digest product context
@@ -30,9 +30,14 @@ last section that overflows is clipped, the rest dropped):
 (symlink or `..`), non-files and files > 256 KB; any error -> ''. Gathered text has `<` and `"`
 escaped so it cannot close the delimiters; the prompt labels it untrusted, facts-only.
 
-**Tone:** `ideaToneRules(product)` (build-in-public/educational, no CTA/pitch/hype, one good and one
-bad example) is shared by the digest prompt and the idea polish task block (`polish.ts`), so both
-stay in sync.
+**Tone:** `ideaToneRules(product)` (build-in-public/educational, no CTA/pitch/hype) is shared by the
+digest prompt and the idea polish task block (`polish.ts`), so both stay in sync. Audience is
+crypto traders and the LONG / Robinhood Chain community on X, not developers: ideas are framed as what
+users can now see/do/learn, ecosystem insight, or building-in-public stories; engineering jargon
+(timeouts, sync, telemetry, APIs, DB, caching, infra) is banned unless translated into a visible
+effect, and purely internal changes are skipped. The digest prompt tells the model announcements are
+user-facing (preferred source) and commit subjects are "INTERNAL SIGNALS": translate to user impact
+or ignore.
 
 **Constraints it creates:** `tracker.csv` parsing is a minimal CSV (quoted commas and `""`, no
 quoted newlines). Doctor reports `announcementsPath` as `missing` (red dot, "Optional:" fix) when

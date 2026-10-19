@@ -266,3 +266,41 @@ test('Generate new ideas: new ideas replace the shown ones without a reload, for
   expect((await postJson(server.baseUrl, '/v1/posts', { posts })).ok).toBe(true);
   await expect(panel.getByTestId('digest-idea').first()).toContainText('Fake idea 3');
 });
+
+test('Digest: Show earlier ideas reveals ideas from earlier digests, newest first, each with its generated time and actions', async () => {
+  await startWithPosts(3, 0);
+  const panel = await openDigest();
+  const ideas = panel.getByTestId('digest-idea');
+  await expect(panel.getByTestId('digest-show-more')).toHaveCount(0);
+
+  await panel.getByTestId('digest-generate').click();
+  await expect(ideas.first()).toContainText('Fake idea 1');
+  await expect(panel.getByTestId('digest-generate')).toBeEnabled();
+  await panel.getByTestId('digest-generate').click();
+  await expect(ideas.first()).toContainText('Fake idea 2');
+  await expect(panel.getByTestId('digest-generate')).toBeEnabled();
+  await panel.getByTestId('digest-generate').click();
+  await expect(ideas.first()).toContainText('Fake idea 3');
+  await expect(ideas).toHaveCount(1);
+
+  const showMore = panel.getByTestId('digest-show-more');
+  await expect(showMore).toHaveText('Show earlier ideas (2)');
+  await showMore.click();
+  await expect(ideas).toHaveCount(3);
+  await expect(ideas.nth(1)).toContainText('Fake idea 2');
+  await expect(ideas.nth(2)).toContainText('Fake idea 1');
+  await expect(panel.getByTestId('digest-earlier-generated')).toHaveCount(2);
+  await expect(panel.getByTestId('digest-earlier-generated').first()).toHaveText(/^Generated \d{1,2}:\d{2} [AP]M/);
+  await expect(ideas.nth(1).getByTestId('idea-polish')).toBeVisible();
+
+  // Stays open across polls, and a newer digest pushes the old latest into the earlier list.
+  await expect(showMore).toHaveText('Hide earlier ideas');
+  await panel.getByTestId('digest-generate').click();
+  await expect(ideas.first()).toContainText('Fake idea 4');
+  await expect(ideas).toHaveCount(4);
+  await showMore.click();
+  await expect(ideas).toHaveCount(1);
+  await expect(showMore).toHaveText('Show earlier ideas (3)');
+  const view = (await (await fetch(`${server.baseUrl}/v1/digest`, { headers: authHeader })).json()) as { earlier: unknown[] };
+  expect(view.earlier).toHaveLength(3);
+});

@@ -140,10 +140,28 @@ describe('buildDigestPrompt', () => {
     expect(prompt).toContain('Post ideas are build-in-public and educational, never promotional.');
     expect(prompt).toContain('DON\'T: sales or call-to-action posts ("come to our platform", "track tokens with us", "check out\nAcme")');
     expect(prompt).toMatch(/Good \(tone example only[^\n]*\nBad \(a pitch\): "[^"]*Check out Acme today\."/);
+    expect(prompt).toContain('crypto traders and the community around the LONG ecosystem and Robinhood Chain');
+    expect(prompt).toContain('NO ENGINEERING TALK');
+    expect(prompt).toContain('INTERNAL SIGNALS');
     const withHistory = buildDigestPrompt('Acme', '', [], ['old idea']);
     expect(withHistory).toContain('<previous-ideas>\n["old idea"]\n</previous-ideas>');
     const empty = Buffer.byteLength(buildDigestPrompt('Acme', '', []));
     expect(Buffer.byteLength(buildDigestPrompt('Acme', 'é'.repeat(10_000), [])) - empty).toBe(8 * 1024);
+  });
+});
+
+describe('readDigestView earlier digests', () => {
+  const save = (db: ReturnType<typeof openDb>, n: number) =>
+    db.prepare('INSERT INTO digests (bucket, trends, ideas, created_at) VALUES (?, ?, ?, ?)').run(-n, '[]', JSON.stringify([{ text: 'idea ' + n, feature: 'f' }]), n);
+
+  it('lists the digests before the latest, newest first, bounded to the last 10 digests', () => {
+    const db = freshDb();
+    expect(readDigestView(db).earlier).toEqual([]);
+    for (let n = 1; n <= 12; n++) save(db, n);
+    const view = readDigestView(db);
+    expect(view.digest?.ideas[0]?.text).toBe('idea 12');
+    expect(view.earlier.map((d) => d.createdAt)).toEqual([11, 10, 9, 8, 7, 6, 5, 4, 3]);
+    expect(view.earlier[0]?.ideas[0]).toMatchObject({ text: 'idea 11', polish: null });
   });
 });
 

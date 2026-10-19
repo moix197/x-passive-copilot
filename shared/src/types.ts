@@ -263,6 +263,14 @@ export const DigestProgressSchema = z.object({
 });
 export type DigestProgress = z.infer<typeof DigestProgressSchema>;
 
+export const EarlierDigestSchema = z.object({
+  createdAt: z.number().int().nonnegative(),
+  ideas: z.array(DigestIdeaSchema).max(3),
+});
+export type EarlierDigest = z.infer<typeof EarlierDigestSchema>;
+
+export const MAX_EARLIER_DIGESTS = 9;
+
 export const DigestViewSchema = z.object({
   digest: z
     .object({
@@ -271,6 +279,8 @@ export const DigestViewSchema = z.object({
       ideas: z.array(DigestIdeaSchema).max(3),
     })
     .nullable(),
+  /** Ideas of the digests before the latest one, newest first, bounded. */
+  earlier: z.array(EarlierDigestSchema).max(MAX_EARLIER_DIGESTS),
   failed: z.boolean(),
   /** Why the last refresh failed; null when it succeeded or the cause was not recorded. */
   failure: z
