@@ -81,7 +81,7 @@ function buildHooks(db: DatabaseSync, home: string, config: AppConfig, services:
       return idea ? polish.requestIdea(ideaId, idea).state : 'unknown';
     },
     voiceView: () => readVoiceView(db, config),
-    digestView: () => readDigestView(db, services.digest.isRunning()),
+    digestView: () => readDigestView(db, services.digest.isRunning(), services.digest.progress()),
     runDigestNow: services.digest.runNow,
     ownHandle: config.handle,
     flagRules: rulesFromConfig(config),

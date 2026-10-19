@@ -1,4 +1,4 @@
-// @covers apps/extension/src/panel/digest-section.ts, apps/extension/src/panel/digest-notice.ts, apps/extension/src/panel/post-format.ts, apps/extension/src/panel/panel.ts, apps/server/src/triage/retry.ts, apps/server/src/meta.ts, apps/server/src/digest/**, apps/server/src/router.ts, apps/server/src/app.ts, apps/server/src/llm/**, shared/src/config.ts
+// @covers apps/extension/src/panel/digest-section.ts, apps/extension/src/panel/digest-notice.ts, apps/extension/src/panel/digest-progress.ts, apps/extension/src/panel/voice-tab.ts, apps/extension/src/panel/posts-view.ts, apps/extension/src/panel/panel.css, shared/src/types.ts, apps/extension/src/panel/post-format.ts, apps/extension/src/panel/panel.ts, apps/server/src/triage/retry.ts, apps/server/src/meta.ts, apps/server/src/digest/**, apps/server/src/router.ts, apps/server/src/app.ts, apps/server/src/llm/**, shared/src/config.ts
 import { expect, test, type Page } from '@playwright/test';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -45,15 +45,26 @@ const capturedPost = (statusId: string) => ({
   quotedStatusId: null,
 });
 
-async function startWithPosts(postCount: number, manualMinIntervalSec: number): Promise<void> {
+interface StartOptions {
+  everyNPosts?: number;
+  fallbacks?: string[];
+  /** Triage each post at once (batch of 1) instead of after the 30s flush. */
+  triageAtOnce?: boolean;
+  /** Runs once the fake CLIs exist, before any post is captured (e.g. to hold the digest). */
+  beforePosts?: () => void;
+}
+
+async function startWithPosts(postCount: number, manualMinIntervalSec: number, options: StartOptions = {}): Promise<void> {
   const fakes = installFakeClis();
   binDir = fakes.binDir;
   const config = {
     handle: 'e2eowner',
-    digest: { everyNPosts: 1000, manualMinIntervalSec },
-    models: { triage: 'google/fake-flash', final: 'fake-final' },
+    digest: { everyNPosts: options.everyNPosts ?? 1000, manualMinIntervalSec },
+    models: { triage: 'google/fake-flash', triageFallbacks: options.fallbacks ?? [], final: 'fake-final' },
+    ...(options.triageAtOnce ? { triage: { batchSize: 1 } } : {}),
   };
   server = await startServer(config, { ...fakes.env, GEMINI_API_KEY: 'fake-gemini-key-for-e2e' });
+  options.beforePosts?.();
   const posts = Array.from({ length: postCount }, (_, i) => capturedPost(String(9200 + i)));
   expect((await postJson(server.baseUrl, '/v1/posts', { posts })).ok).toBe(true);
 }
@@ -169,4 +180,70 @@ test('Generate new ideas: a Gemini quota error frees the button at once, says wh
   expect(await paused.json()).toMatchObject({ resumesAt: expect.any(Number) });
   const calls = readFileSync(join(binDir, 'opencode-calls.txt'), 'utf8').split('\n').filter((l) => l.endsWith(' digest'));
   expect(calls).toEqual(['google/fake-flash digest', 'google/fake-flash digest']);
+});
+
+async function allTriaged(): Promise<boolean> {
+  const body = (await (await fetch(`${server.baseUrl}/v1/posts?limit=100`, { headers: authHeader })).json()) as { posts: { triage: unknown }[] };
+  return body.posts.length > 0 && body.posts.every((p) => p.triage !== null);
+}
+
+const stepStates = (panel: Page) =>
+  panel.getByTestId('digest-step').evaluateAll((items) => items.map((i) => (i as HTMLElement).dataset.state ?? ''));
+
+test('Generate new ideas: a step list follows the run (posts, context, model with quota switch), then shows Done and hides', async () => {
+  await startWithPosts(3, 0, { fallbacks: ['google/fake-lite'], triageAtOnce: true });
+  await expect.poll(allTriaged).toBe(true);
+  setDigestMode('hold');
+  writeFileSync(join(binDir, 'quota-models.txt'), 'google/fake-flash\n');
+  const panel = await openDigest();
+  await panel.setViewportSize({ width: 400, height: 800 });
+  const progress = panel.getByTestId('digest-progress');
+  await expect(progress).toBeHidden();
+
+  await panel.getByTestId('digest-generate').click();
+  const steps = panel.getByTestId('digest-step');
+  await expect(progress).toBeVisible();
+  await expect.poll(() => stepStates(panel)).toEqual(['done', 'done', 'current', 'pending']);
+  await expect(steps.nth(0)).toContainText('Collecting recent posts (3)');
+  await expect(steps.nth(1)).toContainText('Reading Spacehub context (announcements, README, commits)');
+  await expect(steps.nth(2)).toContainText('Asking fake-lite (attempt 1)');
+  await expect(steps.nth(2)).toContainText('Quota reached on fake-flash, switching to fake-lite');
+  await expect(steps.nth(3)).toContainText('Saving ideas');
+  await expect(panel.getByTestId('digest-progress-title')).toHaveText('Generating ideas');
+
+  const elapsed = panel.getByTestId('digest-progress-elapsed');
+  const firstElapsed = await elapsed.textContent();
+  await expect(elapsed).not.toHaveText(firstElapsed ?? '', { timeout: 10_000 });
+  expect(await panel.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await panel.screenshot({ path: process.env.DIGEST_PROGRESS_SHOT ?? test.info().outputPath('digest-progress.png') });
+
+  writeFileSync(join(binDir, 'digest-release.txt'), 'go');
+  await expect(panel.getByTestId('digest-progress-title')).toHaveText('Done — 1 idea');
+  await expect.poll(() => stepStates(panel)).toEqual(['done', 'done', 'done', 'done']);
+  await expect(panel.getByTestId('digest-idea').first()).toContainText('Fake idea 1');
+  await expect(progress).toBeHidden({ timeout: 15_000 });
+});
+
+test('Generate new ideas: an automatic digest run shows the same steps without a click', async () => {
+  await startWithPosts(3, 0, { everyNPosts: 3, beforePosts: () => setDigestMode('hold') });
+  const panel = await openDigest();
+  await expect(panel.getByTestId('digest-progress')).toBeVisible();
+  await expect(panel.getByTestId('digest-step').nth(2)).toContainText('Asking fake-flash (attempt 1)');
+  await expect(panel.getByTestId('digest-generate')).toBeDisabled();
+
+  writeFileSync(join(binDir, 'digest-release.txt'), 'go');
+  await expect(panel.getByTestId('digest-progress-title')).toHaveText('Done — 1 idea');
+  await expect(panel.getByTestId('digest-progress')).toBeHidden({ timeout: 15_000 });
+});
+
+test('Generate new ideas: a failed run shows the failure reason in the step list', async () => {
+  await startWithPosts(3, 0, { triageAtOnce: true });
+  await expect.poll(allTriaged).toBe(true);
+  writeFileSync(join(binDir, 'quota-models.txt'), 'google/fake-flash\n');
+  const panel = await openDigest();
+  await panel.getByTestId('digest-generate').click();
+  await expect(panel.getByTestId('digest-progress-title')).toHaveText('Failed: Gemini free quota reached on every configured model');
+  await expect.poll(() => stepStates(panel)).toEqual(['done', 'done', 'failed', 'pending']);
+  await expect(panel.getByTestId('digest-step').nth(2)).toContainText('Quota reached on fake-flash, no model left');
+  await expect(panel.getByTestId('digest-progress')).toBeHidden({ timeout: 15_000 });
 });

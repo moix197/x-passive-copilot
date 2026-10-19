@@ -1,5 +1,6 @@
 import { DigestViewSchema, type DigestIdea, type DigestTrend, type DigestView } from '@xc/shared/types';
 import { refreshFailedText } from './digest-notice';
+import { digestProgressBox, paintDigestProgress } from './digest-progress';
 import { copyButton, copyText, renderDraftActions, type DraftCallbacks } from './draft-actions';
 import { element } from './dom';
 import { mountPolled } from './voice-tab';
@@ -90,10 +91,15 @@ export function renderDigest(view: DigestView, handlers: DigestHandlers): HTMLEl
   ];
 }
 
+const ACTIVE_POLL_MS = 1000;
+const IDLE_POLL_MS = 3000;
+
 interface GenerateControls {
   root: HTMLElement;
-  /** Server-side state from each poll, so the button stays right after a remount or a lost request. */
-  setServerRunning: (running: boolean) => void;
+  /** Server-side state from each poll, so the button and progress stay right after a remount or a lost request. */
+  setServerState: (view: DigestView) => void;
+  /** A run is being requested, running, or its outcome is still on screen: poll faster. */
+  isActive: () => boolean;
 }
 
 function generateControls(onGenerate: DigestHandlers['onGenerate']): GenerateControls {
@@ -106,6 +112,7 @@ function generateControls(onGenerate: DigestHandlers['onGenerate']): GenerateCon
   const message = element('p', '', 'needs-edit');
   message.dataset.testid = 'digest-generate-error';
   message.setAttribute('role', 'alert');
+  const progress = digestProgressBox();
   let requesting = false;
   let serverRunning = false;
   const paint = () => {
@@ -127,13 +134,15 @@ function generateControls(onGenerate: DigestHandlers['onGenerate']): GenerateCon
         paint();
       });
   });
-  wrap.append(button, message);
+  wrap.append(button, message, progress);
   return {
     root: wrap,
-    setServerRunning: (running) => {
-      serverRunning = running;
+    setServerState: (view) => {
+      serverRunning = view.running;
+      paintDigestProgress(progress, view.progress);
       paint();
     },
+    isActive: () => requesting || serverRunning || !progress.hidden,
   };
 }
 
@@ -141,11 +150,12 @@ export function mountDigestSection(root: HTMLElement, handlers: DigestHandlers):
   const controls = generateControls(handlers.onGenerate);
   const load = async () => {
     const view = DigestViewSchema.parse(await handlers.load());
-    controls.setServerRunning(view.running);
+    controls.setServerState(view);
     return view;
   };
   const polled = document.createElement('div');
   root.replaceChildren(controls.root, polled);
   const editing = () => polled.querySelector('textarea') !== null;
-  return mountPolled(polled, load, (view) => renderDigest(view, handlers), editing);
+  const intervalMs = () => (controls.isActive() ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+  return mountPolled(polled, load, (view) => renderDigest(view, handlers), editing, intervalMs);
 }

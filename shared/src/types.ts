@@ -237,6 +237,32 @@ export const DigestIdeaSchema = z.object({
 });
 export type DigestIdea = z.infer<typeof DigestIdeaSchema>;
 
+export const DIGEST_STEP_IDS = ['collect', 'context', 'model', 'save'] as const;
+export type DigestStepId = (typeof DIGEST_STEP_IDS)[number];
+
+export const DigestStepSchema = z.object({
+  id: z.enum(DIGEST_STEP_IDS),
+  label: z.string().max(200),
+  state: z.enum(['pending', 'current', 'done', 'failed']),
+  /** What the current step is waiting on, e.g. a retry or a model switch. */
+  detail: z.string().max(200).nullable(),
+});
+export type DigestStep = z.infer<typeof DigestStepSchema>;
+
+/** The current (or just finished) digest run, kept in server memory only. */
+export const DigestProgressSchema = z.object({
+  startedAt: z.number().int().nonnegative(),
+  elapsedMs: z.number().int().nonnegative(),
+  steps: z.array(DigestStepSchema).max(DIGEST_STEP_IDS.length),
+  outcome: z
+    .discriminatedUnion('ok', [
+      z.object({ ok: z.literal(true), ideas: z.number().int().nonnegative() }),
+      z.object({ ok: z.literal(false), reason: z.string().max(200) }),
+    ])
+    .nullable(),
+});
+export type DigestProgress = z.infer<typeof DigestProgressSchema>;
+
 export const DigestViewSchema = z.object({
   digest: z
     .object({
@@ -256,6 +282,8 @@ export const DigestViewSchema = z.object({
     .nullable(),
   /** A digest (automatic or manual) is generating right now. */
   running: z.boolean(),
+  /** Steps of the running digest, or of one that finished a few seconds ago; null otherwise. */
+  progress: DigestProgressSchema.nullable(),
 });
 export type DigestView = z.infer<typeof DigestViewSchema>;
 

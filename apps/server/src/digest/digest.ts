@@ -2,10 +2,13 @@ import type { DatabaseSync } from 'node:sqlite';
 import {
   DigestTrendSchema,
   MODEL_FAILURE_KINDS,
+  describeModelFailure,
   err,
   ok,
   type AppConfig,
   type DigestIdea,
+  type DigestProgress,
+  type DigestStepId,
   type DigestTrend,
   type DigestView,
   type ModelFailureKind,
@@ -21,10 +24,11 @@ import { ideaDraftKey, type Idea } from '../polish/polish';
 import { readIngestCount } from '../posts';
 import { replaceDashes } from '../text/dashes';
 import { dataJson } from '../triage/prompts';
-import { classifyFailure, errorClass, safeReason, withRetry } from '../triage/retry';
+import { classifyFailure, errorClass, safeReason, sleep, withRetry } from '../triage/retry';
 import type { RunModel } from '../voice/voice';
 import { ideaToneRules } from './idea-tone';
 import { clipBytes, gatherProductContext, MAX_CONTEXT_BYTES } from './product-context';
+import { createDigestProgress, createModelReporter } from './progress';
 
 const POST_LIMIT = 60;
 const POST_CHARS = 280;
@@ -175,8 +179,8 @@ function readFailure(db: DatabaseSync): DigestView['failure'] {
   return { kind, at, resumesAt: resumesAt > 0 ? resumesAt : null };
 }
 
-export function readDigestView(db: DatabaseSync, running = false): DigestView {
-  const status = { failed: getMeta(db, META_FAILED) === 1, failure: readFailure(db), running };
+export function readDigestView(db: DatabaseSync, running = false, progress: DigestProgress | null = null): DigestView {
+  const status = { failed: getMeta(db, META_FAILED) === 1, failure: readFailure(db), running, progress };
   const row = db.prepare('SELECT id, trends, ideas, created_at FROM digests ORDER BY id DESC LIMIT 1').get() as unknown as
     | DigestRow
     | undefined;
@@ -215,6 +219,16 @@ export interface DigestService {
   run(): Promise<void>;
   runNow(): Promise<ManualDigestOutcome>;
   isRunning(): boolean;
+  progress(): DigestProgress | null;
+}
+
+function stepLabels(product: string): Record<DigestStepId, string> {
+  return {
+    collect: 'Collecting recent posts',
+    context: `Reading ${product} context (announcements, README, commits)`,
+    model: 'Asking the model',
+    save: 'Saving ideas',
+  };
 }
 
 export function createDigestService(
@@ -229,15 +243,37 @@ export function createDigestService(
 ): DigestService {
   let running = false;
   let lastManualAt: number | null = null;
+  const progress = createDigestProgress(stepLabels(config.product.name), now);
+
+  function askModel(prompt: string, known: ReadonlySet<string>): Promise<Result<DigestContent>> {
+    const report = createModelReporter(progress);
+    const waitAndReport = (ms: number) => {
+      report.retrying(ms);
+      return (wait ?? sleep)(ms);
+    };
+    return withRetry(async () => {
+      const out = await runModel(prompt, report.nextAttempt());
+      const result = out.ok ? parseDigest(out.value, known) : out;
+      if (!result.ok) report.failed(result.error);
+      return result;
+    }, waitAndReport);
+  }
 
   async function generate(): Promise<Result<DigestContent>> {
     const posts = recentPosts(db);
+    progress.step('collect', `Collecting recent posts (${posts.length})`);
     const known = new Set(posts.map((p) => p.statusId));
+    progress.step('context');
     const prompt = buildDigestPrompt(config.product.name, await productContext(), posts);
-    return withRetry(async () => {
-      const out = await runModel(prompt);
-      return out.ok ? parseDigest(out.value, known) : out;
-    }, wait);
+    progress.step('model');
+    return askModel(prompt, known);
+  }
+
+  function store(bucket: number, content: DigestContent): void {
+    progress.step('save');
+    saveDigest(db, bucket, content, now());
+    setMeta(db, META_FAILED, 0);
+    progress.finish({ ok: true, ideas: content.ideas.length });
   }
 
   function failWith(error: string, label: string): { kind: ModelFailureKind; resumesAt: number | null } {
@@ -245,17 +281,15 @@ export function createDigestService(
     const kind = classifyFailure(error);
     const resumesAt = pausedUntil();
     recordFailure(db, kind, now(), resumesAt);
+    progress.finish({ ok: false, reason: describeModelFailure(kind) });
     return { kind, resumesAt: resumesAt > 0 ? resumesAt : null };
   }
 
   // A paused run (no quota on any model) is not spent: its bucket is released so it fires after the pause.
   async function runBucket(bucket: number, previous: number): Promise<void> {
+    progress.start();
     const result = await generate();
-    if (result.ok) {
-      saveDigest(db, bucket, result.value, now());
-      setMeta(db, META_FAILED, 0);
-      return;
-    }
+    if (result.ok) return store(bucket, result.value);
     const { kind } = failWith(result.error, `digest ${bucket}`);
     if (kind === 'paused') setMeta(db, META_BUCKET, previous);
   }
@@ -271,6 +305,7 @@ export function createDigestService(
       await runBucket(bucket, previous);
     } finally {
       running = false;
+      progress.close();
     }
   }
 
@@ -291,16 +326,17 @@ export function createDigestService(
     if (refused) return refused;
     running = true;
     lastManualAt = now();
+    progress.start();
     try {
       const result = await generate();
       if (!result.ok) return { status: 'failed', ...failWith(result.error, 'manual digest') };
-      saveDigest(db, -now(), result.value, now());
-      setMeta(db, META_FAILED, 0);
+      store(-now(), result.value);
       return { status: 'ok' };
     } finally {
       running = false;
+      progress.close();
     }
   }
 
-  return { notify: () => void run(), run, runNow, isRunning: () => running };
+  return { notify: () => void run(), run, runNow, isRunning: () => running, progress: progress.view };
 }

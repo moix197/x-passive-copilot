@@ -34,9 +34,14 @@ export function renderPost(post: StoredPost): HTMLElement {
   return row;
 }
 
-/** Runs `task` now, every POLL_MS and on becoming visible; never overlaps, skips while hidden. */
-export function pollWhileVisible(task: () => Promise<void>): () => void {
+/**
+ * Runs `task` now, then `intervalMs()` after each run (POLL_MS by default) and on becoming visible;
+ * never overlaps, skips while hidden.
+ */
+export function pollWhileVisible(task: () => Promise<void>, intervalMs: () => number = () => POLL_MS): () => void {
   let busy = false;
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const refresh = async () => {
     if (busy || document.visibilityState !== 'visible') return;
     busy = true;
@@ -46,12 +51,16 @@ export function pollWhileVisible(task: () => Promise<void>): () => void {
       busy = false;
     }
   };
+  const tick = async () => {
+    await refresh().catch(() => undefined);
+    if (!stopped) timer = setTimeout(() => void tick(), intervalMs());
+  };
   const onVisibility = () => void refresh();
   document.addEventListener('visibilitychange', onVisibility);
-  const timer = setInterval(() => void refresh(), POLL_MS);
-  void refresh();
+  void tick();
   return () => {
-    clearInterval(timer);
+    stopped = true;
+    clearTimeout(timer);
     document.removeEventListener('visibilitychange', onVisibility);
   };
 }

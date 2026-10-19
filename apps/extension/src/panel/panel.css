@@ -141,6 +141,92 @@ h1 {
 .digest-controls .needs-edit:empty {
   display: none;
 }
+.digest-progress {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 13px;
+}
+.digest-progress[hidden] {
+  display: none;
+}
+.digest-progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+.digest-progress.ok .digest-progress-title {
+  color: var(--ok);
+}
+.digest-progress.failed .digest-progress-title {
+  color: var(--danger);
+}
+.digest-progress-elapsed {
+  color: var(--muted);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.digest-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.digest-step {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 3px 0;
+  color: var(--muted);
+}
+.digest-step.current {
+  color: var(--text);
+}
+.digest-step.failed {
+  color: var(--danger);
+}
+.digest-step-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 14px;
+  text-align: center;
+}
+.digest-step.done .digest-step-icon {
+  color: var(--ok);
+}
+.digest-step.current .digest-step-icon {
+  box-sizing: border-box;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: digest-spin 0.8s linear infinite;
+}
+.digest-step-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.digest-step-detail {
+  color: var(--warn);
+  font-size: 12px;
+}
+@keyframes digest-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .digest-step.current .digest-step-icon {
+    animation: none;
+  }
+}
 
 /* Doctor */
 #doctor:not(:empty) {

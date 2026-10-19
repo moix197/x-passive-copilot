@@ -9,6 +9,7 @@ const view = (failure: DigestView['failure'], withDigest = true): DigestView => 
   failed: true,
   failure,
   running: false,
+  progress: null,
 });
 
 describe('refreshFailedText', () => {

@@ -7,6 +7,7 @@ export function mountPolled<T>(
   load: () => Promise<T>,
   render: (data: T) => HTMLElement[],
   shouldSkip: () => boolean = () => false,
+  intervalMs?: () => number,
 ): () => void {
   const status = element('p', 'Loading...', 'status');
   const body = document.createElement('div');
@@ -19,7 +20,7 @@ export function mountPolled<T>(
     } catch {
       status.textContent = 'Server offline.';
     }
-  });
+  }, intervalMs);
 }
 
 function list(items: string[], className: string): HTMLElement {

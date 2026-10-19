@@ -15,8 +15,15 @@ export interface QuotaStatus {
   pausedUntil: number;
 }
 
+/** Lets a caller show which model a call is on and when the pool moves past an exhausted one. */
+export interface ModelObserver {
+  onModel?(model: string): void;
+  /** `model` is out of quota or retired; `next` gets the call, or null when none is left. */
+  onSwitch?(model: string, next: string | null): void;
+}
+
 export interface ModelPool {
-  run(prompt: string): Promise<Result<string>>;
+  run(prompt: string, observer?: ModelObserver): Promise<Result<string>>;
   pausedUntil(): number;
   status(): QuotaStatus;
 }
@@ -61,8 +68,9 @@ export function createModelPool(db: DatabaseSync, models: readonly string[], run
 
   const pausedUntil = () => earliestReset(models, exhaustedUntil, now());
 
-  async function run(prompt: string): Promise<Result<string>> {
+  async function run(prompt: string, observer?: ModelObserver): Promise<Result<string>> {
     for (let model = pickModel(models, exhaustedUntil, now()); model; model = pickModel(models, exhaustedUntil, now())) {
+      observer?.onModel?.(model);
       const out = await runOn(prompt, model);
       if (out.ok) {
         markHealthy(model);
@@ -72,6 +80,7 @@ export function createModelPool(db: DatabaseSync, models: readonly string[], run
       if (kind === 'unavailable') markUnavailable(model);
       else if (kind === 'quota' || kind === 'rate') markExhausted(model, out.error);
       else return out;
+      observer?.onSwitch?.(model, pickModel(models, exhaustedUntil, now()));
     }
     return err(`${PAUSED_PREFIX}: quota reached on every model until ${new Date(pausedUntil()).toISOString()}`);
   }
