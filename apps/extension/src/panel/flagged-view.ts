@@ -11,6 +11,8 @@ export interface FlaggedHandlers {
   /** Marks or un-marks a post replied; the owner of the feeds moves the card immediately. */
   onSetReplied: (statusId: string, replied: boolean) => Promise<void>;
   onPolish: PolishHandler;
+  /** Re-queues a failed triage; resolves to why it was refused, or null when queued. */
+  onRetriage: (statusId: string) => Promise<string | null>;
   onRegenerate: PolishHandler;
   onSelectVersion: (statusId: string, versionId: number) => Promise<void>;
   draftCallbacks: (statusId: string, saved: Rating | null) => DraftCallbacks;
@@ -103,8 +105,42 @@ function originalPost(post: StoredPost): HTMLElement {
   return box;
 }
 
-function triageStatus(t: NonNullable<StoredPost['triage']>): HTMLElement[] {
-  if (t.error) return [element('div', 'triage error', 'post-tags')];
+// Rows are rebuilt every poll, so a refusal is remembered here until the next retry or success.
+const retryRefusals = new Map<string, string>();
+
+function retryButton(statusId: string, onRetriage: FlaggedHandlers['onRetriage']): HTMLButtonElement {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = 'Retry';
+  button.dataset.testid = 'retriage-button';
+  button.addEventListener('click', () => {
+    button.disabled = true;
+    button.textContent = 'Retrying...';
+    retryRefusals.delete(statusId);
+    void onRetriage(statusId)
+      .catch(() => 'Server offline.')
+      .then((refusal) => {
+        if (!refusal) return;
+        retryRefusals.set(statusId, refusal);
+        button.disabled = false;
+        button.textContent = 'Retry';
+        button.after(element('div', refusal, 'needs-edit'));
+      });
+  });
+  return button;
+}
+
+function triageFailed(post: StoredPost, onRetriage: FlaggedHandlers['onRetriage']): HTMLElement[] {
+  const refusal = retryRefusals.get(post.statusId);
+  return [
+    element('div', 'triage error', 'post-tags'),
+    retryButton(post.statusId, onRetriage),
+    ...(refusal ? [element('div', refusal, 'needs-edit')] : []),
+  ];
+}
+
+function triageStatus(post: StoredPost, t: NonNullable<StoredPost['triage']>, onRetriage: FlaggedHandlers['onRetriage']): HTMLElement[] {
+  if (t.error) return triageFailed(post, onRetriage);
   if (t.score === null && !t.skipReason) return [element('div', 'triage pending', 'post-tags')];
   return t.roughDraft ? [] : [element('div', 'No draft suggested.', 'post-tags')];
 }
@@ -144,7 +180,7 @@ function firstDraftSection(post: StoredPost, ctx: RowContext): HTMLElement | nul
   const t = post.triage;
   if (!t) return null;
   const box = section('first-draft', 'First draft', 'triage model');
-  box.append(...triageStatus(t));
+  box.append(...triageStatus(post, t, ctx.handlers.onRetriage));
   if (t.reason) box.append(element('p', t.reason, 'flag-reason'));
   if (t.roughDraft) {
     const text = element('p', t.roughDraft, 'reply-text');

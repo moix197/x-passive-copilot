@@ -62,3 +62,11 @@ step's text and fails closed on any `completed` tool_use. opencode exits 1 on er
 `runOpencode` uses `runCli({ allowNonZeroExit })` to read the event's message. Doctor: `0 credentials`
 is ok when `models.triage` matches `opencode/*-free`. `fixtures/opencode-run.jsonl` is a real
 recording. npm shim resolves to `node_modules/opencode-ai/bin/opencode.exe` (spawned directly).
+
+**Retry a failed triage:** `POST /v1/posts/:id/retriage` (token auth, 404 unknown, 409 when the post has no
+`error` row or would now be skipped, e.g. past its age limit: the error row is kept and the message says why,
+503 without `models.triage`, 202 `queued` with `resumesAt` while paused). `TriageService.retriage` deletes only
+the error row (`clearTriageError`), then `drain(true)` + `armTimer()`, so quota pause/fallback and the age
+prefilter apply unchanged; must-flag posts show "triage pending" meanwhile. The Flagged first-draft area shows
+a Retry button next to "triage error" (`flagged-view.ts`, refusal text kept per post across polls). No "Retry
+all" control: it needs a bulk route and UI state for little gain.

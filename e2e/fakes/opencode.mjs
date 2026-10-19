@@ -66,6 +66,11 @@ if (isDigest) {
   }
   while (digestMode() === 'hold' && !existsSync(join(dir, 'digest-release.txt'))) await sleep(50);
 }
+// Tests make triage runs fail (until the file is removed) by creating triage-fail.txt next to this script.
+if (!isDigest && existsSync(join(dir, 'triage-fail.txt'))) {
+  process.stderr.write('fake triage failure\n');
+  process.exit(1);
+}
 // Tests hold triage runs (posts stay "triage pending") by creating triage-hold.txt next to this script.
 while (!isDigest && existsSync(join(dir, 'triage-hold.txt'))) await sleep(50);
 const ids = [...new Set([...prompt.matchAll(/"statusId":"(\d+)"/g)].map((m) => m[1]))];

@@ -66,6 +66,13 @@ async function requestPolish(statusId: string, regenerate = false): Promise<void
   if (!res.ok) throw new Error(`server ${res.status}`);
 }
 
+async function requestRetriage(statusId: string): Promise<string | null> {
+  const res = await postJson(`/v1/posts/${encodeURIComponent(statusId)}/retriage`);
+  if (res.ok) return null;
+  const body = (await res.json().catch(() => ({}))) as { error?: unknown };
+  return typeof body.error === 'string' ? body.error : `server ${res.status}`;
+}
+
 async function setReplied(statusId: string, replied: boolean): Promise<void> {
   const res = await postJson(`/v1/posts/${encodeURIComponent(statusId)}/replied`, { replied });
   if (!res.ok) throw new Error(`server ${res.status}`);
@@ -158,6 +165,7 @@ function mountView(root: HTMLElement, view: View): () => void {
       load: loadFlagged,
       onSetReplied: setReplied,
       onPolish: (statusId) => requestPolish(statusId),
+      onRetriage: requestRetriage,
       onRegenerate: (statusId) => requestPolish(statusId, true),
       onSelectVersion: selectVersion,
       draftCallbacks,

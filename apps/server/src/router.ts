@@ -21,6 +21,7 @@ import type { PolishState } from './polish/polish';
 import { log } from './log';
 import { ingestPosts, listFlaggedPosts, listPosts, setReplied, type PolishContext } from './posts';
 import type { PrefilterRules } from './triage/prefilter';
+import type { RetriageOutcome } from './triage/triage';
 import { recordFeedback } from './voice/feedback';
 import { readStyleNotes, saveStyleNotes } from './voice/style-notes';
 
@@ -108,6 +109,7 @@ function getPosts(db: DatabaseSync, polishContext: () => PolishContext, flagRule
 
 const REPLIED_PATH = /^\/v1\/posts\/(\d{1,30})\/replied$/;
 const POLISH_PATH = /^\/v1\/posts\/(\d{1,30})\/polish$/;
+const RETRIAGE_PATH = /^\/v1\/posts\/(\d{1,30})\/retriage$/;
 
 const FEEDBACK_PATH = /^\/v1\/drafts\/(\d{1,30}|rough-\d{1,30}|idea-\d{1,9}-\d)\/feedback$/;
 const SELECT_PATH = /^\/v1\/drafts\/(\d{1,30}|idea-\d{1,9}-\d)\/select$/;
@@ -123,7 +125,25 @@ function postPolish(onPolish: (id: string, regenerate: boolean) => PolishState):
   };
 }
 
-const SELECT_STATUS = { ok: 200, not_found: 404, busy: 409 } as const;
+function postRetriage(onRetriage: (statusId: string) => RetriageOutcome): ParamHandler {
+  return (statusId) => (_req, res) => {
+    const outcome = onRetriage(statusId);
+    switch (outcome.status) {
+      case 'queued':
+        return sendJson(res, 202, { state: 'queued', ...(outcome.resumesAt ? { resumesAt: outcome.resumesAt } : {}) });
+      case 'unknown':
+        return sendJson(res, 404, { error: 'not found' });
+      case 'not_failed':
+        return sendJson(res, 409, { error: 'Triage did not fail for this post' });
+      case 'unavailable':
+        return sendJson(res, 503, { error: 'No triage model configured' });
+      case 'skipped':
+        return sendJson(res, 409, { error: `Not retried: this post is now skipped (${outcome.reason})` });
+    }
+  };
+}
+
+const SELECT_STATUS ={ ok: 200, not_found: 404, busy: 409 } as const;
 
 function postSelect(db: DatabaseSync): ParamHandler {
   return (draftId) => async (req, res) => {
@@ -210,6 +230,7 @@ export interface RouterHooks {
   onIngest: () => void;
   onPolish: (statusId: string, regenerate: boolean) => PolishState;
   onIdeaPolish: (ideaId: string) => PolishState;
+  onRetriage: (statusId: string) => RetriageOutcome;
   polishContext: () => PolishContext;
   doctor: () => Promise<DoctorReport>;
   voiceView: () => VoiceView;
@@ -238,6 +259,7 @@ export function createRouter(
   const paramRoutes: ParamRoute[] = [
     { pattern: POLISH_PATH, handler: postPolish(hooks.onPolish) },
     { pattern: IDEA_POLISH_PATH, handler: postPolish(hooks.onIdeaPolish) },
+    { pattern: RETRIAGE_PATH, handler: postRetriage(hooks.onRetriage) },
     { pattern: REPLIED_PATH, handler: postReplied(db) },
     { pattern: FEEDBACK_PATH, handler: postFeedback(db) },
     { pattern: SELECT_PATH, handler: postSelect(db) },

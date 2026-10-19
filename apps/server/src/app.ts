@@ -62,7 +62,7 @@ function createServices(db: DatabaseSync, home: string, config: AppConfig) {
     voice.notify();
     digest.notify();
   };
-  return { polish, notifyAll, pool, digest };
+  return { polish, notifyAll, pool, digest, triage };
 }
 
 type Services = ReturnType<typeof createServices>;
@@ -80,6 +80,7 @@ function buildHooks(db: DatabaseSync, home: string, config: AppConfig, services:
       const idea = getIdea(db, ideaId);
       return idea ? polish.requestIdea(ideaId, idea).state : 'unknown';
     },
+    onRetriage: services.triage.retriage,
     voiceView: () => readVoiceView(db, config),
     digestView: () => readDigestView(db, services.digest.isRunning(), services.digest.progress()),
     runDigestNow: services.digest.runNow,

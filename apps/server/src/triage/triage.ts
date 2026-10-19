@@ -4,13 +4,13 @@ import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { type AppConfig, type MustFlag, type Result, type StoredPost } from '@xc/shared';
 import { parseTriageReply, type TriageReply } from '../llm/opencode';
-import { listUntriagedPosts } from '../posts';
+import { getPost, listUntriagedPosts } from '../posts';
 import { prefilter, rulesFromConfig } from './prefilter';
 import type { Style } from '../voice/select-examples';
 import { buildTriagePrompt, NO_STYLE } from './prompts';
 import type { RunModel } from '../voice/voice';
 import { classifyFailure, errorClass, safeReason, withRetry } from './retry';
-import { saveError, saveResult, saveSkipped } from './triage-store';
+import { clearTriageError, saveError, saveResult, saveSkipped } from './triage-store';
 
 const FLUSH_DELAY_MS = 30_000;
 const PAUSE_SLACK_MS = 1000;
@@ -34,7 +34,16 @@ export function opencodeClassify(config: AppConfig, home: string, runModel: RunM
   };
 }
 
+export type RetriageOutcome =
+  | { status: 'queued'; resumesAt: number | null }
+  | { status: 'unknown' }
+  | { status: 'not_failed' }
+  | { status: 'unavailable' }
+  | { status: 'skipped'; reason: string };
+
 export interface TriageService {
+  /** Re-queues a post whose triage failed. */
+  retriage(statusId: string): RetriageOutcome;
   notify(): void;
   drain(force: boolean): Promise<void>;
 }
@@ -136,7 +145,22 @@ export function createTriageService(
     }, delay);
   }
 
+  // A post that would now be skipped (e.g. past its age limit) keeps its error row, so the user is told why.
+  function retriage(statusId: string): RetriageOutcome {
+    if (!config.models.triage) return { status: 'unavailable' };
+    const post = getPost(db, statusId);
+    if (!post) return { status: 'unknown' };
+    if (!post.triage?.error) return { status: 'not_failed' };
+    const verdict = prefilter(post, rulesFromConfig(config), now());
+    if (verdict.action === 'skip') return { status: 'skipped', reason: verdict.reason };
+    clearTriageError(db, statusId);
+    void drain(true);
+    armTimer();
+    return { status: 'queued', resumesAt: isPaused() ? pausedUntil() : null };
+  }
+
   return {
+    retriage,
     notify: () => {
       void drain(false);
       armTimer();

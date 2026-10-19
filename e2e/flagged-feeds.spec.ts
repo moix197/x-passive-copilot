@@ -1,4 +1,4 @@
-// @covers apps/extension/src/panel/flagged-feeds.ts, apps/extension/src/panel/flagged-view.ts, apps/extension/src/panel/posts-view.ts, apps/extension/src/panel/draft-actions.ts, apps/extension/src/panel/panel.ts, apps/server/src/posts.ts, apps/server/src/router.ts, apps/server/src/db.ts, shared/src/types.ts, e2e/fakes/opencode.mjs
+// @covers apps/extension/src/panel/flagged-feeds.ts, apps/extension/src/panel/flagged-view.ts, apps/extension/src/panel/posts-view.ts, apps/extension/src/panel/draft-actions.ts, apps/extension/src/panel/panel.ts, apps/server/src/posts.ts, apps/server/src/router.ts, apps/server/src/db.ts, shared/src/types.ts, e2e/fakes/opencode.mjs, apps/server/src/triage/**, apps/server/src/app.ts
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -147,4 +147,35 @@ test('copying the first draft or the Claude version moves the post to Replied, a
   await expect.poll(() => rowIds(reloaded, mine).then((ids) => ids.length)).toBe(2);
   await reloaded.getByTestId('feed-to-reply').click();
   await expect.poll(() => rowIds(reloaded, mine)).toEqual([]);
+});
+
+test('a failed triage shows Retry; retrying shows pending, then the new draft', async () => {
+  const failFile = join(binDir, 'triage-fail.txt');
+  writeFileSync(failFile, 'x');
+  await ingest({ ...capturedPost('6301', '@e2eowner did triage break?'), authorHandle: 'orderer' });
+  const panel = await openFlagged();
+  await expect(row(panel, '6301')).toContainText('triage error', { timeout: 30_000 });
+  rmSync(failFile, { force: true });
+  writeFileSync(holdFile(), 'x');
+  await row(panel, '6301').getByTestId('retriage-button').click();
+  await expect(row(panel, '6301')).toContainText('triage pending');
+  await expect(row(panel, '6301').getByTestId('retriage-button')).toHaveCount(0);
+
+  rmSync(holdFile(), { force: true });
+  await expect(row(panel, '6301')).toContainText('Congrats on shipping');
+  await expect(row(panel, '6301')).not.toContainText('triage error');
+});
+
+test('retriage route: token required, unknown post 404, post without a failure 409', async () => {
+  await ingest(capturedPost('6302', 'plain healthy post'));
+  await expect.poll(async () => {
+    const res = await fetch(`${server.baseUrl}/v1/posts?limit=50`, { headers: authHeader });
+    const body = (await res.json()) as { posts: { statusId: string; triage: { score: number | null } | null }[] };
+    return body.posts.find((p) => p.statusId === '6302')?.triage?.score ?? null;
+  }).not.toBeNull();
+  const call = (id: string, headers?: Record<string, string>) =>
+    fetch(`${server.baseUrl}/v1/posts/${id}/retriage`, { method: 'POST', headers });
+  expect((await call('6302')).status).toBe(401);
+  expect((await call('999999', authHeader)).status).toBe(404);
+  expect((await call('6302', authHeader)).status).toBe(409);
 });

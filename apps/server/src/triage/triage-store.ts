@@ -19,6 +19,11 @@ export function saveError(
   db.prepare(UPSERT).run(statusId, null, null, null, 0, null, mustFlag, error, now);
 }
 
+/** Drops a failed verdict so the post is untriaged again and the triage loop picks it up. */
+export function clearTriageError(db: DatabaseSync, statusId: string): void {
+  db.prepare('DELETE FROM triage WHERE status_id = ? AND error IS NOT NULL').run(statusId);
+}
+
 export function saveEditedRoughDraft(db: DatabaseSync, statusId: string, text: string): void {
   db.prepare('UPDATE triage SET rough_draft = ? WHERE status_id = ?').run(text, statusId);
 }
