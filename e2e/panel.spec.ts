@@ -448,14 +448,14 @@ test('regenerate stops at the version cap with 409 limit and the panel hides the
   const id = '8951';
   expect((await postJson(server.baseUrl, '/v1/posts', { posts: [capturedPost(id, { authorHandle: 'cap', text: 'Cap probe' })] })).ok).toBe(true);
   const polish = (regenerate: boolean) => postJson(server.baseUrl, `/v1/posts/${id}/polish${regenerate ? '?regenerate=1' : ''}`, {});
-  // Asking again while a job runs answers "already", so each step re-asks until the next version lands.
+  // Asking again while a job runs answers "already", so each step re-asks until the next version lands; a stale count read can fire one extra ask that lands a version early, so wait for "at least n".
   for (let n = 1; n <= MAX_DRAFT_VERSIONS; n++) {
     const askNext = async () => {
       const count = (await storedVersions(id)).length;
       if (count < n) await polish(n > 1);
       return count;
     };
-    await expect.poll(askNext, { timeout: 20_000 }).toBe(n);
+    await expect.poll(askNext, { timeout: 20_000 }).toBeGreaterThanOrEqual(n);
   }
   await expect.poll(async () => (await storedVersions(id)).length).toBe(MAX_DRAFT_VERSIONS);
   const capped = await polish(true);
