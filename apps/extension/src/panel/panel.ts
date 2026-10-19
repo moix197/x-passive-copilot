@@ -1,9 +1,9 @@
-import { PostListResponseSchema, type StoredPost } from '@xc/shared/types';
+import { PostListResponseSchema, type FlaggedFeed, type StoredPost } from '@xc/shared/types';
 import { authHeaders, getServerConfig } from '../server-config';
 import { copyText, type DraftCallbacks, type Rating } from './draft-actions';
 import { mountDigestSection } from './digest-section';
 import { mountDoctorCard } from './doctor-card';
-import { mountFlaggedView } from './flagged-view';
+import { mountFlaggedFeeds, type FlaggedPage } from './flagged-feeds';
 import { mountPostsView } from './posts-view';
 import { mountPowerToggle } from './power-toggle';
 import { mountVoiceTab } from './voice-tab';
@@ -13,12 +13,18 @@ type View = 'all' | 'flagged' | 'digest' | 'voice';
 const title = document.getElementById('title');
 if (title) title.textContent = 'X passive copilot';
 
-async function loadPosts(view: View): Promise<StoredPost[]> {
+async function fetchPosts(query: string) {
   const config = await getServerConfig();
-  const url = `${config.baseUrl}/v1/posts?limit=100${view === 'flagged' ? '&view=flagged' : ''}`;
-  const res = await fetch(url, { headers: authHeaders(config) });
+  const res = await fetch(`${config.baseUrl}/v1/posts?limit=100${query}`, { headers: authHeaders(config) });
   if (!res.ok) throw new Error(`server ${res.status}`);
-  return PostListResponseSchema.parse(await res.json()).posts;
+  return PostListResponseSchema.parse(await res.json());
+}
+
+const loadAllPosts = async (): Promise<StoredPost[]> => (await fetchPosts('')).posts;
+
+async function loadFlagged(feed: FlaggedFeed): Promise<FlaggedPage> {
+  const { posts, counts } = await fetchPosts(`&view=flagged&feed=${feed}`);
+  return { posts, counts: counts ?? { toReply: posts.length, replied: 0 } };
 }
 
 async function loadDoctorReport(): Promise<unknown> {
@@ -55,6 +61,11 @@ async function saveStyleNotes(notes: string): Promise<unknown> {
 async function requestPolish(statusId: string, regenerate = false): Promise<void> {
   const query = regenerate ? '?regenerate=1' : '';
   const res = await postJson(`/v1/posts/${encodeURIComponent(statusId)}/polish${query}`);
+  if (!res.ok) throw new Error(`server ${res.status}`);
+}
+
+async function setReplied(statusId: string, replied: boolean): Promise<void> {
+  const res = await postJson(`/v1/posts/${encodeURIComponent(statusId)}/replied`, { replied });
   if (!res.ok) throw new Error(`server ${res.status}`);
 }
 
@@ -110,11 +121,10 @@ function selectView(view: View): void {
   if (!app) return;
   dispose?.();
   for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.view === view));
-  const load = () => loadPosts(view);
-  dispose = mountView(app, view, load);
+  dispose = mountView(app, view);
 }
 
-function mountView(root: HTMLElement, view: View, load: () => Promise<StoredPost[]>): () => void {
+function mountView(root: HTMLElement, view: View): () => void {
   if (view === 'voice') return mountVoiceTab(root, () => getJson('/v1/voice'), { load: () => getJson('/v1/style-notes'), save: saveStyleNotes });
   if (view === 'digest') {
     return mountDigestSection(root, {
@@ -125,15 +135,16 @@ function mountView(root: HTMLElement, view: View, load: () => Promise<StoredPost
     });
   }
   if (view === 'flagged') {
-    return mountFlaggedView(root, {
-      load,
+    return mountFlaggedFeeds(root, {
+      load: loadFlagged,
+      onSetReplied: setReplied,
       onPolish: (statusId) => requestPolish(statusId),
       onRegenerate: (statusId) => requestPolish(statusId, true),
       onSelectVersion: selectVersion,
       draftCallbacks,
     });
   }
-  return mountPostsView(root, { load });
+  return mountPostsView(root, { load: loadAllPosts });
 }
 
 for (const tab of tabs) tab.addEventListener('click', () => selectView(tab.dataset.view as View));

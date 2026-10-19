@@ -2,6 +2,8 @@ import type { DatabaseSync } from 'node:sqlite';
 import {
   CapturedPostSchema,
   type CapturedPost,
+  type FlaggedCounts,
+  type FlaggedFeed,
   type MustFlag,
   type PolishInfo,
   type PostBatchResult,
@@ -19,16 +21,16 @@ import { checkReply, ruleNames } from './polish/guard';
 import { activeMustFlag, isOwnAuthor, isWithinAgeLimit, type PrefilterRules } from './triage/prefilter';
 
 const PRUNE_AFTER_MS = 30 * 24 * 60 * 60 * 1000;
-const PRUNABLE = 'SELECT status_id FROM posts WHERE captured_at < ? AND is_own = 0';
+const PRUNABLE = 'SELECT status_id FROM posts WHERE captured_at < ? AND is_own = 0 AND replied_at IS NULL';
 const INGEST_COUNTER = { own: 'ingest:own', nonOwn: 'ingest:non_own' } as const;
 
-// Own posts are voice samples, so they outlive the prune window.
+// Own posts are voice samples and replied posts are the user's history, so both outlive the prune window.
 export function prunePosts(db: DatabaseSync, now: number): void {
   const cutoff = now - PRUNE_AFTER_MS;
   db.prepare(`DELETE FROM draft_versions WHERE draft_key IN (${PRUNABLE})`).run(cutoff);
   db.prepare(`DELETE FROM drafts WHERE status_id IN (${PRUNABLE})`).run(cutoff);
   db.prepare(`DELETE FROM triage WHERE status_id IN (${PRUNABLE})`).run(cutoff);
-  db.prepare('DELETE FROM posts WHERE captured_at < ? AND is_own = 0').run(cutoff);
+  db.prepare('DELETE FROM posts WHERE captured_at < ? AND is_own = 0 AND replied_at IS NULL').run(cutoff);
 }
 
 // Monotonic: digest buckets and voice regen must keep advancing after pruning shrinks the table.
@@ -126,6 +128,7 @@ interface PostRow {
   quoted_status_id: string | null;
   avatar_url: string | null;
   captured_at: number;
+  replied_at: number | null;
   t_status_id: string | null;
   score: number | null;
   reason: string | null;
@@ -203,6 +206,7 @@ function toStoredPost(row: PostRow, ctx: PolishContext): StoredPost {
     quotedStatusId: row.quoted_status_id,
     avatarUrl: row.avatar_url,
     capturedAt: row.captured_at,
+    repliedAt: row.replied_at,
     triage: toTriage(row),
     polish: toPolish(row, ctx),
   };
@@ -257,32 +261,68 @@ function eligibleFlagged(post: StoredPost, rules: PrefilterRules | null, now: nu
   return rules ? asPendingMustFlag(post, rules, now) : null;
 }
 
-/** Newest captured first: a post's place is when it reached us, whatever its triage score. */
+/** Pending (unscored) posts first, newest first; then highest score, ties newest captured. */
+function byReplyPriority(a: StoredPost, b: StoredPost): number {
+  const sa = a.triage?.score ?? null;
+  const sb = b.triage?.score ?? null;
+  if (sa === null || sb === null) return sa === sb ? b.seq - a.seq : sa === null ? -1 : 1;
+  return sb - sa || b.seq - a.seq;
+}
+
+const FLAGGED_WHERE = '(t.must_flag IS NOT NULL OR t.reply_worthy = 1 OR t.status_id IS NULL)';
+
+/** Every unreplied post still worth a reply. Stale rows drop out after the SQL page, so scan all pages. */
+function collectToReply(db: DatabaseSync, ctx: PolishContext, rules: PrefilterRules | null, now: number): StoredPost[] {
+  const query = db.prepare(
+    `${SELECT_WITH_TRIAGE} WHERE p.seq < ? AND p.replied_at IS NULL AND ${FLAGGED_WHERE} ORDER BY p.seq DESC LIMIT ?`,
+  );
+  const posts: StoredPost[] = [];
+  let before = Number.MAX_SAFE_INTEGER;
+  for (;;) {
+    const rows = query.all(before, FLAGGED_BATCH) as unknown as PostRow[];
+    for (const row of rows) {
+      const post = eligibleFlagged(toStoredPost(row, ctx), rules, now);
+      if (post) posts.push(post);
+    }
+    const last = rows[rows.length - 1];
+    if (rows.length < FLAGGED_BATCH || !last) return posts;
+    before = last.seq;
+  }
+}
+
+/** Replied posts keep showing whatever their age: they are exempt from the Flagged age limits. */
+function listReplied(db: DatabaseSync, limit: number, ctx: PolishContext): StoredPost[] {
+  const rows = db
+    .prepare(`${SELECT_WITH_TRIAGE} WHERE p.replied_at IS NOT NULL ORDER BY p.replied_at DESC, p.seq DESC LIMIT ?`)
+    .all(limit) as unknown as PostRow[];
+  return rows.map((row) => toStoredPost(row, ctx));
+}
+
+function countReplied(db: DatabaseSync): number {
+  const row = db.prepare('SELECT COUNT(*) AS n FROM posts WHERE replied_at IS NOT NULL').get() as { n: number };
+  return row.n;
+}
+
 export function listFlaggedPosts(
   db: DatabaseSync,
   limit: number,
   ctx: PolishContext = NO_POLISH_CONTEXT,
   rules: PrefilterRules | null = null,
   now: number = Date.now(),
+  feed: FlaggedFeed = 'to_reply',
 ): PostListResponse {
-  const query = db.prepare(
-    `${SELECT_WITH_TRIAGE} WHERE p.seq < ? AND (t.must_flag IS NOT NULL OR t.reply_worthy = 1 OR t.status_id IS NULL)
-     ORDER BY p.seq DESC LIMIT ?`,
-  );
-  const posts: StoredPost[] = [];
-  let before = Number.MAX_SAFE_INTEGER;
-  // Stale rows are dropped after the SQL limit, so keep paging until the page is full of eligible posts.
-  while (posts.length < limit) {
-    const rows = query.all(before, FLAGGED_BATCH) as unknown as PostRow[];
-    for (const row of rows) {
-      const post = eligibleFlagged(toStoredPost(row, ctx), rules, now);
-      if (post && posts.length < limit) posts.push(post);
-    }
-    const last = rows[rows.length - 1];
-    if (rows.length < FLAGGED_BATCH || !last) break;
-    before = last.seq;
-  }
-  return { posts, nextBefore: null };
+  const toReply = collectToReply(db, ctx, rules, now).sort(byReplyPriority);
+  const counts: FlaggedCounts = { toReply: toReply.length, replied: countReplied(db) };
+  const posts = feed === 'replied' ? listReplied(db, limit, ctx) : toReply.slice(0, limit);
+  return { posts, nextBefore: null, counts };
+}
+
+/** Marking keeps the first replied time, so a later Copy on a replied card does not reorder it. */
+export function setReplied(db: DatabaseSync, statusId: string, replied: boolean, now: number): boolean {
+  const result = replied
+    ? db.prepare('UPDATE posts SET replied_at = COALESCE(replied_at, ?) WHERE status_id = ?').run(now, statusId)
+    : db.prepare('UPDATE posts SET replied_at = NULL WHERE status_id = ?').run(statusId);
+  return Number(result.changes) > 0;
 }
 
 export function listUntriagedPosts(db: DatabaseSync): StoredPost[] {

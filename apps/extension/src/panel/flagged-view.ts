@@ -8,6 +8,8 @@ import { renderVersionNav } from './version-nav';
 export type PolishHandler = (statusId: string) => Promise<void>;
 
 export interface FlaggedHandlers {
+  /** Marks or un-marks a post replied; the owner of the feeds moves the card immediately. */
+  onSetReplied: (statusId: string, replied: boolean) => Promise<void>;
   onPolish: PolishHandler;
   onRegenerate: PolishHandler;
   onSelectVersion: (statusId: string, versionId: number) => Promise<void>;
@@ -50,6 +52,30 @@ function polishButton(post: StoredPost, onPolish: PolishHandler): HTMLButtonElem
     });
   });
   return button;
+}
+
+// Copying any draft means the user is about to reply, so the post moves to Replied.
+function copyMarksReplied(post: StoredPost, callbacks: DraftCallbacks, ctx: RowContext): DraftCallbacks {
+  if (post.repliedAt !== null) return callbacks;
+  return {
+    ...callbacks,
+    onCopy: async (text) => {
+      await callbacks.onCopy(text);
+      void ctx.handlers.onSetReplied(post.statusId, true).catch(() => undefined);
+    },
+  };
+}
+
+function repliedButton(post: StoredPost, onSetReplied: FlaggedHandlers['onSetReplied']): HTMLElement {
+  const replied = post.repliedAt !== null;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = replied ? 'Move back to To reply' : 'Mark replied';
+  button.dataset.testid = replied ? 'move-back' : 'mark-replied';
+  button.addEventListener('click', () => void onSetReplied(post.statusId, !replied).catch(() => undefined));
+  const bar = element('div', '', 'replied-actions');
+  bar.append(button);
+  return bar;
 }
 
 function section(kind: string, title: string, subtitle: string, extra: HTMLElement[] = []) {
@@ -100,7 +126,7 @@ function roughDraftActions(post: StoredPost, text: HTMLElement, rating: Rating |
       return error;
     },
   };
-  return renderDraftActions(text.textContent ?? '', callbacks, trackEditing(ctx, post.statusId));
+  return renderDraftActions(text.textContent ?? '', copyMarksReplied(post, callbacks, ctx), trackEditing(ctx, post.statusId));
 }
 
 function firstDraftSection(post: StoredPost, ctx: RowContext): HTMLElement | null {
@@ -158,7 +184,7 @@ function draftActionsFor(post: StoredPost, text: string, ctx: RowContext): HTMLE
     },
     ...(versions < MAX_DRAFT_VERSIONS ? { onRegenerate: () => handlers.onRegenerate(post.statusId) } : {}),
   };
-  return renderDraftActions(text, callbacks, trackEditing(ctx, post.statusId));
+  return renderDraftActions(text, copyMarksReplied(post, callbacks, ctx), trackEditing(ctx, post.statusId));
 }
 
 // While a regenerate runs, the selected version stays readable but cannot be acted on.
@@ -210,15 +236,15 @@ export function renderFlagged(
   row.dataset.statusId = post.statusId;
   const ctx: RowContext = { handlers, editors, row };
   const sections = [originalPost(post), firstDraftSection(post, ctx), claudeSection(post, ctx)];
-  row.append(...sections.filter((s): s is HTMLElement => s !== null));
+  row.append(...sections.filter((s): s is HTMLElement => s !== null), repliedButton(post, handlers.onSetReplied));
   return row;
 }
 
 export function mountFlaggedView(
   root: HTMLElement,
-  options: Pick<PostsViewOptions, 'load'> & FlaggedHandlers,
+  options: Pick<PostsViewOptions, 'load' | 'emptyText'> & FlaggedHandlers,
 ): () => void {
   const editors: OpenEditors = new Map();
   const render = (post: StoredPost) => editors.get(post.statusId) ?? renderFlagged(post, options, editors);
-  return mountPostsView(root, { load: options.load, render, emptyText: 'Nothing flagged yet.' });
+  return mountPostsView(root, { load: options.load, render, emptyText: options.emptyText });
 }

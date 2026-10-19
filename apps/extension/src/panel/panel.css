@@ -104,6 +104,30 @@ h1 {
   font-weight: 700;
   border-bottom-color: var(--accent);
 }
+.feed-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 10px 16px 0;
+}
+.feed-toggle button {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.feed-toggle button[aria-pressed='true'] {
+  color: var(--text);
+  font-weight: 700;
+  border-color: var(--accent);
+}
+.replied-actions {
+  display: flex;
+  padding: 6px 0 2px;
+}
+.replied-actions button {
+  padding: 4px 9px;
+  font-size: 13px;
+}
 .status {
   margin: 0;
   padding: 16px;

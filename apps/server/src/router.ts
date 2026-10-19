@@ -1,7 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import {
+  FLAGGED_FEEDS,
   FeedbackRequestSchema,
+  RepliedRequestSchema,
+  type FlaggedFeed,
   PostBatchSchema,
   StyleNotesSchema,
   SelectVersionRequestSchema,
@@ -15,7 +18,7 @@ import type { ManualDigestOutcome } from './digest/digest';
 import { selectVersion } from './polish/drafts-store';
 import type { PolishState } from './polish/polish';
 import { log } from './log';
-import { ingestPosts, listFlaggedPosts, listPosts, type PolishContext } from './posts';
+import { ingestPosts, listFlaggedPosts, listPosts, setReplied, type PolishContext } from './posts';
 import type { PrefilterRules } from './triage/prefilter';
 import { recordFeedback } from './voice/feedback';
 import { readStyleNotes, saveStyleNotes } from './voice/style-notes';
@@ -82,18 +85,27 @@ function postPosts(db: DatabaseSync, ownHandle: string, onIngest: () => void): H
   };
 }
 
+function isFlaggedFeed(value: string): value is FlaggedFeed {
+  return (FLAGGED_FEEDS as readonly string[]).includes(value);
+}
+
 function getPosts(db: DatabaseSync, polishContext: () => PolishContext, flagRules: PrefilterRules): Handler {
   return (_req, res, url) => {
     const limit = parseIntParam(url.searchParams.get('limit'), DEFAULT_LIMIT);
     const before = parseIntParam(url.searchParams.get('before'), 0);
     if (!limit || before === null || limit > MAX_LIMIT) return sendJson(res, 400, { error: 'bad query' });
     const view = url.searchParams.get('view');
-    if (view === 'flagged') return sendJson(res, 200, listFlaggedPosts(db, limit, polishContext(), flagRules));
+    const feed = url.searchParams.get('feed') ?? 'to_reply';
+    if (view === 'flagged') {
+      if (!isFlaggedFeed(feed)) return sendJson(res, 400, { error: 'bad query' });
+      return sendJson(res, 200, listFlaggedPosts(db, limit, polishContext(), flagRules, Date.now(), feed));
+    }
     if (view !== null && view !== 'all') return sendJson(res, 400, { error: 'bad query' });
     sendJson(res, 200, listPosts(db, limit, before || null, polishContext()));
   };
 }
 
+const REPLIED_PATH = /^\/v1\/posts\/(\d{1,30})\/replied$/;
 const POLISH_PATH = /^\/v1\/posts\/(\d{1,30})\/polish$/;
 
 const FEEDBACK_PATH = /^\/v1\/drafts\/(\d{1,30}|rough-\d{1,30}|idea-\d{1,9}-\d)\/feedback$/;
@@ -132,6 +144,17 @@ function postFeedback(db: DatabaseSync): ParamHandler {
     const outcome = recordFeedback(db, draftId, feedback.data, Date.now());
     if (!outcome.ok) return sendJson(res, outcome.status, { error: outcome.error });
     log(`feedback ${draftId} ${feedback.data.kind}`);
+    sendJson(res, 200, { ok: true });
+  };
+}
+
+function postReplied(db: DatabaseSync): ParamHandler {
+  return (statusId) => async (req, res) => {
+    const raw = await readBody(req);
+    if (raw === null) return sendJson(res, 413, { error: 'body too large' });
+    const request = RepliedRequestSchema.safeParse(parseJson(raw));
+    if (!request.success) return sendJson(res, 400, { error: 'invalid replied request' });
+    if (!setReplied(db, statusId, request.data.replied, Date.now())) return sendJson(res, 404, { error: 'not found' });
     sendJson(res, 200, { ok: true });
   };
 }
@@ -209,6 +232,7 @@ export function createRouter(
   const paramRoutes: ParamRoute[] = [
     { pattern: POLISH_PATH, handler: postPolish(hooks.onPolish) },
     { pattern: IDEA_POLISH_PATH, handler: postPolish(hooks.onIdeaPolish) },
+    { pattern: REPLIED_PATH, handler: postReplied(db) },
     { pattern: FEEDBACK_PATH, handler: postFeedback(db) },
     { pattern: SELECT_PATH, handler: postSelect(db) },
   ];

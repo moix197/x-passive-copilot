@@ -3,10 +3,10 @@ id: pipeline/triage-flow
 type: decision
 summary: Posts are prefiltered then triaged in batches via opencode/DeepSeek: stdin-only prompts, deny-all sandbox, in-memory retry; verified on opencode 1.19.3
 tags: [triage, opencode, deepseek, prefilter, subprocess, untrusted-input]
-paths: [apps/server/src/env-file.ts, apps/server/src/llm/opencode-env.ts, apps/server/src/triage/**, apps/server/src/posts.ts, apps/server/src/doctor.ts, apps/extension/src/panel/flagged-view.ts, apps/server/src/llm/**, apps/server/src/sandbox.ts, fixtures/opencode-run.jsonl]
+paths: [apps/server/src/env-file.ts, apps/server/src/llm/opencode-env.ts, apps/server/src/triage/**, apps/server/src/posts.ts, apps/server/src/doctor.ts, apps/extension/src/panel/flagged-view.ts, apps/extension/src/panel/flagged-feeds.ts, apps/server/src/llm/**, apps/server/src/sandbox.ts, fixtures/opencode-run.jsonl]
 related: [capture/passive-capture-invariants, tooling/lean-v1-scaffold]
 status: active
-updated: 2026-10-17
+updated: 2026-10-19
 ---
 
 # Triage flow
@@ -39,7 +39,7 @@ tools.
 **Constraints it creates:** logs carry statusIds, error classes and a `safeReason` (<= 200 chars of
 CLI/provider error text: exit code + stderr, or opencode's `error` event name/message); never prompt
 or model text. Stored `triage.error` stays the coarse class. Flagged hides stored must-flag rows past their age limit (`isWithinAgeLimit`, by `posted_at`). Must-flag posts with no triage row are
-merged into the Flagged list at read time (`listFlaggedPosts` + `mustFlagFor`) with a synthetic triage (`score: null`, no error) the panel labels "triage pending". Flagged is ordered newest captured first (`seq DESC`, never by score); the age filter runs while paging the SQL (batches of 200) until the page holds `limit` eligible posts, so stale rows cannot crowd out fresh ones.
+merged into the Flagged list at read time (`listFlaggedPosts` + `mustFlagFor`) with a synthetic triage (`score: null`, no error) the panel labels "triage pending". Flagged has two sub-feeds (`feed=to_reply|replied`, response carries `counts`). To reply = unreplied eligible posts, unscored/pending first (newest `seq`), then score DESC, ties newest; the age filter runs while paging the SQL (batches of 200) over ALL eligible rows, then sorts in memory and slices to `limit`, so stale rows cannot crowd out fresh ones. Replied = `posts.replied_at IS NOT NULL` ordered `replied_at DESC`, exempt from the age limits and from the 30-day prune (`prunePosts` skips them). `replied_at` is a nullable `posts` column (added via `ADDED_COLUMNS`); `POST /v1/posts/:id/replied {replied}` sets/clears it (`setReplied` keeps the first time on repeat marks; 404 unknown id). The panel marks a post replied on Copy of any draft or via the Mark replied / Move back buttons, moves the card optimistically (`flagged-feeds.ts`) and refetches until no move overlapped the poll.
 Live model quirks absorbed by the parser: missing `roughDraft` = `""`; a bad array followed by a
 "corrected" one falls back to the last `[{`. `models.triage` empty
 disables triage (posts stay pending). `context.md` (<= 8 KB, `<home>/context.md`) is read per batch.

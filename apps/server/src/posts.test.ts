@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { CapturedPost } from '@xc/shared';
 import { openDb } from './db';
-import { ingestPosts, listFlaggedPosts } from './posts';
+import { ingestPosts, listFlaggedPosts, prunePosts, setReplied } from './posts';
 import type { PrefilterRules } from './triage/prefilter';
 
 const HOUR = 3_600_000;
@@ -37,12 +37,40 @@ describe('listFlaggedPosts', () => {
     expect(ids).toEqual(['2', '1']);
   });
 
-  it('orders by newest captured first regardless of triage score', () => {
+  it('orders To reply by score, with unscored (pending) posts on top newest first', () => {
     const db = openDb(mkdtempSync(join(tmpdir(), 'xc-posts-')));
-    ingestPosts(db, [post(1, 1), post(2, 1), post(3, 1)], NOW, 'me');
-    db.exec(`INSERT INTO triage (status_id, score, must_flag, triaged_at) VALUES ('1', 99, 'watchlist', 0), ('2', 10, 'watchlist', 0)`);
+    ingestPosts(db, [post(1, 1), post(2, 1), post(3, 1), post(4, 1), post(5, 1)], NOW, 'me');
+    db.exec(`INSERT INTO triage (status_id, score, must_flag, triaged_at) VALUES ('1', 99, 'watchlist', 0), ('2', 10, 'watchlist', 0), ('4', 99, 'watchlist', 0)`);
 
     const ids = listFlaggedPosts(db, 10, undefined, rules, NOW).posts.map((p) => p.statusId);
-    expect(ids).toEqual(['3', '2', '1']);
+    expect(ids).toEqual(['5', '3', '4', '1', '2']);
+  });
+
+  it('moves replied posts to Replied (newest replied first), exempt from age limits, with counts', () => {
+    const db = openDb(mkdtempSync(join(tmpdir(), 'xc-posts-')));
+    ingestPosts(db, [post(1, 1), post(2, 1), post(3, 30)], NOW, 'me');
+    expect(setReplied(db, '1', true, 100)).toBe(true);
+    expect(setReplied(db, '3', true, 200)).toBe(true);
+    expect(setReplied(db, 'nope', true, 300)).toBe(false);
+
+    const toReply = listFlaggedPosts(db, 10, undefined, rules, NOW);
+    expect(toReply.posts.map((p) => p.statusId)).toEqual(['2']);
+    expect(toReply.counts).toEqual({ toReply: 1, replied: 2 });
+    const replied = listFlaggedPosts(db, 10, undefined, rules, NOW, 'replied');
+    expect(replied.posts.map((p) => [p.statusId, p.repliedAt])).toEqual([['3', 200], ['1', 100]]);
+
+    setReplied(db, '1', true, 999);
+    expect(listFlaggedPosts(db, 10, undefined, rules, NOW, 'replied').posts.map((p) => p.repliedAt)).toEqual([200, 100]);
+    setReplied(db, '1', false, 1000);
+    expect(listFlaggedPosts(db, 10, undefined, rules, NOW).posts.map((p) => p.statusId)).toEqual(['2', '1']);
+  });
+
+  it('keeps replied posts through the 30-day prune', () => {
+    const db = openDb(mkdtempSync(join(tmpdir(), 'xc-posts-')));
+    ingestPosts(db, [post(1, 1), post(2, 1)], NOW, 'me');
+    setReplied(db, '1', true, NOW);
+    prunePosts(db, NOW + 31 * 24 * HOUR);
+    const left = db.prepare('SELECT status_id FROM posts').all() as { status_id: string }[];
+    expect(left.map((r) => r.status_id)).toEqual(['1']);
   });
 });

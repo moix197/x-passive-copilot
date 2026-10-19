@@ -114,14 +114,24 @@ export type PolishReply = z.infer<typeof PolishReplySchema>;
 export const StoredPostSchema = CapturedPostSchema.extend({
   seq: z.number().int().positive(),
   capturedAt: z.number().int().nonnegative(),
+  /** When the user marked this post replied (null while it still needs a reply). */
+  repliedAt: z.number().int().nonnegative().nullable().default(null),
   triage: TriageInfoSchema.nullable(),
   polish: PolishInfoSchema.nullable(),
 });
 export type StoredPost = z.infer<typeof StoredPostSchema>;
 
+export const FLAGGED_FEEDS = ['to_reply', 'replied'] as const;
+export type FlaggedFeed = (typeof FLAGGED_FEEDS)[number];
+
+export const FlaggedCountsSchema = z.object({ toReply: z.number().int().nonnegative(), replied: z.number().int().nonnegative() });
+export type FlaggedCounts = z.infer<typeof FlaggedCountsSchema>;
+
 export const PostListResponseSchema = z.object({
   posts: z.array(StoredPostSchema),
   nextBefore: z.number().int().positive().nullable(),
+  /** Flagged view only: sizes of both sub-feeds, whichever one `posts` holds. */
+  counts: FlaggedCountsSchema.optional(),
 });
 export type PostListResponse = z.infer<typeof PostListResponseSchema>;
 
@@ -185,6 +195,9 @@ export const FeedbackRequestSchema = z
   })
   .refine((v) => v.kind !== 'edit' || v.text !== undefined, { message: 'edit needs text' });
 export type FeedbackRequest = z.infer<typeof FeedbackRequestSchema>;
+
+export const RepliedRequestSchema = z.object({ replied: z.boolean() });
+export type RepliedRequest = z.infer<typeof RepliedRequestSchema>;
 
 export const SelectVersionRequestSchema = z.object({ versionId: z.number().int().positive() });
 export type SelectVersionRequest = z.infer<typeof SelectVersionRequestSchema>;

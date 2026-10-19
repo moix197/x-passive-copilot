@@ -10,12 +10,15 @@ const readStdin = async () => {
   return data;
 };
 
-const triageReply = (ids) =>
+// A post whose text carries "[score:NN]" gets that triage score; the rest get 90.
+const scoreOf = (prompt, id) => Number(prompt.match(new RegExp(`"statusId":"${id}"[^}]*?\\[score:(\\d+)\\]`))?.[1] ?? 90);
+
+const triageReply = (ids, prompt) =>
   ids.map((statusId) => ({
     statusId,
     relevant: true,
     replyWorthy: true,
-    score: 90,
+    score: scoreOf(prompt, statusId),
     reason: 'Fake triage: a builder sharing a release invites a reply.',
     roughDraft: 'Congrats on shipping! The hardest part — was it scope?',
   }));
@@ -50,10 +53,12 @@ if (isDigest) {
   }
   while (digestMode() === 'hold' && !existsSync(join(dir, 'digest-release.txt'))) await sleep(50);
 }
+// Tests hold triage runs (posts stay "triage pending") by creating triage-hold.txt next to this script.
+while (!isDigest && existsSync(join(dir, 'triage-hold.txt'))) await sleep(50);
 const ids = [...new Set([...prompt.matchAll(/"statusId":"(\d+)"/g)].map((m) => m[1]))];
 const events = [
   { type: 'step_start', part: {} },
-  { type: 'text', part: { text: JSON.stringify(isDigest ? digestReply(ids, digestCall) : triageReply(ids)) } },
+  { type: 'text', part: { text: JSON.stringify(isDigest ? digestReply(ids, digestCall) : triageReply(ids, prompt)) } },
   { type: 'step_finish', part: { reason: 'stop' } },
 ];
 process.stdout.write(events.map((e) => JSON.stringify(e)).join('\n') + '\n');
