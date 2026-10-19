@@ -1,6 +1,6 @@
 // Fake `opencode run --format json` CLI: triages every post in the prompt as reply-worthy, or answers
 // a digest prompt (recognised by its <product-context> block) with one trend and one idea.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { join } from 'node:path';
 
@@ -37,11 +37,24 @@ const nextDigestCall = () => {
   return call;
 };
 
+// Tests make models answer with a provider quota error by listing them in quota-models.txt (one per
+// line); quota-message.txt overrides the error text. Every run appends "<model> <triage|digest>" to
+// opencode-calls.txt.
+const readLines = (name) => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8').split(/\r?\n/).filter(Boolean) : []);
+const QUOTA_TEXT = 'You exceeded your current quota, please check your plan and billing details.';
+
 if (process.argv[2] !== 'run') {
   process.exit(0);
 }
+const model = process.argv[process.argv.indexOf('-m') + 1];
 const prompt = await readStdin();
 const isDigest = prompt.includes('<product-context>');
+appendFileSync(join(dir, 'opencode-calls.txt'), `${model} ${isDigest ? 'digest' : 'triage'}\n`);
+if (readLines('quota-models.txt').includes(model)) {
+  const message = readLines('quota-message.txt')[0] ?? QUOTA_TEXT;
+  process.stdout.write(JSON.stringify({ type: 'error', error: { name: 'APIError', data: { message } } }) + '\n');
+  process.exit(1);
+}
 writeFileSync(join(import.meta.dirname, 'opencode-last-env.json'), JSON.stringify({ gemini: process.env.GEMINI_API_KEY ?? null, google: process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? null }));
 writeFileSync(join(import.meta.dirname, isDigest ? 'opencode-digest-prompt.txt' : 'opencode-last-prompt.txt'), prompt);
 let digestCall = 0;

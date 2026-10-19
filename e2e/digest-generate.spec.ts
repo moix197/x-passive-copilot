@@ -1,6 +1,6 @@
-// @covers apps/extension/src/panel/digest-section.ts, apps/extension/src/panel/panel.ts, apps/server/src/digest/**, apps/server/src/router.ts, apps/server/src/app.ts, apps/server/src/llm/**, shared/src/config.ts
+// @covers apps/extension/src/panel/digest-section.ts, apps/extension/src/panel/digest-notice.ts, apps/extension/src/panel/post-format.ts, apps/extension/src/panel/panel.ts, apps/server/src/triage/retry.ts, apps/server/src/meta.ts, apps/server/src/digest/**, apps/server/src/router.ts, apps/server/src/app.ts, apps/server/src/llm/**, shared/src/config.ts
 import { expect, test, type Page } from '@playwright/test';
-import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   authHeader,
@@ -99,6 +99,12 @@ test('Generate new ideas: while a digest is in flight the button is disabled and
   await expect.poll(() => existsSync(join(binDir, 'digest-calls.txt'))).toBe(true);
   expect((await runDigest()).status).toBe(409);
 
+  // Regression: leaving the tab and coming back rebuilt the button as idle while the run went on.
+  await panel.getByRole('tab', { name: 'Flagged' }).click();
+  await panel.getByRole('tab', { name: 'Digest' }).click();
+  await expect(panel.getByTestId('digest-generate')).toHaveText('Generating...');
+  await expect(panel.getByTestId('digest-generate')).toBeDisabled();
+
   writeFileSync(join(binDir, 'digest-release.txt'), 'go');
   await expect(panel.getByTestId('digest-idea').first()).toContainText('Fake idea 1');
   await expect(panel.getByTestId('digest-generate')).toBeEnabled();
@@ -136,4 +142,31 @@ test('Generate new ideas button keeps breathing room below the tab bar', async (
   const tabsBottom = (await panel.getByRole('tablist').boundingBox())!.y + (await panel.getByRole('tablist').boundingBox())!.height;
   expect((await button.boundingBox())!.y - tabsBottom).toBeGreaterThanOrEqual(12);
   await panel.screenshot({ path: process.env.DIGEST_SHOT ?? test.info().outputPath('digest-button.png') });
+});
+
+test('Generate new ideas: a Gemini quota error frees the button at once, says why inline and in the banner, with the last success', async () => {
+  await startWithPosts(3, 0);
+  const panel = await openDigest();
+  await panel.getByTestId('digest-generate').click();
+  await expect(panel.getByTestId('digest-idea').first()).toContainText('Fake idea 1');
+
+  writeFileSync(join(binDir, 'quota-models.txt'), 'google/fake-flash\n');
+  await panel.getByTestId('digest-generate').click();
+  // Regression: quota errors were retried with 60s sleeps, leaving the button on "Generating..." for minutes.
+  await expect(panel.getByTestId('digest-generate-error')).toContainText('Gemini free quota reached');
+  await expect(panel.getByTestId('digest-generate-error')).toContainText('resumes at');
+  await expect(panel.getByTestId('digest-generate')).toBeEnabled();
+  await expect(panel.getByTestId('digest-generate')).toHaveText('Generate new ideas');
+
+  const banner = panel.getByTestId('digest-failed');
+  await expect(banner).toContainText('Last refresh failed: Gemini free quota reached');
+  await expect(banner).toContainText(/resumes at \d{1,2}:\d{2} [AP]M/);
+  await expect(banner).toContainText(/Showing the previous digest from \d{1,2}:\d{2} [AP]M/);
+  await expect(panel.getByTestId('digest-idea').first()).toContainText('Fake idea 1');
+
+  const paused = await runDigest();
+  expect(paused.status).toBe(503);
+  expect(await paused.json()).toMatchObject({ resumesAt: expect.any(Number) });
+  const calls = readFileSync(join(binDir, 'opencode-calls.txt'), 'utf8').split('\n').filter((l) => l.endsWith(' digest'));
+  expect(calls).toEqual(['google/fake-flash digest', 'google/fake-flash digest']);
 });

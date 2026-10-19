@@ -30,6 +30,9 @@ describe('ensureOpencodeSandbox', () => {
     expect(readTool).toBe(true);
     expect(readPermission['*']).toBe('deny');
     expect(Object.entries(readPermission).filter(([, v]) => v === 'allow')).toEqual([['xc-no-such-file.never', 'allow']]);
+
+    // one Gemini request per run: no extra session-title / summary call on another model's quota
+    expect(config.agent).toEqual({ title: { disable: true }, summary: { disable: true } });
   });
 });
 

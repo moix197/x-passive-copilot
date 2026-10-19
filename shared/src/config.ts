@@ -32,7 +32,12 @@ export const AppConfigSchema = z.object({
     .prefault({}),
   voice: z.object({ minSamples: z.number().int().positive().default(5) }).prefault({}),
   models: z
-    .object({ triage: z.string().default(''), final: z.string().default('') })
+    .object({
+      triage: z.string().default(''),
+      /** Tried in order when `triage` (or an earlier fallback) is out of quota; each Gemini model has its own free quota. */
+      triageFallbacks: z.array(z.string().min(1)).max(10).default([]),
+      final: z.string().default(''),
+    })
     .prefault({}),
 });
 export type AppConfig = z.infer<typeof AppConfigSchema>;

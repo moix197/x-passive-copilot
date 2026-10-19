@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { type AppConfig, type DoctorCheck, type DoctorReport, type Result } from '@xc/shared';
 import { findRepoRoot } from './env-file';
+import type { QuotaStatus } from './llm/model-pool';
 import { hasGeminiKey, isGoogleModel } from './llm/opencode-env';
 import { resolveCli } from './llm/resolve-cli';
 import { runCli, type CliOutput } from './llm/run-cli';
@@ -19,6 +20,8 @@ export interface DoctorDeps {
   resolve?: (name: string) => Result<string[]>;
   now?: () => number;
   env?: NodeJS.ProcessEnv;
+  /** Live model quota state; read on every call, never cached. */
+  quota?: () => QuotaStatus;
 }
 
 const defaultRun: Run = (argv) => runCli({ argv, stdin: '', timeoutMs: CLI_TIMEOUT_MS });
@@ -121,14 +124,36 @@ export function checkConfig(home: string, config: AppConfig): DoctorCheck[] {
   ];
 }
 
+export function clockTime(at: number): string {
+  const d = new Date(at);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+function exhaustedText({ model, until, unavailable }: QuotaStatus['exhausted'][number]): string {
+  return unavailable ? `${model} is no longer available` : `Gemini quota reached for ${model} until ${clockTime(until)}`;
+}
+
+/** Null while every model has quota; otherwise which ones ran out and what is used instead. */
+export function checkQuota(status: QuotaStatus): DoctorCheck | null {
+  if (status.exhausted.length === 0) return null;
+  const spent = status.exhausted.map(exhaustedText).join('; ');
+  if (status.active) return check('model-quota', 'model quota', 'ok', `${spent}, using ${status.active}`.slice(0, 200), null);
+  const detail = `${spent}; triage and digest paused until ${clockTime(status.pausedUntil)}`.slice(0, 200);
+  return check('model-quota', 'model quota', 'problem', detail, 'Wait for the reset or add models to "models.triageFallbacks" in config.json');
+}
+
 export function createDoctor(deps: DoctorDeps): () => Promise<DoctorReport> {
   const run = deps.run ?? defaultRun;
   const resolve = deps.resolve ?? ((name) => resolveCli(name));
   const now = deps.now ?? Date.now;
   const env = deps.env ?? process.env;
   let cached: { at: number; report: DoctorReport } | null = null;
+  const quotaChecks = (): DoctorCheck[] => {
+    const quota = deps.quota && checkQuota(deps.quota());
+    return quota ? [quota] : [];
+  };
   return async () => {
-    if (cached && now() - cached.at < CACHE_MS) return cached.report;
+    if (cached && now() - cached.at < CACHE_MS) return { checks: [...cached.report.checks, ...quotaChecks()] };
     const cliChecks = await Promise.all([
       checkCli({ run, resolve }, 'opencode', ['auth', 'list'], opencodeLoggedIn, 'opencode auth login', 'pnpm add -g opencode-ai')
         .then((c) => applyTriageAuth(c, deps.config.models.triage, env)),
@@ -136,7 +161,7 @@ export function createDoctor(deps: DoctorDeps): () => Promise<DoctorReport> {
     ]);
     const report = { checks: [...cliChecks, ...checkConfig(deps.home, deps.config)] };
     cached = { at: now(), report };
-    return report;
+    return { checks: [...report.checks, ...quotaChecks()] };
   };
 }
 

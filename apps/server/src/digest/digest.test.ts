@@ -14,7 +14,7 @@ const post = (n: number, handle: string) => ({
   statusId: String(n), authorName: 'A', authorHandle: handle, text: `post ${n}`, postedAt: null, metrics,
   isReply: false, replyTo: [], quotedStatusId: null, avatarUrl: null,
 });
-const config = () => ({ ...defaultConfig(), handle: 'me', models: { triage: 'm', final: '' } });
+const config = () => ({ ...defaultConfig(), handle: 'me', models: { triage: 'm', triageFallbacks: [], final: '' } });
 const reply = (ids: string[]) =>
   JSON.stringify([{ trends: [{ title: 't', summary: 's', statusIds: ids }], ideas: [{ text: 'idea one', feature: 'f' }] }]);
 const freshDb = () => openDb(mkdtempSync(join(tmpdir(), 'xc-digest-')));
@@ -100,7 +100,34 @@ describe('digest service', () => {
     await service.run();
     const view = readDigestView(db);
     expect(view.failed).toBe(true);
+    expect(view.failure).toMatchObject({ kind: 'malformed', resumesAt: null });
     expect(view.digest?.trends).toHaveLength(1);
+  });
+
+  it('does not spend a bucket while paused on quota; it fires once the pause ends', async () => {
+    const db = freshDb();
+    let pausedUntil = 0;
+    let now = 1000;
+    let calls = 0;
+    const model = async () => {
+      calls += 1;
+      if (calls > 1) return ok(reply(['1']));
+      pausedUntil = 5000;
+      return err('paused: quota reached on every model until later');
+    };
+    const service = createDigestService(db, config(), model, async () => '', () => now, async () => {}, () => pausedUntil);
+    addPosts(db, 1, 50);
+    await service.run();
+    expect(readDigestView(db).failure).toEqual({ kind: 'paused', at: 1000, resumesAt: 5000 });
+    expect(calls).toBe(1);
+    await service.run();
+    expect(calls).toBe(1);
+    expect(await service.runNow()).toEqual({ status: 'paused', until: 5000 });
+
+    now = 5000;
+    await service.run();
+    expect(calls).toBe(2);
+    expect(readDigestView(db)).toMatchObject({ failed: false, failure: null, running: false });
   });
 });
 

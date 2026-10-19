@@ -96,6 +96,13 @@ to; first 8 KB are used) by an LLM through [opencode](https://opencode.ai). Setu
   `.env` in the repo root and set `GEMINI_API_KEY=` (free key at https://aistudio.google.com). The server
   loads `.env` at startup and hands the key only to opencode (as `GOOGLE_GENERATIVE_AI_API_KEY`); no
   `opencode auth login` needed. Restart the host after editing `.env`.
+- **Quota fallbacks:** `"triageFallbacks": ["google/gemini-3.5-flash-lite", "google/gemini-3.8-flash"]`
+  under `models` is tried in order when a model hits its free quota (each Gemini model has its own).
+  Quota errors are never retried; an exhausted model is skipped until its reset (midnight Pacific for
+  daily quotas, or the "retry in N s" the error gives) and that survives restarts. With every model
+  exhausted, triage and digest pause until the earliest reset; posts stay untriaged and are picked up
+  afterwards (age limits still apply). The readiness card shows "Gemini quota reached for X, using Y"
+  or "paused until HH:MM", and the Digest tab says why the last refresh failed.
 - Free `opencode/*-free` models need no `opencode auth login`; the readiness card shows opencode ok
   ("free models only, no auth") when `models.triage` is one of them.
 - Failed batches log `triage batch <ids> failed: <class> (<reason>)`; the reason is CLI/provider

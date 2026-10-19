@@ -202,6 +202,26 @@ export type RepliedRequest = z.infer<typeof RepliedRequestSchema>;
 export const SelectVersionRequestSchema = z.object({ versionId: z.number().int().positive() });
 export type SelectVersionRequest = z.infer<typeof SelectVersionRequestSchema>;
 
+export const MODEL_FAILURE_KINDS = ['cli', 'timeout', 'malformed', 'busy', 'rate', 'quota', 'paused', 'unavailable'] as const;
+export const ModelFailureKindSchema = z.enum(MODEL_FAILURE_KINDS);
+export type ModelFailureKind = z.infer<typeof ModelFailureKindSchema>;
+
+const MODEL_FAILURE_TEXT: Record<ModelFailureKind, string> = {
+  quota: 'Gemini free quota reached',
+  paused: 'Gemini free quota reached on every configured model',
+  rate: 'Gemini rate limit hit',
+  busy: 'Gemini is busy right now',
+  unavailable: 'the configured model is no longer available (set another in models.triage)',
+  timeout: 'the model took too long to answer',
+  malformed: 'the model answered in an unreadable format',
+  cli: 'the model CLI failed (see the server log)',
+};
+
+/** Plain-words cause of a failed model call, shown in the panel. */
+export function describeModelFailure(kind: ModelFailureKind): string {
+  return MODEL_FAILURE_TEXT[kind];
+}
+
 export const DigestTrendSchema = z.object({
   title: z.string().max(120),
   summary: z.string().max(400),
@@ -226,6 +246,16 @@ export const DigestViewSchema = z.object({
     })
     .nullable(),
   failed: z.boolean(),
+  /** Why the last refresh failed; null when it succeeded or the cause was not recorded. */
+  failure: z
+    .object({
+      kind: ModelFailureKindSchema,
+      at: z.number().int().nonnegative(),
+      resumesAt: z.number().int().nonnegative().nullable(),
+    })
+    .nullable(),
+  /** A digest (automatic or manual) is generating right now. */
+  running: z.boolean(),
 });
 export type DigestView = z.infer<typeof DigestViewSchema>;
 

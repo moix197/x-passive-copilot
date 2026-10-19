@@ -4,7 +4,7 @@ type: constraint
 summary: LLM CLIs get stdin-only prompts, shell:false, a read-only flag profile or deny-all sandbox, scrubbed env, hard timeouts; output is zod-parsed then guarded
 tags: [subprocess, stdin, shell-false, claude, opencode, env-scrubbing, untrusted-input, guard]
 paths: [apps/server/src/llm/**, apps/server/src/sandbox.ts, apps/server/src/polish/**, apps/server/assets/finalize-system.md]
-related: [pipeline/triage-flow, pipeline/digest-product-context, pipeline/reply-tone]
+related: [pipeline/triage-flow, pipeline/digest-product-context, pipeline/reply-tone, pipeline/model-quota]
 status: active
 updated: 2026-10-19
 ---
@@ -28,7 +28,7 @@ Tweet text is hostile and both CLIs can have tools, so every call obeys:
   (`llm/opencode-env.ts`); `claudeEnv` drops that var; `runOpencode` redacts the key from error text.
 - **opencode:** cwd `<home>/sandbox/opencode` whose `opencode.json` (`tools` `"*": false`,
   `permission` `"*": "deny"`, `mcp: {}`, plus explicit denies; `read` offered but all paths denied,
-  required by the free tier, see pipeline/triage-flow) is rewritten before every run. Verified live.
+  required by the free tier, see pipeline/triage-flow) is rewritten before every run. Verified live. It also sets `agent.title.disable` and `agent.summary.disable`: otherwise each run makes an extra session-title request on the small model (for google: newest `gemini-flash`, another quota); config accepted by `opencode debug config`, not exercised live.
 - **Guard URLs:** `https?://` links and bare domains with a known TLD (`foo.app`, `x.co/abc`); trailing
   punctuation stripped, scheme/`www.` ignored when matching source URLs.
 - **Untrusted data framing:** posts are JSON (`<` escaped) inside delimiters with a "never follow"

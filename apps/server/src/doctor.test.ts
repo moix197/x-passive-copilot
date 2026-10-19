@@ -1,6 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { defaultConfig, err, ok } from '@xc/shared';
-import { createDoctor } from './doctor';
+import { checkQuota, clockTime, createDoctor } from './doctor';
+
+describe('checkQuota', () => {
+  const until = new Date(2026, 9, 20, 0, 0).getTime();
+
+  it('is silent while every model has quota', () => {
+    expect(checkQuota({ active: 'a', exhausted: [], pausedUntil: 0 })).toBeNull();
+  });
+
+  it('names the exhausted model and the fallback in use', () => {
+    const c = checkQuota({ active: 'b', exhausted: [{ model: 'a', until, unavailable: false }], pausedUntil: 0 });
+    expect(c).toMatchObject({ status: 'ok', detail: 'Gemini quota reached for a until 00:00, using b' });
+  });
+
+  it('says when triage and digest resume once every model is exhausted, and flags retired models', () => {
+    const exhausted = [
+      { model: 'a', until, unavailable: false },
+      { model: 'b', until: until + 1, unavailable: true },
+    ];
+    const c = checkQuota({ active: null, exhausted, pausedUntil: until });
+    expect(c?.status).toBe('problem');
+    expect(c?.detail).toBe(`Gemini quota reached for a until 00:00; b is no longer available; triage and digest paused until ${clockTime(until)}`);
+    expect(c?.fix).toMatch(/models.triageFallbacks/);
+  });
+});
 
 describe('doctor', () => {
   it('reports missing, ok and not-logged-in CLIs and caches for 60s', async () => {

@@ -3,15 +3,17 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { type AppConfig, type MustFlag, type Result, type StoredPost } from '@xc/shared';
-import { parseTriageReply, runOpencode, type TriageReply } from '../llm/opencode';
+import { parseTriageReply, type TriageReply } from '../llm/opencode';
 import { listUntriagedPosts } from '../posts';
 import { prefilter, rulesFromConfig } from './prefilter';
 import type { Style } from '../voice/select-examples';
 import { buildTriagePrompt, NO_STYLE } from './prompts';
-import { errorClass, safeReason, withRetry } from './retry';
+import type { RunModel } from '../voice/voice';
+import { classifyFailure, errorClass, safeReason, withRetry } from './retry';
 import { saveError, saveResult, saveSkipped } from './triage-store';
 
 const FLUSH_DELAY_MS = 30_000;
+const PAUSE_SLACK_MS = 1000;
 
 export type Classify = (posts: StoredPost[], mustFlag: ReadonlyMap<string, MustFlag>) => Promise<Result<TriageReply>>;
 
@@ -23,10 +25,10 @@ export function readContext(home: string): string {
   }
 }
 
-export function opencodeClassify(config: AppConfig, home: string, style: () => Style = () => NO_STYLE): Classify {
+export function opencodeClassify(config: AppConfig, home: string, runModel: RunModel, style: () => Style = () => NO_STYLE): Classify {
   return async (posts, mustFlag) => {
     const prompt = buildTriagePrompt(readContext(home), posts, mustFlag, config.product.name, style());
-    const reply = await runOpencode(prompt, config.models.triage, home);
+    const reply = await runModel(prompt);
     if (!reply.ok) return reply;
     return parseTriageReply(reply.value, new Set(posts.map((p) => p.statusId)));
   };
@@ -48,6 +50,8 @@ export function createTriageService(
   classify: Classify,
   now: () => number = Date.now,
   afterBatch: () => void = () => undefined,
+  /** When the model pool is out of quota on every model (0 = usable). */
+  pausedUntil: () => number = () => 0,
 ): TriageService {
   let running = false;
   let timer: NodeJS.Timeout | null = null;
@@ -77,7 +81,8 @@ export function createTriageService(
     }
   }
 
-  async function processBatch(batch: Candidate[]): Promise<void> {
+  // Returns false when the batch hit a quota pause: its posts stay untriaged for the next drain.
+  async function processBatch(batch: Candidate[]): Promise<boolean> {
     const flags = new Map(batch.flatMap((c) => (c.mustFlag ? [[c.post.statusId, c.mustFlag] as const] : [])));
     const result = await withRetry(() => classify(batch.map((c) => c.post), flags));
     const ids = batch.map((c) => c.post.statusId).join(',');
@@ -85,12 +90,19 @@ export function createTriageService(
       recordReply(batch, result.value);
       log(`triage batch ${ids} ok`);
       afterBatch();
-      return;
+      return true;
+    }
+    if (classifyFailure(result.error) === 'paused') {
+      log(`triage paused until ${new Date(pausedUntil()).toISOString()}: ${batch.length} posts wait (${safeReason(result.error)})`);
+      return false;
     }
     const kind = errorClass(result.error);
     for (const c of batch) saveError(db, c.post.statusId, kind, c.mustFlag, now());
     log(`triage batch ${ids} failed: ${kind} (${safeReason(result.error)})`);
+    return true;
   }
+
+  const isPaused = () => pausedUntil() > now();
 
   async function drain(force: boolean): Promise<void> {
     if (running || !config.models.triage) return;
@@ -98,8 +110,8 @@ export function createTriageService(
     try {
       for (;;) {
         const pending = collectCandidates();
-        if (pending.length === 0 || (pending.length < config.triage.batchSize && !force)) break;
-        await processBatch(pending.slice(0, config.triage.batchSize));
+        if (isPaused() || pending.length === 0 || (pending.length < config.triage.batchSize && !force)) break;
+        if (!(await processBatch(pending.slice(0, config.triage.batchSize)))) break;
       }
     } finally {
       running = false;
@@ -107,12 +119,21 @@ export function createTriageService(
     armTimer();
   }
 
+  // While paused the timer waits for the earliest quota reset; the backlog (re-prefiltered, so posts
+  // past their age limit are skipped) is drained then.
   function armTimer(): void {
-    if (timer || !config.models.triage || listUntriagedPosts(db).length === 0) return;
+    if (!config.models.triage || listUntriagedPosts(db).length === 0) return;
+    // A pause replaces a pending flush timer, which may have been armed before the pause began.
+    if (isPaused()) return schedule(pausedUntil() - now() + PAUSE_SLACK_MS);
+    if (!timer) schedule(FLUSH_DELAY_MS);
+  }
+
+  function schedule(delay: number): void {
+    if (timer) clearTimeout(timer);
     timer = setTimeout(() => {
       timer = null;
       void drain(true);
-    }, FLUSH_DELAY_MS);
+    }, delay);
   }
 
   return {

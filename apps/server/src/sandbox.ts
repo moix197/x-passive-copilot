@@ -23,6 +23,9 @@ const OPENCODE_SANDBOX_CONFIG = {
   autoupdate: false,
   share: 'disabled',
   mcp: {},
+  // Without this every run also asks the small model (google: newest gemini-flash, another quota) for a
+  // session title; the hidden summary agent is disabled for the same reason.
+  agent: { title: { disable: true }, summary: { disable: true } },
   tools: { '*': false, ...Object.fromEntries(DENIED_TOOLS.map((tool) => [tool, false])), read: true },
   permission: {
     '*': 'deny',

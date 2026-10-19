@@ -4,7 +4,7 @@ type: decision
 summary: Posts are prefiltered then triaged in batches via opencode/DeepSeek: stdin-only prompts, deny-all sandbox, in-memory retry; verified on opencode 1.19.3
 tags: [triage, opencode, deepseek, prefilter, subprocess, untrusted-input]
 paths: [apps/server/src/env-file.ts, apps/server/src/llm/opencode-env.ts, apps/server/src/triage/**, apps/server/src/posts.ts, apps/server/src/doctor.ts, apps/extension/src/panel/flagged-view.ts, apps/extension/src/panel/flagged-feeds.ts, apps/server/src/llm/**, apps/server/src/sandbox.ts, fixtures/opencode-run.jsonl]
-related: [capture/passive-capture-invariants, tooling/lean-v1-scaffold]
+related: [capture/passive-capture-invariants, tooling/lean-v1-scaffold, pipeline/model-quota]
 status: active
 updated: 2026-10-19
 ---
@@ -16,7 +16,7 @@ or below `triage.minEngagement` -> stored as `skip_reason`, never sent to the LL
 or `watchlist` author -> `must_flag`, exempt from the engagement floor but NOT from age: mentions
 use `triage.mentionMaxAgeHours` (72), watchlist posts `maxAgeHours` (24); unknown `postedAt` = fresh). Candidates go to opencode (`models.triage`) in
 batches of `triage.batchSize` (15), run immediately at >= 15 pending or 30s after the first pending
-post. Serial (in-memory flag), 3 attempts with exponential backoff (60s on rate-limit text). Restart
+post. Serial (in-memory flag), 3 attempts with backoff, never on quota/rate errors (model fallback + pause: pipeline/model-quota). Restart
 just re-picks untriaged rows (no queue table). Failed batches store a coarse `error` class
 (`timeout`, `rate limit`, `malformed output`, `cli failed`), never raw CLI output.
 

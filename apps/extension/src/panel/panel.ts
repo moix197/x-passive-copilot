@@ -1,6 +1,7 @@
 import { PostListResponseSchema, type FlaggedFeed, type StoredPost } from '@xc/shared/types';
 import { authHeaders, getServerConfig } from '../server-config';
 import { copyText, type DraftCallbacks, type Rating } from './draft-actions';
+import { generateErrorText } from './digest-notice';
 import { mountDigestSection } from './digest-section';
 import { mountDoctorCard } from './doctor-card';
 import { mountFlaggedFeeds, type FlaggedPage } from './flagged-feeds';
@@ -42,13 +43,14 @@ async function getJson(path: string): Promise<unknown> {
   return res.json();
 }
 
-async function postJson(path: string, body?: unknown): Promise<Response> {
+async function postJson(path: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
   const config = await getServerConfig();
   const headers = { ...authHeaders(config), ...(body === undefined ? {} : { 'content-type': 'application/json' }) };
   return fetch(`${config.baseUrl}${path}`, {
     method: 'POST',
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   });
 }
 
@@ -74,12 +76,29 @@ async function selectVersion(statusId: string, versionId: number): Promise<void>
   if (!res.ok) throw new Error(`server ${res.status}`);
 }
 
+// Longer than the server's worst case (3 attempts x 120s opencode timeout + backoff). If it still
+// elapses, the button follows the server's `running` flag and the banner shows the outcome.
+const DIGEST_RUN_TIMEOUT_MS = 8 * 60_000;
+const STILL_RUNNING = 'Still generating on the server; the result shows here when it finishes.';
+
+const numberOrUndefined = (value: unknown) => (typeof value === 'number' ? value : undefined);
+
+async function requestDigestRun(): Promise<Response | null> {
+  try {
+    return await postJson('/v1/digest/run', undefined, AbortSignal.timeout(DIGEST_RUN_TIMEOUT_MS));
+  } catch (e) {
+    if ((e as Error).name === 'TimeoutError') return null;
+    throw e;
+  }
+}
+
 async function generateDigest(): Promise<string | null> {
-  const res = await postJson('/v1/digest/run');
+  const res = await requestDigestRun();
+  if (!res) return STILL_RUNNING;
   if (res.ok) return null;
-  const body = (await res.json().catch(() => ({}))) as { error?: unknown; retryAfterSec?: unknown };
+  const body = (await res.json().catch(() => ({}))) as { error?: unknown; retryAfterSec?: unknown; resumesAt?: unknown };
   const reason = typeof body.error === 'string' ? body.error : `server ${res.status}`;
-  return typeof body.retryAfterSec === 'number' ? `${reason} (try again in ${body.retryAfterSec}s)` : reason;
+  return generateErrorText(reason, numberOrUndefined(body.retryAfterSec), numberOrUndefined(body.resumesAt));
 }
 
 async function requestIdeaPolish(ideaId: string): Promise<void> {

@@ -5,6 +5,8 @@ import { openDb } from './db';
 import { createDigestService, getIdea, readDigestView } from './digest/digest';
 import { createDoctor } from './doctor';
 import { log } from './log';
+import { createModelPool, modelChain } from './llm/model-pool';
+import { runOpencode } from './llm/opencode';
 import { killAllChildren } from './llm/run-cli';
 import { createAutoPolish } from './polish/auto-polish';
 import { remainingSlots } from './polish/daily-cap';
@@ -12,7 +14,7 @@ import { clearStalePolishing } from './polish/drafts-store';
 import { claudeGenerate, createPolishService } from './polish/polish';
 import { prunePosts } from './posts';
 import { createRouter, type RouterHooks } from './router';
-import { createVoiceService, loadStyle, opencodeModel, readVoiceView } from './voice/voice';
+import { createVoiceService, loadStyle, readVoiceView } from './voice/voice';
 import { rulesFromConfig } from './triage/prefilter';
 import { createTriageService, opencodeClassify } from './triage/triage';
 
@@ -47,18 +49,20 @@ function openPreparedDb(home: string): DatabaseSync {
 
 function createServices(db: DatabaseSync, home: string, config: AppConfig) {
   const style = () => loadStyle(db);
-  const model = opencodeModel(config, home);
+  const pool = createModelPool(db, modelChain(config), (prompt, model) => runOpencode(prompt, model, home));
+  const model = pool.run;
   const polish = createPolishService(db, config, claudeGenerate(config, home, style));
   const voice = createVoiceService(db, config, model);
-  const digest = createDigestService(db, config, model);
+  const digest = createDigestService(db, config, model, undefined, Date.now, undefined, pool.pausedUntil);
   const autoPolish = createAutoPolish(db, config, polish);
-  const triage = createTriageService(db, config, opencodeClassify(config, home, style), Date.now, () => void autoPolish.run());
+  const classify = opencodeClassify(config, home, model, style);
+  const triage = createTriageService(db, config, classify, Date.now, () => void autoPolish.run(), pool.pausedUntil);
   const notifyAll = () => {
     triage.notify();
     voice.notify();
     digest.notify();
   };
-  return { polish, notifyAll, runDigestNow: digest.runNow };
+  return { polish, notifyAll, pool, digest };
 }
 
 type Services = ReturnType<typeof createServices>;
@@ -77,12 +81,12 @@ function buildHooks(db: DatabaseSync, home: string, config: AppConfig, services:
       return idea ? polish.requestIdea(ideaId, idea).state : 'unknown';
     },
     voiceView: () => readVoiceView(db, config),
-    digestView: () => readDigestView(db),
-    runDigestNow: services.runDigestNow,
+    digestView: () => readDigestView(db, services.digest.isRunning()),
+    runDigestNow: services.digest.runNow,
     ownHandle: config.handle,
     flagRules: rulesFromConfig(config),
     polishContext: () => ({ threshold: config.autoPolish.threshold, capReached: capReached(db, config) }),
-    doctor: createDoctor({ home, config }),
+    doctor: createDoctor({ home, config, quota: services.pool.status }),
   };
 }
 

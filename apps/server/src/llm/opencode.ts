@@ -30,7 +30,8 @@ const OPENCODE_ERROR = 'opencode error';
 // Provider/CLI error text (e.g. "FreeTierError ... 403"), never model output, so it is safe to log.
 function errorEventMessage(event: z.infer<typeof EventSchema>): string {
   const detail = [event.error?.name, event.error?.data?.message].filter(Boolean).join(': ');
-  return `${OPENCODE_ERROR}: ${detail.slice(0, 200) || 'unknown'}`;
+  // Long enough to keep Gemini's trailing "Please retry in Ns" hint; logs still cap it via safeReason.
+  return `${OPENCODE_ERROR}: ${detail.slice(0, 1000) || 'unknown'}`;
 }
 
 export function parseOpencodeEvents(stdout: string): Result<string> {

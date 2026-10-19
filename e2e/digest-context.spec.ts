@@ -1,4 +1,4 @@
-// @covers apps/server/src/digest/**, apps/server/src/llm/**, apps/server/src/posts.ts, apps/server/src/router.ts, apps/server/src/app.ts, apps/server/src/main.ts, shared/src/config.ts
+// @covers apps/server/src/digest/**, apps/server/src/meta.ts, apps/server/src/llm/**, apps/server/src/posts.ts, apps/server/src/router.ts, apps/server/src/app.ts, apps/server/src/main.ts, shared/src/config.ts
 import { expect, test } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';

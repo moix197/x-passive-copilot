@@ -1,24 +1,27 @@
 import type { DatabaseSync } from 'node:sqlite';
 import {
   DigestTrendSchema,
+  MODEL_FAILURE_KINDS,
   err,
   ok,
   type AppConfig,
   type DigestIdea,
   type DigestTrend,
   type DigestView,
+  type ModelFailureKind,
   type PolishInfo,
   type Result,
 } from '@xc/shared';
 import { z } from 'zod';
 import { extractJson } from '../llm/opencode';
 import { log } from '../log';
+import { getMeta, setMeta } from '../meta';
 import { parseViolations } from '../polish/drafts-store';
 import { ideaDraftKey, type Idea } from '../polish/polish';
 import { readIngestCount } from '../posts';
 import { replaceDashes } from '../text/dashes';
 import { dataJson } from '../triage/prompts';
-import { errorClass, safeReason, withRetry } from '../triage/retry';
+import { classifyFailure, errorClass, safeReason, withRetry } from '../triage/retry';
 import type { RunModel } from '../voice/voice';
 import { ideaToneRules } from './idea-tone';
 import { clipBytes, gatherProductContext, MAX_CONTEXT_BYTES } from './product-context';
@@ -27,6 +30,10 @@ const POST_LIMIT = 60;
 const POST_CHARS = 280;
 const META_BUCKET = 'digest:bucket';
 const META_FAILED = 'digest:failed';
+// Failure kind is stored as its index in MODEL_FAILURE_KINDS (meta values are integers).
+const META_FAILED_KIND = 'digest:failed-kind';
+const META_FAILED_AT = 'digest:failed-at';
+const META_RESUMES_AT = 'digest:resumes-at';
 const IDEA_ID = /^(\d{1,9})-(\d)$/;
 
 export interface DigestContent {
@@ -105,18 +112,6 @@ function recentPosts(db: DatabaseSync): DigestPost[] {
   return rows.map((r) => ({ statusId: r.status_id, author: r.author_handle, text: r.text.slice(0, POST_CHARS) }));
 }
 
-function getMeta(db: DatabaseSync, key: string): number {
-  const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(key) as { value: number } | undefined;
-  return row?.value ?? 0;
-}
-
-function setMeta(db: DatabaseSync, key: string, value: number): void {
-  db.prepare('INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(
-    key,
-    value,
-  );
-}
-
 function saveDigest(db: DatabaseSync, bucket: number, content: DigestContent, now: number): void {
   db.prepare('INSERT OR IGNORE INTO digests (bucket, trends, ideas, created_at) VALUES (?, ?, ?, ?)').run(
     bucket,
@@ -163,14 +158,31 @@ function toIdeas(db: DatabaseSync, row: DigestRow): DigestIdea[] {
   });
 }
 
-export function readDigestView(db: DatabaseSync): DigestView {
-  const failed = getMeta(db, META_FAILED) === 1;
+function recordFailure(db: DatabaseSync, kind: ModelFailureKind, at: number, resumesAt: number): void {
+  setMeta(db, META_FAILED, 1);
+  setMeta(db, META_FAILED_KIND, MODEL_FAILURE_KINDS.indexOf(kind));
+  setMeta(db, META_FAILED_AT, at);
+  setMeta(db, META_RESUMES_AT, resumesAt);
+}
+
+function readFailure(db: DatabaseSync): DigestView['failure'] {
+  if (getMeta(db, META_FAILED) !== 1) return null;
+  const kind = MODEL_FAILURE_KINDS[getMeta(db, META_FAILED_KIND)];
+  // Failures recorded before the kind was stored have no time; their cause is unknown.
+  const at = getMeta(db, META_FAILED_AT);
+  if (!kind || at === 0) return null;
+  const resumesAt = getMeta(db, META_RESUMES_AT);
+  return { kind, at, resumesAt: resumesAt > 0 ? resumesAt : null };
+}
+
+export function readDigestView(db: DatabaseSync, running = false): DigestView {
+  const status = { failed: getMeta(db, META_FAILED) === 1, failure: readFailure(db), running };
   const row = db.prepare('SELECT id, trends, ideas, created_at FROM digests ORDER BY id DESC LIMIT 1').get() as unknown as
     | DigestRow
     | undefined;
-  if (!row) return { digest: null, failed };
+  if (!row) return { digest: null, ...status };
   const trends = parseStored(row.trends, StoredTrendsSchema);
-  return { digest: { createdAt: row.created_at, trends, ideas: toIdeas(db, row) }, failed };
+  return { digest: { createdAt: row.created_at, trends, ideas: toIdeas(db, row) }, ...status };
 }
 
 export function getIdea(db: DatabaseSync, ideaId: string): Idea | null {
@@ -190,7 +202,8 @@ export type ManualDigestOutcome =
   | { status: 'unavailable' }
   | { status: 'too_few'; needed: number }
   | { status: 'throttled'; retryAfterSec: number }
-  | { status: 'failed'; reason: string };
+  | { status: 'paused'; until: number }
+  | { status: 'failed'; kind: ModelFailureKind; resumesAt: number | null };
 
 export function manualRetryAfterSec(lastRunAt: number | null, now: number, minIntervalMs: number): number {
   if (lastRunAt === null) return 0;
@@ -201,6 +214,7 @@ export interface DigestService {
   notify(): void;
   run(): Promise<void>;
   runNow(): Promise<ManualDigestOutcome>;
+  isRunning(): boolean;
 }
 
 export function createDigestService(
@@ -210,6 +224,8 @@ export function createDigestService(
   productContext: () => Promise<string> = () => gatherProductContext(config),
   now: () => number = Date.now,
   wait?: (ms: number) => Promise<void>,
+  /** When the model pool is out of quota on every model (0 = usable). */
+  pausedUntil: () => number = () => 0,
 ): DigestService {
   let running = false;
   let lastManualAt: number | null = null;
@@ -224,17 +240,35 @@ export function createDigestService(
     }, wait);
   }
 
+  function failWith(error: string, label: string): { kind: ModelFailureKind; resumesAt: number | null } {
+    log(`${label} failed: ${errorClass(error)} (${safeReason(error)})`);
+    const kind = classifyFailure(error);
+    const resumesAt = pausedUntil();
+    recordFailure(db, kind, now(), resumesAt);
+    return { kind, resumesAt: resumesAt > 0 ? resumesAt : null };
+  }
+
+  // A paused run (no quota on any model) is not spent: its bucket is released so it fires after the pause.
+  async function runBucket(bucket: number, previous: number): Promise<void> {
+    const result = await generate();
+    if (result.ok) {
+      saveDigest(db, bucket, result.value, now());
+      setMeta(db, META_FAILED, 0);
+      return;
+    }
+    const { kind } = failWith(result.error, `digest ${bucket}`);
+    if (kind === 'paused') setMeta(db, META_BUCKET, previous);
+  }
+
   async function run(): Promise<void> {
-    if (running || !config.models.triage) return;
-    const bucket = bucketToRun(readIngestCount(db, 'nonOwn'), config.digest.everyNPosts, getMeta(db, META_BUCKET));
+    if (running || !config.models.triage || pausedUntil() > now()) return;
+    const previous = getMeta(db, META_BUCKET);
+    const bucket = bucketToRun(readIngestCount(db, 'nonOwn'), config.digest.everyNPosts, previous);
     if (bucket === null) return;
     running = true;
     setMeta(db, META_BUCKET, bucket);
     try {
-      const result = await generate();
-      if (result.ok) saveDigest(db, bucket, result.value, now());
-      else log(`digest ${bucket} failed: ${errorClass(result.error)} (${safeReason(result.error)})`);
-      setMeta(db, META_FAILED, result.ok ? 0 : 1);
+      await runBucket(bucket, previous);
     } finally {
       running = false;
     }
@@ -243,6 +277,8 @@ export function createDigestService(
   function manualRefusal(): ManualDigestOutcome | null {
     if (!config.models.triage) return { status: 'unavailable' };
     if (running) return { status: 'busy' };
+    const until = pausedUntil();
+    if (until > now()) return { status: 'paused', until };
     const retryAfterSec = manualRetryAfterSec(lastManualAt, now(), config.digest.manualMinIntervalSec * 1000);
     if (retryAfterSec > 0) return { status: 'throttled', retryAfterSec };
     if (recentPosts(db).length < MIN_MANUAL_POSTS) return { status: 'too_few', needed: MIN_MANUAL_POSTS };
@@ -257,10 +293,7 @@ export function createDigestService(
     lastManualAt = now();
     try {
       const result = await generate();
-      if (!result.ok) {
-        log(`manual digest failed: ${errorClass(result.error)} (${safeReason(result.error)})`);
-        return { status: 'failed', reason: errorClass(result.error) };
-      }
+      if (!result.ok) return { status: 'failed', ...failWith(result.error, 'manual digest') };
       saveDigest(db, -now(), result.value, now());
       setMeta(db, META_FAILED, 0);
       return { status: 'ok' };
@@ -269,5 +302,5 @@ export function createDigestService(
     }
   }
 
-  return { notify: () => void run(), run, runNow };
+  return { notify: () => void run(), run, runNow, isRunning: () => running };
 }

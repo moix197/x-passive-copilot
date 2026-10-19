@@ -1,4 +1,5 @@
 import { DigestViewSchema, type DigestIdea, type DigestTrend, type DigestView } from '@xc/shared/types';
+import { refreshFailedText } from './digest-notice';
 import { copyButton, copyText, renderDraftActions, type DraftCallbacks } from './draft-actions';
 import { element } from './dom';
 import { mountPolled } from './voice-tab';
@@ -69,8 +70,14 @@ function renderIdea(idea: DigestIdea, handlers: DigestHandlers): HTMLElement {
   return row;
 }
 
+function noticeLine(text: string): HTMLElement {
+  const note = element('p', text, 'needs-edit');
+  note.dataset.testid = 'digest-failed';
+  return note;
+}
+
 export function renderDigest(view: DigestView, handlers: DigestHandlers): HTMLElement[] {
-  const note = view.failed ? [element('p', 'Last refresh failed; showing the previous digest.', 'needs-edit')] : [];
+  const note = view.failed ? [noticeLine(refreshFailedText(view))] : [];
   if (!view.digest) {
     return [...note, element('p', 'No digest yet. It refreshes after enough new posts are captured.', 'status')];
   }
@@ -83,7 +90,13 @@ export function renderDigest(view: DigestView, handlers: DigestHandlers): HTMLEl
   ];
 }
 
-function generateControls(onGenerate: DigestHandlers['onGenerate']): HTMLElement {
+interface GenerateControls {
+  root: HTMLElement;
+  /** Server-side state from each poll, so the button stays right after a remount or a lost request. */
+  setServerRunning: (running: boolean) => void;
+}
+
+function generateControls(onGenerate: DigestHandlers['onGenerate']): GenerateControls {
   const wrap = document.createElement('div');
   wrap.className = 'digest-controls';
   const button = document.createElement('button');
@@ -93,28 +106,46 @@ function generateControls(onGenerate: DigestHandlers['onGenerate']): HTMLElement
   const message = element('p', '', 'needs-edit');
   message.dataset.testid = 'digest-generate-error';
   message.setAttribute('role', 'alert');
+  let requesting = false;
+  let serverRunning = false;
+  const paint = () => {
+    const busy = requesting || serverRunning;
+    button.disabled = busy;
+    button.textContent = busy ? 'Generating...' : 'Generate new ideas';
+  };
   button.addEventListener('click', () => {
-    button.disabled = true;
-    button.textContent = 'Generating...';
+    requesting = true;
     message.textContent = '';
     button.title = '';
+    paint();
     void onGenerate()
       .catch(() => 'Server offline.')
       .then((error) => {
+        requesting = false;
         message.textContent = error ?? '';
         button.title = error ?? '';
-        button.disabled = false;
-        button.textContent = 'Generate new ideas';
+        paint();
       });
   });
   wrap.append(button, message);
-  return wrap;
+  return {
+    root: wrap,
+    setServerRunning: (running) => {
+      serverRunning = running;
+      paint();
+    },
+  };
 }
 
 export function mountDigestSection(root: HTMLElement, handlers: DigestHandlers): () => void {
-  const load = async () => DigestViewSchema.parse(await handlers.load());
+  const controls = generateControls(handlers.onGenerate);
+  const load = async () => {
+    const view = DigestViewSchema.parse(await handlers.load());
+    controls.setServerRunning(view.running);
+    return view;
+  };
   const polled = document.createElement('div');
-  root.replaceChildren(generateControls(handlers.onGenerate), polled);
+  root.replaceChildren(controls.root, polled);
   const editing = () => polled.querySelector('textarea') !== null;
   return mountPolled(polled, load, (view) => renderDigest(view, handlers), editing);
 }

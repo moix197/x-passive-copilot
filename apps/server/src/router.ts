@@ -4,6 +4,7 @@ import {
   FLAGGED_FEEDS,
   FeedbackRequestSchema,
   RepliedRequestSchema,
+  describeModelFailure,
   type FlaggedFeed,
   PostBatchSchema,
   StyleNotesSchema,
@@ -185,8 +186,13 @@ function postDigestRun(runNow: () => Promise<ManualDigestOutcome>): Handler {
       case 'throttled':
         res.setHeader('retry-after', String(outcome.retryAfterSec));
         return sendJson(res, 429, { error: 'Please wait before generating again', retryAfterSec: outcome.retryAfterSec });
+      case 'paused':
+        return sendJson(res, 503, { error: describeModelFailure('paused'), resumesAt: outcome.until });
       case 'failed':
-        return sendJson(res, 502, { error: `Digest generation failed: ${outcome.reason}` });
+        return sendJson(res, 502, {
+          error: `Digest generation failed: ${describeModelFailure(outcome.kind)}`,
+          ...(outcome.resumesAt ? { resumesAt: outcome.resumesAt } : {}),
+        });
     }
   };
 }
