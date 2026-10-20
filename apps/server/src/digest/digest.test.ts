@@ -142,6 +142,8 @@ describe('buildDigestPrompt', () => {
     expect(prompt).toMatch(/Good \(tone example only[^\n]*\nBad \(a pitch\): "[^"]*Check out Acme today\."/);
     expect(prompt).toContain('crypto traders and the community around the LONG ecosystem and Robinhood Chain');
     expect(prompt).toContain('NO ENGINEERING TALK');
+    expect(prompt).toContain('KIND AND HUMBLE: never insult, mock or label groups of people');
+    expect(prompt).toContain('NO INVENTED FACTS: never state market data, metrics or current conditions');
     expect(prompt).toContain('INTERNAL SIGNALS');
     const withHistory = buildDigestPrompt('Acme', '', [], ['old idea']);
     expect(withHistory).toContain('<previous-ideas>\n["old idea"]\n</previous-ideas>');

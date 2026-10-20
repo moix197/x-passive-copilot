@@ -68,6 +68,14 @@ describe('recordFeedback', () => {
     expect(listFeedbackExamples(db).negatives).toEqual(['to the moon, #a #b']);
   });
 
+  it('drops stored positives that break a newer guard rule, keeping their mentions and urls', () => {
+    const db = freshDb();
+    const insert = db.prepare("INSERT INTO examples (draft_id, text, polarity, created_at) VALUES (?, ?, 'positive', ?)");
+    insert.run('a', 'chart watching is for tourists anyway', 1);
+    insert.run('b', 'curious what @longdotxyz thinks, see longdot.xyz', 2);
+    expect(listFeedbackExamples(db).positives).toEqual(['curious what @longdotxyz thinks, see longdot.xyz']);
+  });
+
   it('404s for an unknown draft', () => {
     expect(recordFeedback(freshDb(), '999', { kind: 'up' }, 1)).toMatchObject({ ok: false, status: 404 });
   });

@@ -41,3 +41,22 @@ describe('reply tone rules', () => {
     expect(systemAsset).toContain('Follow the tone rules given in the input');
   });
 });
+
+describe('reply tone rules content', () => {
+  const rules = buildTriagePrompt('', [post], new Map(), 'Acme');
+
+  it('ask for short, humble, kind, on-topic replies without invented facts', () => {
+    expect(rules).toContain('SHORT: 1 or 2 sentences, conversational, about 200 characters at most.');
+    expect(rules).toContain('HUMBLE: talk peer to peer. Never lecture');
+    expect(rules).toContain('KIND: never insult, mock or label groups of people ("tourists", "normies", "paper hands"');
+    expect(rules).toContain('ON TOPIC: stay on the post\'s own topic. No unrelated macro, regulation or market tangents.');
+    expect(rules).toContain('NO INVENTED FACTS: never state market data, metrics, prices, volumes, liquidity or current conditions\nunless they appear in the post itself.');
+    expect(rules).toContain('"roughDraft": string (max 200 chars, 1 or 2 sentences');
+  });
+
+  it('are echoed by the shared system asset', () => {
+    expect(systemAsset).toContain('A reply is 1 or 2 short sentences (about 200 characters), humble and peer to peer, never a lecture.');
+    expect(systemAsset).toContain('Never insult or label groups of people and never call anyone out.');
+    expect(systemAsset).toContain('Never state market data, metrics or current conditions that are not in the input.');
+  });
+});

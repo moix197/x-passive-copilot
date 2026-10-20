@@ -1,3 +1,5 @@
+import { REPLY_TARGET_LENGTH } from '../triage/reply-tone';
+
 export const MAX_REPLY_LENGTH = 280;
 const URL_LENGTH = 23;
 
@@ -24,6 +26,8 @@ const PRICE_PATTERNS = [
   /\b(?:going|headed|heading) to \$?\d/i,
   /\bto the moon\b/i,
 ];
+// Labels that put down a group of people; replies stay kind and never call anyone out.
+const OTHERING_PATTERN = /\b(?:tourists?|normies?|paper[- ]?hand(?:s|ed)?|jeets?|ngmi)\b/gi;
 const ADVICE_PATTERN =
   /\b(?:you should|you must|i recommend|financial advice|nfa|dyor|go long|go short|(?:should|must) (?:buy|sell))\b/gi;
 
@@ -88,6 +92,7 @@ export function checkReply(text: string, source: string): Violation[] {
     ...matches('hype-word', HYPE_PATTERN, text),
     ...pricePredictions(text),
     ...matches('advice', ADVICE_PATTERN, text),
+    ...matches('othering', OTHERING_PATTERN, text),
     ...foreignUrls(text, source),
     ...foreignMentions(text, source),
   ];
@@ -99,6 +104,12 @@ const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/
 export function productMention(text: string, source: string, product: string): Violation[] {
   const pattern = new RegExp(`(?<![\\w])${escapeRegExp(product)}(?![\\w])`, 'i');
   return pattern.test(text) && !pattern.test(source) ? [{ rule: 'product-mention', detail: product }] : [];
+}
+
+/** A reply between the soft target and the hard limit reads like an essay; flagged, not blocked. */
+export function wordyReply(text: string): Violation[] {
+  const length = replyLength(text);
+  return length > REPLY_TARGET_LENGTH && length <= MAX_REPLY_LENGTH ? [{ rule: 'wordy', detail: `${length} chars` }] : [];
 }
 
 export function ruleNames(violations: Violation[]): string[] {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkReply, productMention, replyLength } from './guard';
+import { checkReply, productMention, replyLength, wordyReply } from './guard';
 
 const rules = (text: string, source = 'a post about tools') => checkReply(text, source).map((v) => v.rule);
 
@@ -92,5 +92,22 @@ describe('productMention', () => {
     expect(productMention('Spacehub does that', 'anyone tried Spacehub?', 'Spacehub')).toEqual([]);
     expect(productMention('a spacehubby word', 'x', 'Spacehub')).toEqual([]);
     expect(productMention('Acme (beta) rocks', 'x', 'Acme (beta)')).toHaveLength(1);
+  });
+});
+
+describe('othering', () => {
+  it('flags labels that put down a group of people', () => {
+    expect(rules('chart watching is for tourists anyway')).toEqual(['othering']);
+    expect(rules('even the paper hands and normies')).toEqual(['othering', 'othering']);
+    expect(rules('Paper-handed jeets')).toEqual(['othering', 'othering']);
+    expect(rules('tourism on chain is growing')).toEqual([]);
+  });
+});
+
+describe('wordyReply', () => {
+  it('flags replies over the 200 char target up to the hard limit, which too-long already covers', () => {
+    expect(wordyReply('a'.repeat(200))).toEqual([]);
+    expect(wordyReply('a'.repeat(201))).toEqual([{ rule: 'wordy', detail: '201 chars' }]);
+    expect(wordyReply('a'.repeat(281))).toEqual([]);
   });
 });

@@ -20,7 +20,7 @@ import { replaceDashes } from '../text/dashes';
 import { ideaToneRules } from '../digest/idea-tone';
 import { replyToneRules } from '../triage/reply-tone';
 import { ensureClaudeReplySandbox, REPLY_VOICE_FILE } from '../sandbox';
-import { checkReply, productMention, ruleNames, type Violation } from './guard';
+import { checkReply, productMention, ruleNames, wordyReply, type Violation } from './guard';
 
 export interface Idea {
   text: string;
@@ -129,8 +129,8 @@ export function claudeGenerate(config: AppConfig, home: string, style: () => Sty
 
 function violationsFor(text: string, subject: Subject, product: string): Violation[] {
   const source = sourceOf(subject);
-  const pitch = subject.kind === 'post' ? productMention(text, source, product) : [];
-  return [...checkReply(text, source), ...pitch];
+  const replyOnly = subject.kind === 'post' ? [...productMention(text, source, product), ...wordyReply(text)] : [];
+  return [...checkReply(text, source), ...replyOnly];
 }
 
 function configError(config: AppConfig): string | null {

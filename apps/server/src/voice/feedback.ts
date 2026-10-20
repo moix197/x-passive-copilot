@@ -13,12 +13,16 @@ interface ExampleRow {
   polarity: 'positive' | 'negative';
 }
 
+// Positives saved before a guard rule existed must not keep teaching that tone; the text is its own
+// source so URL and mention rules never drop an example.
+const passesOwnGuard = (text: string): boolean => checkReply(text, text).length === 0;
+
 export function listFeedbackExamples(db: DatabaseSync): { positives: string[]; negatives: string[] } {
   const rows = db
     .prepare('SELECT text, polarity FROM examples ORDER BY created_at DESC, id DESC')
     .all() as unknown as ExampleRow[];
   const textsOf = (polarity: ExampleRow['polarity']) => rows.filter((r) => r.polarity === polarity).map((r) => r.text);
-  return { positives: textsOf('positive'), negatives: textsOf('negative') };
+  return { positives: textsOf('positive').filter(passesOwnGuard), negatives: textsOf('negative') };
 }
 
 function readDraftText(db: DatabaseSync, draftId: string): string | null {
