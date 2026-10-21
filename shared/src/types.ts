@@ -270,12 +270,42 @@ export const DigestTrendSchema = z.object({
 });
 export type DigestTrend = z.infer<typeof DigestTrendSchema>;
 
-export const DigestIdeaSchema = z.object({
-  id: z.string().regex(/^\d{1,9}-\d$/),
+/** spacehub: build in public; eco: ecosystem/crypto/trading take; inspired: original post on a seen theme; quote: quote-post comment. */
+export const IDEA_KINDS = ['spacehub', 'eco', 'inspired', 'quote'] as const;
+export type IdeaKind = (typeof IDEA_KINDS)[number];
+export const IdeaKindSchema = z.enum(IDEA_KINDS);
+
+// Only x.com status links: the panel and the compose popover render this URL as a link.
+export const IDEA_SOURCE_URL = /^https:\/\/x\.com\/[A-Za-z0-9_]{1,15}\/status\/\d{1,30}$/;
+
+/** The captured post an inspired or quote idea comes from. */
+export const IdeaSourceSchema = z.object({
+  statusId: capturedStatusId,
+  url: z.string().regex(IDEA_SOURCE_URL),
+  authorHandle: xHandle,
+  excerpt: z.string().max(300),
+});
+export type IdeaSource = z.infer<typeof IdeaSourceSchema>;
+
+export const MAX_IDEA_SOURCE_IDS = 8;
+
+/** An idea as stored in digests.ideas; rows written before kinds existed read as spacehub. */
+export const StoredIdeaSchema = z.object({
   text: z.string().max(280),
   feature: z.string().max(120),
+  kind: IdeaKindSchema.default('spacehub'),
+  source: IdeaSourceSchema.nullable().default(null),
+  sourceIds: z.array(capturedStatusId).max(MAX_IDEA_SOURCE_IDS).default([]),
+});
+export type StoredIdea = z.infer<typeof StoredIdeaSchema>;
+
+export const DigestIdeaSchema = StoredIdeaSchema.extend({
+  id: z.string().regex(/^\d{1,9}-\d$/),
   polish: PolishInfoSchema.nullable(),
 });
+
+/** POST /v1/ideas/generate body; no kind means the mixed rotation. */
+export const IdeaGenerateRequestSchema = z.object({ kind: IdeaKindSchema.optional() });
 export type DigestIdea = z.infer<typeof DigestIdeaSchema>;
 
 export const DIGEST_STEP_IDS = ['collect', 'context', 'model', 'save'] as const;
@@ -342,6 +372,8 @@ export type DigestView = z.infer<typeof DigestViewSchema>;
 export const ComposeIdeasMessageSchema = z.object({
   type: z.literal('compose-ideas'),
   action: z.enum(['list', 'generate']),
+  /** Generate only: the kind asked for; none means the mixed rotation. */
+  kind: IdeaKindSchema.optional(),
 });
 export type ComposeIdeasMessage = z.infer<typeof ComposeIdeasMessageSchema>;
 

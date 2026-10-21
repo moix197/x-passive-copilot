@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DigestIdea, DigestView } from '@xc/shared/types';
 import { MAX_LISTED_IDEAS, mergeIdeas, viewIdeas } from './idea-list';
 
-const idea = (id: string, text = `idea ${id}`): DigestIdea => ({ id, text, feature: 'f', polish: null });
+const idea = (id: string, text = `idea ${id}`): DigestIdea => ({ id, text, feature: 'f', kind: 'spacehub', source: null, sourceIds: [], polish: null });
 
 describe('viewIdeas', () => {
   it('lists the latest digest ideas, then the earlier ones', () => {

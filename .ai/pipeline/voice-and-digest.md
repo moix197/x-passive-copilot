@@ -4,7 +4,7 @@ type: decision
 summary: Own posts (author == handle) feed a voice profile and style examples injected into triage/polish prompts; a digest runs every N new non-own posts
 tags: [voice, feedback, examples, digest, ideas]
 paths: [apps/extension/src/panel/digest-section.ts, apps/server/src/text/**, apps/server/src/voice/**, apps/server/src/digest/**, apps/server/src/digest/idea-tone.ts, apps/server/src/triage/prompts.ts, apps/server/src/polish/polish.ts]
-related: [capture/compose-ideas, pipeline/triage-flow, pipeline/polish-flow, pipeline/digest-product-context, pipeline/reply-tone, security/llm-subprocess-sandbox, pipeline/model-quota]
+related: [capture/compose-ideas, pipeline/idea-kinds, pipeline/triage-flow, pipeline/polish-flow, pipeline/digest-product-context, pipeline/reply-tone, security/llm-subprocess-sandbox, pipeline/model-quota]
 status: active
 updated: 2026-10-21
 ---
@@ -25,7 +25,7 @@ and seeded from live rows on first open, because the 30-day prune shrinks `posts
 exempt from the prune (voice samples). Digest: bucket = floor(ingest:non_own / everyNPosts); the bucket is stored
 in `meta` before the model runs so a bucket never fires twice; unknown statusIds are dropped; failure
 keeps the previous digest and sets `digest:failed`. Manual run: `POST /v1/digest/run` (`runNow`) shares the `running` flag with the automatic run (busy -> 409), saves with a unique negative bucket (never touches `digest:bucket`), needs >= 3 recent non-own posts (422), is throttled by `digest.manualMinIntervalSec` (429 + Retry-After, in-memory), answers 503 `{resumesAt}` while the model pool is paused, and on failure returns 502 (plain-words cause) keeping the previous digest. Every failure (automatic or manual) sets `digest:failed` plus `digest:failed-kind` (index into `MODEL_FAILURE_KINDS`), `-at`, `-resumes-at`; `GET /v1/digest` returns them as `failure` with `running` (the shared flag). The panel banner says why (`describeModelFailure`) and when the shown digest succeeded; the Generate button is disabled while `running` is true on any poll, so a tab switch or a lost request never leaves it idle mid-run; its fetch aborts after 8 min (server worst case ~6 min). Rough-draft feedback uses key `rough-<statusId>` (text from `triage.rough_draft`, guard source = the post). Idea polish reuses the polish service with a
-`idea-<digestId>-<n>` draft key and an empty guard source (any URL/@mention is a violation).
+`idea-<digestId>-<n>` draft key; its guard source is empty, or the source post (excerpt + @author) for inspired/quote ideas (pipeline/idea-kinds), so any other URL/@mention is a violation.
 
 **Earlier ideas:** each digest stores exactly 3 ideas and `GET /v1/digest` used to return only the latest, so the panel never showed more than 3. `DigestView.earlier` now carries the previous digests (newest first, `MAX_EARLIER_DIGESTS` = 9, i.e. last 10 digests in total, each with its `createdAt` and ideas incl. polish state). The Digest tab shows a "Show earlier ideas (n)" toggle (`digest-show-more`); its expanded state lives in `mountDigestSection` so it survives polling; earlier ideas reuse `renderIdea` (copy, polish, draft actions).
 

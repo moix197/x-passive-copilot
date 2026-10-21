@@ -1,22 +1,34 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { AppConfig, DigestIdea, ModelFailureKind, Result } from '@xc/shared';
+import type { AppConfig, DigestIdea, IdeaKind, ModelFailureKind, Result } from '@xc/shared';
 import { log } from '../log';
 import type { Idea } from '../polish/polish';
 import { classifyFailure, errorClass, safeReason, sleep, withRetry } from '../triage/retry';
 import type { RunModel } from '../voice/voice';
-import { buildSingleIdeaPrompt, parseSingleIdea, recentIdeaTexts, recentPosts, saveSingleIdea } from './digest';
+import {
+  buildSingleIdeaPrompt,
+  offeredSources,
+  parseSingleIdea,
+  recentIdeaKinds,
+  recentIdeaTexts,
+  recentPosts,
+  saveSingleIdea,
+} from './digest';
+import { needsSource, pickNextKind } from './idea-kind';
 import { gatherProductContext } from './product-context';
+import { freshSourcePosts, toPromptSource, type SourceCandidate } from './source-posts';
 
 export type SingleIdeaOutcome =
   | { status: 'ok'; idea: DigestIdea }
   | { status: 'busy' }
   | { status: 'unavailable' }
+  /** An inspired or quote idea was asked for, but no fresh, unquoted captured post exists. */
+  | { status: 'no_source' }
   | { status: 'paused'; until: number }
   | { status: 'failed'; kind: ModelFailureKind; resumesAt: number | null };
 
 export interface SingleIdeaService {
-  /** One new idea from the digest prompt and tone, saved where the panel Digest tab reads it. */
-  generate(): Promise<SingleIdeaOutcome>;
+  /** One new idea of the given kind (none: the mixed rotation), saved where the panel Digest tab reads it. */
+  generate(kind?: IdeaKind): Promise<SingleIdeaOutcome>;
 }
 
 export interface SingleIdeaDeps {
@@ -25,6 +37,11 @@ export interface SingleIdeaDeps {
   wait?: (ms: number) => Promise<void>;
   /** When the model pool is out of quota on every model (0 = usable). */
   pausedUntil?: () => number;
+}
+
+interface IdeaPlan {
+  kind: IdeaKind;
+  sources: SourceCandidate[];
 }
 
 export function createSingleIdeaService(db: DatabaseSync, config: AppConfig, runModel: RunModel, deps: SingleIdeaDeps = {}): SingleIdeaService {
@@ -38,11 +55,21 @@ export function createSingleIdeaService(db: DatabaseSync, config: AppConfig, run
     return until > now() ? { status: 'paused', until } : null;
   }
 
-  async function ask(): Promise<Result<Idea>> {
-    const prompt = buildSingleIdeaPrompt(config.product.name, await productContext(), recentPosts(db), recentIdeaTexts(db));
+  // Source posts go into the prompt only for the kinds that draw on them.
+  function plan(requested: IdeaKind | undefined): IdeaPlan | null {
+    const fresh = freshSourcePosts(db, config.triage.maxAgeHours, now());
+    const kind = requested ?? pickNextKind(recentIdeaKinds(db), fresh.length > 0);
+    if (!needsSource(kind)) return { kind, sources: [] };
+    return fresh.length > 0 ? { kind, sources: fresh } : null;
+  }
+
+  async function ask({ kind, sources }: IdeaPlan): Promise<Result<Idea>> {
+    const inputs = { kind, sources: sources.map(toPromptSource) };
+    const prompt = buildSingleIdeaPrompt(config.product.name, await productContext(), recentPosts(db), recentIdeaTexts(db), inputs);
+    const offered = offeredSources(sources);
     return withRetry(async () => {
       const out = await runModel(prompt);
-      return out.ok ? parseSingleIdea(out.value) : out;
+      return out.ok ? parseSingleIdea(out.value, kind, offered) : out;
     }, wait);
   }
 
@@ -52,12 +79,14 @@ export function createSingleIdeaService(db: DatabaseSync, config: AppConfig, run
     return { status: 'failed', kind: classifyFailure(error), resumesAt: resumesAt > 0 ? resumesAt : null };
   }
 
-  async function generate(): Promise<SingleIdeaOutcome> {
+  async function generate(requested?: IdeaKind): Promise<SingleIdeaOutcome> {
     const refused = refusal();
     if (refused) return refused;
+    const planned = plan(requested);
+    if (!planned) return { status: 'no_source' };
     running = true;
     try {
-      const result = await ask();
+      const result = await ask(planned);
       return result.ok ? { status: 'ok', idea: saveSingleIdea(db, result.value, now()) } : failed(result.error);
     } finally {
       running = false;

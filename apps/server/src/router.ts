@@ -4,6 +4,7 @@ import {
   FLAGGED_FEEDS,
   MAX_INLINE_IDS,
   FeedbackRequestSchema,
+  IdeaGenerateRequestSchema,
   RepliedRequestSchema,
   describeModelFailure,
   type FlaggedFeed,
@@ -14,6 +15,7 @@ import {
   type DigestView,
   type DoctorReport,
   type HealthResponse,
+  type IdeaKind,
   type VoiceView,
 } from '@xc/shared';
 import { isAuthorized } from './auth';
@@ -272,14 +274,21 @@ function postDigestRun(runNow: () => Promise<ManualDigestOutcome>): Handler {
   };
 }
 
-function postIdeaGenerate(generate: () => Promise<SingleIdeaOutcome>): Handler {
-  return async (_req, res) => {
-    const outcome = await generate();
+// An empty body asks for the mixed rotation.
+function postIdeaGenerate(generate: (kind?: IdeaKind) => Promise<SingleIdeaOutcome>): Handler {
+  return async (req, res) => {
+    const raw = await readBody(req);
+    if (raw === null) return sendJson(res, 413, { error: 'body too large' });
+    const request = IdeaGenerateRequestSchema.safeParse(raw.trim() === '' ? {} : parseJson(raw));
+    if (!request.success) return sendJson(res, 400, { error: 'invalid idea request' });
+    const outcome = await generate(request.data.kind);
     switch (outcome.status) {
       case 'ok':
         return sendJson(res, 200, { idea: outcome.idea });
       case 'busy':
         return sendJson(res, 409, { error: 'An idea is already being generated' });
+      case 'no_source':
+        return sendJson(res, 422, { error: 'No fresh captured posts to draw from yet' });
       case 'unavailable':
         return sendJson(res, 503, { error: 'No triage model configured' });
       case 'paused':
@@ -315,7 +324,7 @@ export interface RouterHooks {
   voiceView: () => VoiceView;
   digestView: () => DigestView;
   runDigestNow: () => Promise<ManualDigestOutcome>;
-  generateIdea: () => Promise<SingleIdeaOutcome>;
+  generateIdea: (kind?: IdeaKind) => Promise<SingleIdeaOutcome>;
   ownHandle: string;
   flagRules: PrefilterRules;
 }

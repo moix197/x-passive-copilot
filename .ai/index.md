@@ -8,6 +8,6 @@ Read protocol: pick the domain(s) matching your task, open that domain's `index.
 | --- | --- | --- |
 | [architecture](architecture/index.md) | Process model and trust boundaries between the extension, the local server and Chrome | 1 |
 | [capture](capture/index.md) | Passive x.com capture (content script), ban-risk rules, selectors | 3 |
-| [pipeline](pipeline/index.md) | Server-side post pipeline (prefilter, LLM triage, later polish/voice/digest) | 9 |
+| [pipeline](pipeline/index.md) | Server-side post pipeline (prefilter, LLM triage, later polish/voice/digest) | 10 |
 | [security](security/index.md) | Untrusted-input containment for LLM subprocesses (argv, env, sandboxes) | 1 |
 | [tooling](tooling/index.md) | Dev tooling, agent workflow, knowledge base mechanics | 3 |

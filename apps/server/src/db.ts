@@ -108,6 +108,19 @@ function backfillDraftVersions(db: DatabaseSync): void {
       AND status_id NOT IN (SELECT draft_key FROM draft_versions)`);
 }
 
+// Ideas saved before kinds existed were all build-in-public ones.
+function backfillIdeaKinds(db: DatabaseSync): void {
+  const rows = db
+    .prepare(`SELECT id, ideas FROM digests WHERE json_valid(ideas) AND ideas != '[]' AND ideas NOT LIKE '%"kind"%'`)
+    .all() as unknown as { id: number; ideas: string }[];
+  const update = db.prepare('UPDATE digests SET ideas = ? WHERE id = ?');
+  for (const row of rows) {
+    const ideas = JSON.parse(row.ideas) as unknown;
+    if (!Array.isArray(ideas)) continue;
+    update.run(JSON.stringify(ideas.map((idea: object) => ({ kind: 'spacehub', ...idea }))), row.id);
+  }
+}
+
 export function openDb(home: string): DatabaseSync {
   mkdirSync(home, { recursive: true });
   const db = new DatabaseSync(join(home, 'posts.db'));
@@ -116,6 +129,7 @@ export function openDb(home: string): DatabaseSync {
   db.exec(SCHEMA);
   addMissingColumns(db);
   backfillDraftVersions(db);
+  backfillIdeaKinds(db);
   seedIngestCounters(db);
   return db;
 }

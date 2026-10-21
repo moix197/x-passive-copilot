@@ -49,7 +49,7 @@ function onWatchlist(authorHandle: string, watchlist: string[]): boolean {
   return watchlist.some((entry) => entry.replace(/^@/, '').toLowerCase() === author);
 }
 
-function ageHours(postedAt: string | null, now: number): number | null {
+export function ageHours(postedAt: string | null, now: number): number | null {
   const time = postedAt ? Date.parse(postedAt) : Number.NaN;
   return Number.isNaN(time) ? null : (now - time) / HOUR_MS;
 }

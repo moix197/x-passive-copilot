@@ -47,3 +47,20 @@ describe('openDb migration', () => {
     expect(polish.get('2')?.versions).toEqual([]);
   });
 });
+
+describe('openDb idea kinds migration', () => {
+  it('labels ideas saved before kinds existed as spacehub, keeping their order', () => {
+    const home = mkdtempSync(join(tmpdir(), 'xc-db-'));
+    const first = openDb(home);
+    const insert = first.prepare("INSERT INTO digests (bucket, trends, ideas, created_at) VALUES (?, '[]', ?, 1)");
+    insert.run(1, JSON.stringify([{ text: 'a', feature: 'f' }, { text: 'b', feature: 'g' }]));
+    insert.run(2, JSON.stringify([{ text: 'c', feature: 'f', kind: 'eco' }]));
+    first.close();
+    const db = openDb(home);
+    const ideas = (db.prepare('SELECT ideas FROM digests ORDER BY id').all() as { ideas: string }[]).map((r) => JSON.parse(r.ideas));
+    expect(ideas).toEqual([
+      [{ kind: 'spacehub', text: 'a', feature: 'f' }, { kind: 'spacehub', text: 'b', feature: 'g' }],
+      [{ text: 'c', feature: 'f', kind: 'eco' }],
+    ]);
+  });
+});

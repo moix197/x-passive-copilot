@@ -637,3 +637,45 @@ h1 {
 [data-testid='draft-down'] {
   padding: 4px 8px;
 }
+.kind-chips {
+  flex-wrap: wrap;
+  padding: 6px 0 0;
+}
+.kind-chips button {
+  flex: none;
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.idea-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.idea-kind {
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+}
+.idea-source {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 4px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.idea-source-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.idea-source a {
+  flex: none;
+}

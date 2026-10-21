@@ -3,6 +3,7 @@ import { generatedText, refreshFailedText } from './digest-notice';
 import { digestProgressBox, paintDigestProgress } from './digest-progress';
 import { copyButton, copyText, renderDraftActions, type DraftCallbacks } from './draft-actions';
 import { element } from './dom';
+import { ideaMeta } from './idea-meta';
 import { mountPolled } from './voice-tab';
 
 export interface DigestHandlers {
@@ -66,7 +67,7 @@ function renderIdea(idea: DigestIdea, handlers: DigestHandlers): HTMLElement {
   const row = document.createElement('article');
   row.className = 'post';
   row.dataset.testid = 'digest-idea';
-  row.append(element('p', idea.text, 'flag-draft'), element('div', idea.feature, 'post-tags'), copyButton(idea.text, copyText));
+  row.append(element('p', idea.text, 'flag-draft'), ...ideaMeta(idea), copyButton(idea.text, copyText));
   row.append(...polishPart(idea, handlers));
   return row;
 }

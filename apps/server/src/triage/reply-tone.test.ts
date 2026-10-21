@@ -28,7 +28,7 @@ describe('reply tone rules', () => {
   });
 
   it('stay out of idea polish, which keeps build-in-public rules and product docs', () => {
-    const idea = { subject: { kind: 'idea' as const, idea: { text: 'i', feature: 'f' } }, previous: null, alternatives: [] };
+    const idea = { subject: { kind: 'idea' as const, idea: { text: 'i', feature: 'f', kind: 'spacehub' as const, source: null, sourceIds: [] } }, previous: null, alternatives: [] };
     const prompt = buildPolishPrompt(idea, NO_STYLE, 'Acme');
     expect(prompt).toContain('Post ideas are build-in-public and educational, never promotional.');
     expect(prompt).toContain('`.ai/product/index.md` (what the product is)');

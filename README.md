@@ -162,7 +162,11 @@ for the digest.
 3. **Injection:** the profile plus up to 8 examples (feedback first, then your most engaged posts of
    20-280 chars) are added to the triage and Claude prompts as delimited, untrusted style data.
 4. **Digest:** every `digest.everyNPosts` (default 50) new non-own posts the triage model writes 3-5
-   trends (linked to captured posts only) and 3 post ideas. Ideas are build-in-public and
+   trends (linked to captured posts only) and 3 post ideas of mixed kinds, at most 1 Spacehub:
+   **Spacehub** (build in public), **Eco** (LONG ecosystem, Robinhood Chain, crypto or trading take,
+   not about the product), **From timeline** (an original post on a theme from fresh captured posts)
+   and **Quote** (a quote-post comment for one captured post, never the same post twice). Sourced ideas
+   show `@author: excerpt` and an **Open post** link; you click Quote on X yourself. Ideas are
    educational (the LONG ecosystem, how `product.name` tracks things and why, lessons, decisions),
    never sales/CTA posts or feature ads; the idea Polish prompt carries the same rules. Each idea has
    **Copy** and a guarded **Polish** (same guard, no source post, so any URL or @mention is
@@ -207,10 +211,11 @@ for the digest.
   **Ready**; the post joins To reply tagged `manual`. Replied posts show a muted **Replied** pill.
 - X's compose box (the Post modal and the home "What's happening?" composer) gets a violet **Ideas** pill in its
   toolbar. It opens a popover with your recent post ideas (from digests and earlier clicks), newest first, each
-  with Copy. **Generate idea** adds one new idea per click (same prompt, tone and model as the digest, earlier
+  with its kind tag and Copy. Kind chips (**Mix** default, Spacehub, Eco, From timeline, Quote) pick what
+  **Generate idea** asks for; Mix rotates kinds, never the same twice in a row and Spacehub at most 1 in 3. It adds one new idea per click (same prompt, tone and model as the digest, earlier
   ideas included so it does not repeat), saved where the Digest tab shows it too. It never types into the box
   or posts: paste the idea yourself.
 
-Routes (all need the bearer token): `GET /v1/voice`, `GET /v1/digest`, `POST /v1/digest/run` (200, 409 busy, 422 too few posts, 429 + `Retry-After`, 502 failed), `POST /v1/ideas/generate` (one new idea: 200 `{idea}`, 409 busy, 503 no model or paused `{resumesAt}`, 502 failed), `GET|POST /v1/style-notes {notes<=2000}`,
+Routes (all need the bearer token): `GET /v1/voice`, `GET /v1/digest`, `POST /v1/digest/run` (200, 409 busy, 422 too few posts, 429 + `Retry-After`, 502 failed), `POST /v1/ideas/generate {kind?}` (one new idea, no kind = Mix: 200 `{idea}`, 400 bad kind, 422 no fresh source post, 409 busy, 503 no model or paused `{resumesAt}`, 502 failed), `GET|POST /v1/style-notes {notes<=2000}`,
 `POST /v1/drafts/:id/feedback {kind: copy|edit|up|down, text?<=1000}`, `POST /v1/ideas/:id/polish`,
 `GET /v1/posts?view=flagged&feed=to_reply|replied` (returns `counts`), `POST /v1/posts/:id/replied {replied: boolean}`, `POST /v1/posts/:id/copied`, `GET /v1/posts/to-reply?ids=a,b` (<=100 ids; unreplied flagged posts, plus replied/flaggable ids and the triage pause), `POST /v1/posts/:id/flag` (manual flag; 202 queued, 200 already drafted, 404, 409 own post), `POST /v1/posts/:id/polish[?regenerate=1]` (409 at the version cap), `POST /v1/drafts/:id/select {versionId}`.

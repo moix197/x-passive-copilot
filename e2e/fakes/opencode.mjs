@@ -41,12 +41,29 @@ const triageReply = (ids, prompt) =>
     };
   });
 
-const digestReply = (ids, call) => [
-  { trends: [{ title: 'Fake trend', summary: 'Builders ship.', statusIds: ids.slice(0, 1) }], ideas: [{ text: `Fake idea ${call}`, feature: 'f' }] },
-];
-
 // Tests steer digest runs through files next to this script: digest-mode.txt = "fail" | "hold" (blocks until digest-release.txt exists).
 const dir = import.meta.dirname;
+
+// The idea kinds the prompt plans, and the source posts it offers (best first).
+const plannedKinds = (prompt) => JSON.parse(prompt.match(/these kinds, in this order: (\[[^\]]*\])/)?.[1] ?? '["spacehub"]');
+const sourceIds = (prompt) => {
+  const block = prompt.match(/<source-posts>\n([^]*?)\n<\/source-posts>/)?.[1] ?? '';
+  return [...block.matchAll(/"statusId":"(\d+)"/g)].map((m) => m[1]);
+};
+
+// One idea of the first planned kind, citing the best source post; digest-ideas.json (an ideas array,
+// "{call}" in a text replaced by the call number) overrides it, e.g. to answer with more ideas than allowed.
+const fakeIdeas = (prompt, call) => {
+  const file = join(dir, 'digest-ideas.json');
+  if (existsSync(file)) return JSON.parse(readFileSync(file, 'utf8').replaceAll('{call}', String(call)));
+  const kind = plannedKinds(prompt)[0];
+  const cites = kind === 'quote' || kind === 'inspired';
+  return [{ kind, text: `Fake idea ${call}`, feature: 'f', sourceIds: cites ? sourceIds(prompt).slice(0, 1) : [] }];
+};
+
+const digestReply = (ids, call, prompt) => [
+  { trends: [{ title: 'Fake trend', summary: 'Builders ship.', statusIds: ids.slice(0, 1) }], ideas: fakeIdeas(prompt, call) },
+];
 const digestMode = () => (existsSync(join(dir, 'digest-mode.txt')) ? readFileSync(join(dir, 'digest-mode.txt'), 'utf8').trim() : '');
 const nextDigestCall = () => {
   const file = join(dir, 'digest-calls.txt');
@@ -94,7 +111,7 @@ while (!isDigest && existsSync(join(dir, 'triage-hold.txt'))) await sleep(50);
 const ids = [...new Set([...prompt.matchAll(/"statusId":"(\d+)"/g)].map((m) => m[1]))];
 const events = [
   { type: 'step_start', part: {} },
-  { type: 'text', part: { text: JSON.stringify(isDigest ? digestReply(ids, digestCall) : triageReply(ids, prompt)) } },
+  { type: 'text', part: { text: JSON.stringify(isDigest ? digestReply(ids, digestCall, prompt) : triageReply(ids, prompt)) } },
   { type: 'step_finish', part: { reason: 'stop' } },
 ];
 process.stdout.write(events.map((e) => JSON.stringify(e)).join('\n') + '\n');

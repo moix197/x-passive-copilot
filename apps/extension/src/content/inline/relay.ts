@@ -3,6 +3,7 @@ import {
   ToReplyByIdsResponseSchema,
   type ComposeIdeasMessage,
   type ComposeIdeasReply,
+  type IdeaKind,
   type InlineActionKind,
   type InlineActionMessage,
   type InlineDraftsMessage,
@@ -29,9 +30,9 @@ export async function sendInlineAction(action: InlineActionKind, statusId: strin
   }
 }
 
-/** Recent ideas, or the one just generated; never throws (an unreachable worker comes back as the error). */
-export async function askComposeIdeas(action: ComposeIdeasMessage['action']): Promise<ComposeIdeasReply> {
-  const message: ComposeIdeasMessage = { type: 'compose-ideas', action };
+/** Recent ideas, or the one just generated (of `kind`, or the mixed rotation); never throws (an unreachable worker comes back as the error). */
+export async function askComposeIdeas(action: ComposeIdeasMessage['action'], kind?: IdeaKind): Promise<ComposeIdeasReply> {
+  const message: ComposeIdeasMessage = { type: 'compose-ideas', action, ...(kind ? { kind } : {}) };
   try {
     return ComposeIdeasReplySchema.parse(await chrome.runtime.sendMessage(message));
   } catch {

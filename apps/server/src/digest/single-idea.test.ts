@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defaultConfig, err, ok } from '@xc/shared';
 import { openDb } from '../db';
+import { ingestPosts } from '../posts';
 import { buildDigestPrompt, buildSingleIdeaPrompt, readDigestView, sanitizeSingleIdea } from './digest';
 import { createSingleIdeaService } from './single-idea';
 
@@ -30,6 +31,9 @@ describe('sanitizeSingleIdea', () => {
     expect(sanitizeSingleIdea({ ideas: [{ text: ' A — B ', feature: 'f' }, { text: 'second', feature: 'g' }] })).toEqual({
       text: 'A, B',
       feature: 'f',
+      kind: 'spacehub',
+      source: null,
+      sourceIds: [],
     });
     expect(sanitizeSingleIdea({ ideas: [{ text: '  ', feature: 'f' }] })).toBeNull();
     expect(sanitizeSingleIdea({ trends: [] })).toBeNull();
@@ -82,5 +86,41 @@ describe('single idea service', () => {
     const failing = createSingleIdeaService(db, config(), async () => err('fake failure'), { productContext: async () => '', wait: noWait });
     expect(await failing.generate()).toMatchObject({ status: 'failed', kind: 'cli', resumesAt: null });
     expect(readDigestView(db).digest?.ideas.map((i) => i.text)).toEqual(['slow']);
+  });
+});
+
+describe('single idea kinds', () => {
+  const capture = (statusId: string, handle: string) => ({
+    statusId, authorName: handle, authorHandle: handle, text: `crypto take ${statusId}`, postedAt: new Date().toISOString(),
+    metrics: { replies: 1, reposts: 1, likes: 9, views: 50 }, isReply: false, replyTo: [], quotedStatusId: null, avatarUrl: null,
+  });
+  // Answers every prompt by citing the first offered source post.
+  const citingModel = async (prompt: string) => {
+    const id = /<source-posts>\n\[\{"statusId":"(\d+)"/.exec(prompt)?.[1];
+    return ok(JSON.stringify([{ ideas: [{ text: 'an idea', feature: 'f', kind: 'spacehub', sourceIds: id ? [id] : [] }] }]));
+  };
+
+  it('a quote idea comes from a fresh non-own post, never the same one twice, and refuses once none is left', async () => {
+    const db = freshDb();
+    ingestPosts(db, [capture('21', 'alice'), capture('22', 'me')], Date.now(), 'me');
+    const service = createSingleIdeaService(db, config(), citingModel, { productContext: async () => '', wait: noWait });
+    expect(await service.generate('quote')).toMatchObject({
+      status: 'ok',
+      idea: { kind: 'quote', sourceIds: ['21'], source: { statusId: '21', url: 'https://x.com/alice/status/21', authorHandle: 'alice' } },
+    });
+    expect(await service.generate('quote')).toEqual({ status: 'no_source' });
+    expect(await service.generate('eco')).toMatchObject({ status: 'ok', idea: { kind: 'eco', source: null } });
+  });
+
+  it('with no kind, rotates kinds without spacehub twice in a row', async () => {
+    const db = freshDb();
+    ingestPosts(db, ['31', '32', '33', '34', '35'].map((id) => capture(id, 'bob')), Date.now(), 'me');
+    const service = createSingleIdeaService(db, config(), citingModel, { productContext: async () => '', wait: noWait });
+    const kinds: string[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const outcome = await service.generate();
+      if (outcome.status === 'ok') kinds.push(outcome.idea.kind);
+    }
+    expect(kinds).toEqual(['spacehub', 'eco', 'inspired', 'quote', 'spacehub', 'eco']);
   });
 });

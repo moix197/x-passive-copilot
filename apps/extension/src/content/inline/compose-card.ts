@@ -1,7 +1,8 @@
-import type { ComposeIdeasReply, DigestIdea } from '@xc/shared/types';
+import { IDEA_KINDS, type ComposeIdeasReply, type DigestIdea, type IdeaKind } from '@xc/shared/types';
 import { mergeIdeas } from '../../drafts/idea-list';
 import { element } from '../../panel/dom';
 import { copyButton, copyText } from '../../panel/draft-actions';
+import { IDEA_KIND_LABELS, ideaMeta } from '../../panel/idea-meta';
 import { draftingLabel } from './inline-pills';
 import { askComposeIdeas } from './relay';
 
@@ -14,6 +15,8 @@ export interface IdeasCard {
 interface CardState {
   ideas: DigestIdea[];
   generating: boolean;
+  /** The kind Generate asks for; null is Mix (the server's rotation). */
+  kind: IdeaKind | null;
   /** Why the last request gave nothing: a refusal, or the quota pause's resume time. */
   note: string;
   noteTitle: string;
@@ -35,6 +38,25 @@ function cardHead(state: CardState, onGenerate: () => void): HTMLElement {
   return head;
 }
 
+function kindChip(label: string, kind: IdeaKind | null, state: CardState, onPick: (kind: IdeaKind | null) => void): HTMLButtonElement {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.textContent = label;
+  chip.dataset.testid = `compose-idea-kind-${kind ?? 'mix'}`;
+  chip.setAttribute('aria-pressed', String(state.kind === kind));
+  chip.addEventListener('click', () => onPick(kind));
+  return chip;
+}
+
+function kindChips(state: CardState, onPick: (kind: IdeaKind | null) => void): HTMLElement {
+  const bar = element('div', '', 'feed-toggle kind-chips');
+  bar.setAttribute('role', 'group');
+  bar.setAttribute('aria-label', 'Idea kind');
+  const chips = IDEA_KINDS.map((kind) => kindChip(IDEA_KIND_LABELS[kind], kind, state, onPick));
+  bar.append(kindChip('Mix', null, state, onPick), ...chips);
+  return bar;
+}
+
 function noteLine(state: CardState): HTMLElement {
   const line = element('p', state.note, 'post-tags');
   line.dataset.testid = 'compose-ideas-status';
@@ -48,7 +70,7 @@ function ideaRow(idea: DigestIdea): HTMLElement {
   row.dataset.testid = 'compose-idea';
   const text = element('p', idea.text, 'reply-text');
   text.dataset.testid = 'compose-idea-text';
-  row.append(text, element('div', idea.feature, 'post-tags'), copyButton(idea.text, copyText));
+  row.append(text, ...ideaMeta(idea), copyButton(idea.text, copyText));
   return row;
 }
 
@@ -64,16 +86,21 @@ function applyReply(state: CardState, reply: ComposeIdeasReply): void {
   state.noteTitle = reply.error ?? '';
 }
 
-/** The compose popover's card: recent ideas newest first, each with Copy, and "Generate idea" adding one per click. */
+/** The compose popover's card: recent ideas newest first, each with Copy, and "Generate idea" adding one of the picked kind per click. */
 export function createIdeasCard(): IdeasCard {
   const card = element('section', '', 'inline-card');
   card.dataset.testid = 'compose-ideas-card';
   card.setAttribute('aria-label', 'Post ideas');
-  const state: CardState = { ideas: [], generating: false, note: '', noteTitle: '' };
+  const state: CardState = { ideas: [], generating: false, kind: null, note: '', noteTitle: '' };
 
-  const render = () => card.replaceChildren(cardHead(state, generate), noteLine(state), ...ideaRows(state));
+  const pickKind = (kind: IdeaKind | null) => {
+    state.kind = kind;
+    render();
+  };
+  const render = () =>
+    card.replaceChildren(cardHead(state, generate), kindChips(state, pickKind), noteLine(state), ...ideaRows(state));
   const ask = async (action: 'list' | 'generate') => {
-    applyReply(state, await askComposeIdeas(action));
+    applyReply(state, await askComposeIdeas(action, action === 'generate' ? (state.kind ?? undefined) : undefined));
     render();
   };
 
