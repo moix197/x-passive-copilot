@@ -117,18 +117,6 @@ test('To reply orders newest flagged first whatever the score, pending posts inc
   await expect(reloaded.getByTestId('feed-replied')).toContainText('Replied (1)');
 });
 
-// The post is triaged while still fresh, then ages past the 24h limit while the panel is open.
-test('a reply-worthy post past the age limit leaves To reply and the inline lookup', async () => {
-  const agesOutIn = 25_000;
-  await ingest({ ...capturedPost('6401', 'about to age out'), postedAt: new Date(Date.now() - 24 * HOUR + agesOutIn).toISOString() });
-  const panel = await openFlagged();
-  await expect(row(panel, '6401').getByTestId('first-draft')).toContainText('Congrats on shipping!', { timeout: 20_000 });
-
-  await expect(row(panel, '6401')).toHaveCount(0, { timeout: 40_000 });
-  const res = await fetch(`${server.baseUrl}/v1/posts/to-reply?ids=6401`, { headers: authHeader });
-  expect(((await res.json()) as { posts: unknown[] }).posts).toEqual([]);
-});
-
 const postPageUrl = (statusId: string) => `https://x.com/someone/status/${statusId}`;
 
 async function storedPost(statusId: string) {

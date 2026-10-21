@@ -35,13 +35,15 @@ function findFreePort(): Promise<number> {
 
 export interface TestServer {
   baseUrl: string;
+  /** Data dir; pass it back to startServer to restart on the same data with another config. */
+  home: string;
   stop(): Promise<void>;
 }
 
-export async function startServer(config: object, env: NodeJS.ProcessEnv = {}): Promise<TestServer> {
+export async function startServer(config: object, env: NodeJS.ProcessEnv = {}, existingHome?: string): Promise<TestServer> {
   const port = await findFreePort();
   const baseUrl = `http://127.0.0.1:${port}`;
-  const home = makeTempDir('xc-home-');
+  const home = existingHome ?? makeTempDir('xc-home-');
   writeFileSync(join(home, 'config.json'), JSON.stringify(config));
   const args = ['--import', 'tsx', 'apps/server/src/main.ts', '--dev', '--port', String(port), '--home', home];
   const server: ChildProcess = spawn(process.execPath, args, {
@@ -58,7 +60,7 @@ export async function startServer(config: object, env: NodeJS.ProcessEnv = {}): 
     server.kill();
     await exited;
   };
-  return { baseUrl, stop };
+  return { baseUrl, home, stop };
 }
 
 export function launchExtension(): Promise<BrowserContext> {
