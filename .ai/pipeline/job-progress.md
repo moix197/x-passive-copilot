@@ -4,7 +4,7 @@ type: decision
 summary: Idea and polish jobs record real steps in a server-memory registry (GET /v1/jobs?id=); panel and x.com popover poll it 1s and render one shared step-list box
 tags: [progress, polling, ideas, polish, regenerate, model-pool, retry, quota, panel, inline]
 paths: [apps/server/src/jobs.ts, apps/server/src/digest/progress.ts, apps/server/src/digest/single-idea.ts, apps/server/src/polish/polish.ts, apps/server/src/router.ts, apps/server/src/app.ts, apps/extension/src/panel/job-progress.ts, apps/extension/src/panel/digest-progress.ts, apps/extension/src/panel/flagged-view.ts, apps/extension/src/content/inline/compose-card.ts, apps/extension/src/content/inline/post-idea.ts, apps/extension/src/content/inline/inline-card.ts, apps/extension/src/content/inline/relay.ts, apps/extension/src/background/inline-relay.ts, apps/extension/src/background/compose-relay.ts, shared/src/types.ts, e2e/generation-progress.spec.ts, e2e/fakes/**]
-related: [pipeline/digest-progress, pipeline/polish-flow, pipeline/model-quota, capture/compose-ideas, capture/manual-ideas, capture/inline-drafts]
+related: [pipeline/job-reattach, pipeline/digest-progress, pipeline/polish-flow, pipeline/model-quota, capture/compose-ideas, capture/manual-ideas, capture/inline-drafts]
 status: active
 updated: 2026-10-21
 ---
@@ -15,8 +15,8 @@ updated: 2026-10-21
 progress) holds jobs by id. A step is appended when new; a known id becomes current again (later
 steps reset), and staying on the current step keeps its detail (a model switch). `finish` keeps the
 first outcome; `close()` in a `finally` fails a job that threw. `slow` = running > `JOB_SLOW_MS`
-(90s). Finished jobs are kept 10 min (max 100). `GET /v1/jobs?id=` (zod `JobIdSchema`) -> 200
-`JobProgress` or 404.
+(90s). Each job carries kind, key, target and result; retention, the list route and reattach are in
+`pipeline/job-reattach`. `GET /v1/jobs?id=` (zod `JobIdSchema`) -> 200 `JobEntry` or 404.
 
 **Ids:** ideas use a client-made `idea-<uuid>` sent as `jobId` in `POST /v1/ideas/generate` (the POST
 stays synchronous; the client polls in parallel). Polish/regenerate use `polishJobId(draftKey)` =

@@ -1,9 +1,9 @@
 import { log } from '../log';
 import { existsSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
-import { MAX_DRAFT_VERSIONS, ok, polishJobId, type AppConfig, type PolishReply, type Result, type StoredIdea, type StoredPost } from '@xc/shared';
+import { MAX_DRAFT_VERSIONS, MAX_IDEA_SOURCE_TEXT, ok, polishJobId, type AppConfig, type JobTarget, type PolishReply, type Result, type StoredIdea, type StoredPost } from '@xc/shared';
 import { runModelReported } from '../digest/progress';
-import { createJobRegistry, type JobRegistry, type JobTracker } from '../jobs';
+import { createJobRegistry, type JobMeta, type JobRegistry, type JobTracker } from '../jobs';
 import { runClaude } from '../llm/claude';
 import type { ModelObserver } from '../llm/model-pool';
 import { getPost } from '../posts';
@@ -186,6 +186,18 @@ const fixRound = (violations: Violation[]): Round => ({
   label: claudeLabel(`Regenerating after guard flag (${ruleNames(violations).join(', ')})`),
 });
 
+function polishTarget(key: string, subject: Subject): JobTarget {
+  if (subject.kind === 'idea') return { type: 'idea', ideaId: key.slice(IDEA_PREFIX.length) };
+  const { statusId, authorHandle, text } = subject.post;
+  return { type: 'post', statusId, authorHandle, text: text.slice(0, MAX_IDEA_SOURCE_TEXT) };
+}
+
+const polishMeta = (key: string, subject: Subject, regenerating: boolean): JobMeta => ({
+  kind: regenerating ? 'regenerate' : 'polish',
+  key: `polish:${key}`,
+  target: polishTarget(key, subject),
+});
+
 type JobPlan = { ok: false; state: PolishState } | { ok: true; regenerating: boolean; kind: DraftKind | null };
 
 export function createPolishService(
@@ -243,12 +255,12 @@ export function createPolishService(
     const selectedVersion = addVersion(db, job.key, version, now());
     save(job.key, job.kind, { ...version, selectedVersion });
     log(`polish ${job.key} ${status}`);
-    job.progress.finish({ ok: true });
+    job.progress.finish({ ok: true, result: { type: 'draft', draftKey: job.key, versionId: selectedVersion, text: reply } });
     return true;
   }
 
-  function startProgress(key: string): JobTracker {
-    const progress = jobs.start(polishJobId(key));
+  function startProgress(key: string, subject: Subject, regenerating: boolean): JobTracker {
+    const progress = jobs.start(polishJobId(key), polishMeta(key, subject, regenerating));
     progress.step('queued', 'Queued');
     return progress;
   }
@@ -265,7 +277,7 @@ export function createPolishService(
   function start(key: string, subject: Subject, kind: DraftKind, regenerate = false): PolishJob {
     const plan = planJob(key, regenerate);
     if (!plan.ok) return { state: plan.state, done: NOT_STARTED };
-    const job: Job = { key, subject, kind: plan.kind ?? kind, regenerating: plan.regenerating, progress: startProgress(key) };
+    const job: Job = { key, subject, kind: plan.kind ?? kind, regenerating: plan.regenerating, progress: startProgress(key, subject, plan.regenerating) };
     inFlight.add(key);
     if (job.regenerating) markRegenerating(db, key);
     else save(key, job.kind, { status: 'polishing' });

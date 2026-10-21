@@ -3,6 +3,8 @@ import {
   ComposeIdeasReplySchema,
   DigestIdeaSchema,
   DigestViewSchema,
+  JobEntrySchema,
+  SERVER_OFFLINE,
   type ComposeIdeasMessage,
   type ComposeIdeasReply,
 } from '@xc/shared/types';
@@ -10,7 +12,6 @@ import { viewIdeas } from '../drafts/idea-list';
 import { errorText, getJson, postJson } from '../server-api';
 import { getServerConfig } from '../server-config';
 
-const OFFLINE = 'Server offline.';
 
 const reply = (fields: Partial<ComposeIdeasReply>): ComposeIdeasReply => ComposeIdeasReplySchema.parse(fields);
 
@@ -28,16 +29,18 @@ async function generateIdea({ kind, source, jobId }: ComposeIdeasMessage): Promi
   const body = { ...(kind ? { kind, ...(source ? { source } : {}) } : {}), ...(jobId ? { jobId } : {}) };
   const res = await postJson('/v1/ideas/generate', Object.keys(body).length ? body : undefined);
   if (!res.ok) return refusal(res);
+  // 202: this target already had a generation running; the popover follows that job instead.
+  if (res.status === 202) return reply({ job: JobEntrySchema.parse(((await res.json()) as { job?: unknown }).job) });
   const { idea } = (await res.json()) as { idea?: unknown };
   return reply({ ideas: [DigestIdeaSchema.parse(idea)] });
 }
 
 async function runComposeIdeas(message: ComposeIdeasMessage): Promise<ComposeIdeasReply> {
   try {
-    if (!(await getServerConfig()).token) return reply({ error: OFFLINE });
+    if (!(await getServerConfig()).token) return reply({ error: SERVER_OFFLINE });
     return await (message.action === 'list' ? listIdeas() : generateIdea(message));
   } catch {
-    return reply({ error: OFFLINE });
+    return reply({ error: SERVER_OFFLINE });
   }
 }
 

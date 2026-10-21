@@ -56,7 +56,7 @@ function createServices(db: DatabaseSync, home: string, config: AppConfig) {
   const jobs = createJobRegistry();
   const polish = createPolishService(db, config, claudeGenerate(config, home, style), Date.now, jobs);
   const voice = createVoiceService(db, config, model);
-  const digest = createDigestService(db, config, model, undefined, Date.now, undefined, pool.pausedUntil);
+  const digest = createDigestService(db, config, model, undefined, Date.now, undefined, pool.pausedUntil, jobs);
   const singleIdea = createSingleIdeaService(db, config, model, { pausedUntil: pool.pausedUntil });
   const autoPolish = createAutoPolish(db, config, polish);
   const classify = opencodeClassify(config, home, model, style);

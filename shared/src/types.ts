@@ -322,8 +322,11 @@ const SOURCED_KINDS: readonly IdeaKind[] = ['inspired', 'quote'];
  * POST /v1/ideas/generate body; no kind means the mixed rotation. A source (inspired or quote only) is the
  * post the user picked, replacing the automatic source selection.
  */
-/** A generation the clients can follow: `idea-<client-made id>` for one idea, `polish-<draft key>` for a polish or regenerate. */
-export const JobIdSchema = z.string().regex(/^(?:idea-[A-Za-z0-9-]{8,64}|polish-(?:\d{1,30}|idea-\d{1,9}-\d))$/);
+/**
+ * A generation the clients can follow: `idea-<client-made id>` for one idea, `polish-<draft key>` for a polish or
+ * regenerate, `digest-<start time>` for a digest run.
+ */
+export const JobIdSchema = z.string().regex(/^(?:idea-[A-Za-z0-9-]{8,64}|polish-(?:\d{1,30}|idea-\d{1,9}-\d)|digest-\d{1,15})$/);
 
 /** The job a polish or regenerate of this draft (a post's statusId, or `idea-<id>`) records its steps under. */
 export const polishJobId = (draftKey: string): string => `polish-${draftKey}`;
@@ -390,6 +393,61 @@ export type JobProgress = z.infer<typeof JobProgressSchema>;
 export const JobProgressMessageSchema = z.object({ type: z.literal('job-progress'), jobId: JobIdSchema });
 export type JobProgressMessage = z.infer<typeof JobProgressMessageSchema>;
 
+export const JOB_KINDS = ['post-idea', 'quote-idea', 'compose-idea', 'polish', 'regenerate', 'digest'] as const;
+export type JobKind = (typeof JOB_KINDS)[number];
+
+/** What a job works on: a post (its idea or reply draft), an idea's draft, the compose box, or the digest. */
+export const JobTargetSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('post'), statusId: capturedStatusId.nullable(), authorHandle: xHandle, text: z.string().max(MAX_IDEA_SOURCE_TEXT) }),
+  z.object({ type: z.literal('idea'), ideaId: z.string().regex(/^\d{1,9}-\d$/) }),
+  z.object({ type: z.literal('compose') }),
+  z.object({ type: z.literal('digest') }),
+]);
+export type JobTarget = z.infer<typeof JobTargetSchema>;
+
+/** What a finished job made: the saved idea, or the new version of a reply draft. */
+export const JobResultSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('idea'), idea: DigestIdeaSchema }),
+  z.object({ type: z.literal('draft'), draftKey: z.string().max(40), versionId: z.number().int().nonnegative(), text: z.string().max(2000) }),
+]);
+export type JobResult = z.infer<typeof JobResultSchema>;
+
+/** A job with what it is for: the panel Activity tab lists these, popovers find their target's job by `key`. */
+export const JobEntrySchema = JobProgressSchema.extend({
+  kind: z.enum(JOB_KINDS),
+  /** At most one running idea job per key: a second request for the same key attaches to it. */
+  key: z.string().max(80),
+  target: JobTargetSchema,
+  /** The idea kind asked for; null for the mixed rotation and for jobs that are not ideas. */
+  ideaKind: IdeaKindSchema.nullable(),
+  finishedAt: z.number().int().nonnegative().nullable(),
+  result: JobResultSchema.nullable(),
+});
+export type JobEntry = z.infer<typeof JobEntrySchema>;
+
+export const MAX_LISTED_JOBS = 50;
+/** GET /v1/jobs: running and recent jobs, newest first. */
+export const JobListSchema = z.object({ jobs: z.array(JobEntrySchema).max(MAX_LISTED_JOBS) });
+export type JobList = z.infer<typeof JobListSchema>;
+
+/** Content script -> service worker: the running and recent jobs (a popover attaches to its target's job). */
+export const JobListMessageSchema = z.object({ type: z.literal('job-list') });
+export type JobListMessage = z.infer<typeof JobListMessageSchema>;
+
+/** The kind of job an idea request starts: an idea on a post, a quote of a post, or a compose box idea. */
+export function ideaJobKind(source: IdeaSourceInput | undefined, kind: IdeaKind | undefined): JobKind {
+  if (!source) return 'compose-idea';
+  return kind === 'quote' ? 'quote-idea' : 'post-idea';
+}
+
+/** The key of a job on one captured post, e.g. `post-idea:<statusId>`. */
+export const postJobKey = (kind: JobKind, statusId: string): string => `${kind}:${statusId}`;
+
+/** Idea jobs run one at a time per key: per captured post (and job kind), and one for the compose box. */
+export function ideaJobKey(source: IdeaSourceInput | null | undefined, kind: IdeaKind | undefined): string {
+  return source?.statusId ? postJobKey(ideaJobKind(source, kind), source.statusId) : 'compose';
+}
+
 export const EarlierDigestSchema = z.object({
   createdAt: z.number().int().nonnegative(),
   ideas: z.array(DigestIdeaSchema).max(3),
@@ -437,12 +495,17 @@ export const ComposeIdeasMessageSchema = z.object({
 });
 export type ComposeIdeasMessage = z.infer<typeof ComposeIdeasMessageSchema>;
 
+/** The error a relayed request gets when the server cannot be reached. */
+export const SERVER_OFFLINE = 'Server offline.';
+
 /** Service worker -> content script: the listed (or the one generated) ideas, or why there are none. */
 export const ComposeIdeasReplySchema = z.object({
   ideas: z.array(DigestIdeaSchema).max(100).default([]),
   error: z.string().max(300).nullable().default(null),
   /** When generating resumes after a quota pause on every model. */
   resumesAt: z.number().int().nonnegative().nullable().default(null),
+  /** Generate only: a generation for the same target was already running; follow this job instead. */
+  job: JobEntrySchema.nullable().default(null),
 });
 export type ComposeIdeasReply = z.infer<typeof ComposeIdeasReplySchema>;
 

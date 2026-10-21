@@ -150,7 +150,7 @@ test('a quota pause on every model shows when generating resumes, and keeps the 
   await page.close();
 });
 
-test('POST /v1/ideas/generate: auth required, one new saved idea per call, 409 while one runs, 503 with resumesAt when paused', async () => {
+test('POST /v1/ideas/generate: auth required, one new saved idea per call, 202 with the running job while one runs, 503 with resumesAt when paused', async () => {
   expect((await fetch(`${server.baseUrl}/v1/ideas/generate`, { method: 'POST' })).status).toBe(401);
 
   const first = await generateIdea();
@@ -161,7 +161,9 @@ test('POST /v1/ideas/generate: auth required, one new saved idea per call, 409 w
   writeFileSync(join(binDir, 'digest-mode.txt'), 'hold');
   const held = generateIdea();
   await expect.poll(() => existsSync(join(binDir, 'digest-calls.txt')) && readFileSync(join(binDir, 'digest-calls.txt'), 'utf8')).toBe('3');
-  expect((await generateIdea()).status).toBe(409);
+  const again = await generateIdea();
+  expect(again.status).toBe(202);
+  expect(await again.json()).toMatchObject({ job: { id: expect.stringMatching(/^idea-/), kind: 'compose-idea', key: 'compose', outcome: null } });
   writeFileSync(join(binDir, 'digest-release.txt'), 'go');
   expect(((await (await held).json()) as { idea: { text: string } }).idea.text).toBe('Fake idea 3');
 

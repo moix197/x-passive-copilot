@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { AppConfig, DigestIdea, IdeaKind, IdeaSourceInput, ModelFailureKind, Result } from '@xc/shared';
+import { ideaJobKey, type AppConfig, type DigestIdea, type IdeaKind, type IdeaSourceInput, type ModelFailureKind, type Result } from '@xc/shared';
 import { NO_JOB, type JobTracker } from '../jobs';
 import { log } from '../log';
 import type { Idea } from '../polish/polish';
@@ -53,11 +53,12 @@ interface IdeaPlan {
 
 export function createSingleIdeaService(db: DatabaseSync, config: AppConfig, runModel: RunModel, deps: SingleIdeaDeps = {}): SingleIdeaService {
   const { productContext = () => gatherProductContext(config), now = Date.now, wait = sleep, pausedUntil = () => 0 } = deps;
-  let running = false;
+  // One generation per target (a post, or the compose box): different posts never wait on each other.
+  const running = new Set<string>();
 
-  function refusal(): SingleIdeaOutcome | null {
+  function refusal(key: string): SingleIdeaOutcome | null {
     if (!config.models.triage) return { status: 'unavailable' };
-    if (running) return { status: 'busy' };
+    if (running.has(key)) return { status: 'busy' };
     const until = pausedUntil();
     return until > now() ? { status: 'paused', until } : null;
   }
@@ -95,16 +96,17 @@ export function createSingleIdeaService(db: DatabaseSync, config: AppConfig, run
   }
 
   async function generate(requested?: IdeaKind, picked?: IdeaSourceInput, job: JobTracker = NO_JOB): Promise<SingleIdeaOutcome> {
-    const refused = refusal();
+    const key = ideaJobKey(picked, requested);
+    const refused = refusal(key);
     if (refused) return refused;
     const planned = plan(requested, picked);
     if (!planned) return { status: 'no_source' };
-    running = true;
+    running.add(key);
     try {
       const result = await ask(planned, job);
       return result.ok ? save(result.value, job) : failed(result.error);
     } finally {
-      running = false;
+      running.delete(key);
     }
   }
 

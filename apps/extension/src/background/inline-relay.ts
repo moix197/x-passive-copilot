@@ -1,12 +1,13 @@
 import {
   InlineActionMessageSchema,
   InlineDraftsMessageSchema,
+  JobListMessageSchema,
   JobProgressMessageSchema,
   ToReplyByIdsResponseSchema,
   type InlineActionMessage,
   type ToReplyByIdsResponse,
 } from '@xc/shared/types';
-import { fetchJob, flagPost, getJson, markCopied, requestPolish, sendFeedback } from '../server-api';
+import { fetchJob, fetchJobs, flagPost, getJson, markCopied, requestPolish, sendFeedback } from '../server-api';
 import { getServerConfig } from '../server-config';
 
 /** Offline (no token): nothing is in To reply or flaggable, so no pills, and no request is made. */
@@ -57,5 +58,7 @@ export function answerInlineMessage(message: unknown): Promise<unknown> | null {
   const action = InlineActionMessageSchema.safeParse(message);
   if (action.success) return runInlineAction(action.data);
   const job = JobProgressMessageSchema.safeParse(message);
-  return job.success ? fetchJob(job.data.jobId).then((view) => ({ job: view }), () => ({ job: null })) : null;
+  // An unreachable server is not an unknown job: the content script keeps the last steps it saw.
+  if (job.success) return fetchJob(job.data.jobId).then((view) => ({ job: view }), () => ({ job: null, error: 'unreachable' }));
+  return JobListMessageSchema.safeParse(message).success ? fetchJobs().then((jobs) => ({ jobs }), () => ({ jobs: [] })) : null;
 }

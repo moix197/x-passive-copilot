@@ -101,6 +101,27 @@ h1 {
   color: var(--muted);
   font-size: 14px;
 }
+.tab-badge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+}
+.tab-badge[hidden] {
+  display: none;
+}
+.activity-job .section-label {
+  margin: 0 0 4px;
+  overflow-wrap: anywhere;
+  text-transform: none;
+  letter-spacing: 0;
+}
 .tabs button[aria-selected='true'] {
   color: var(--text);
   font-weight: 700;

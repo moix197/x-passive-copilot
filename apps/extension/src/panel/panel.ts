@@ -1,18 +1,20 @@
 import { PostListResponseSchema, type FlaggedFeed, type StoredPost } from '@xc/shared/types';
-import { errorText, fetchJob, getJson, markCopied, postJson, requestPolish, sendFeedback } from '../server-api';
+import { errorText, fetchJob, fetchJobs, getJson, markCopied, postJson, requestPolish, sendFeedback } from '../server-api';
 import { authHeaders, getServerConfig } from '../server-config';
+import { mountActivityTab } from './activity-tab';
 import { copyText, type EditableDraftCallbacks, type Rating } from './draft-actions';
 import { generateErrorText } from './digest-notice';
 import { mountDigestSection } from './digest-section';
 import { mountDoctorCard } from './doctor-card';
+import { retryJob } from './job-retry';
 import { mountFlaggedFeeds, type FlaggedPage } from './flagged-feeds';
 import { postUrl } from './post-card';
-import { mountPostsView } from './posts-view';
+import { mountPostsView, pollWhileVisible } from './posts-view';
 import { mountPowerToggle } from './power-toggle';
 import { mountVoiceTab } from './voice-tab';
 import { focusOrOpenPostTab } from './x-tab';
 
-type View = 'all' | 'flagged' | 'digest' | 'voice';
+type View = 'all' | 'flagged' | 'digest' | 'voice' | 'activity';
 
 const title = document.getElementById('title');
 if (title) title.textContent = 'X passive copilot';
@@ -124,7 +126,29 @@ function selectView(view: View): void {
   dispose = mountView(app, view);
 }
 
+const activityBadge = document.querySelector<HTMLElement>('[data-testid="activity-badge"]');
+
+// The Activity tab shows how many jobs run right now.
+async function loadJobs() {
+  const jobs = await fetchJobs();
+  const running = jobs.filter((job) => !job.outcome).length;
+  if (activityBadge) {
+    activityBadge.textContent = String(running);
+    activityBadge.hidden = running === 0;
+  }
+  return jobs;
+}
+
 function mountView(root: HTMLElement, view: View): () => void {
+  if (view === 'activity') {
+    return mountActivityTab(root, {
+      load: loadJobs,
+      fetchJob,
+      onRetry: retryJob,
+      onCopy: copyText,
+      onOpenPost: focusOrOpenPostTab,
+    });
+  }
   if (view === 'voice') return mountVoiceTab(root, () => getJson('/v1/voice'), { load: () => getJson('/v1/style-notes'), save: saveStyleNotes });
   if (view === 'digest') {
     return mountDigestSection(root, {
@@ -152,6 +176,7 @@ function mountView(root: HTMLElement, view: View): () => void {
 
 for (const tab of tabs) tab.addEventListener('click', () => selectView(tab.dataset.view as View));
 selectView('all');
+pollWhileVisible(() => loadJobs().then(() => undefined));
 
 const powerToggle = document.getElementById('power-toggle');
 const powerLabel = document.getElementById('power-label');

@@ -68,7 +68,7 @@ describe('single idea service', () => {
 
   it('records its steps on the job: context, the model with each retry wait, the check and the save', async () => {
     const jobs = createJobRegistry();
-    const job = jobs.start('idea-steps-01');
+    const job = jobs.start('idea-steps-01', { kind: 'compose-idea', key: 'compose', target: { type: 'compose' } });
     const labels: string[] = [];
     const answers = [err('503 high demand'), ok(ideaReply('kept'))];
     const service = createSingleIdeaService(freshDb(), config(), async (_prompt, observer) => {
@@ -88,7 +88,7 @@ describe('single idea service', () => {
     ]);
   });
 
-  it('refuses without a model, while paused or busy, and reports a failure without saving', async () => {
+  it('refuses without a model, while paused or busy on the same target (another post runs alongside), and reports a failure without saving', async () => {
     const db = freshDb();
     const none = createSingleIdeaService(db, { ...config(), models: { triage: '', triageFallbacks: [], final: '' } }, async () => ok(''));
     expect(await none.generate()).toEqual({ status: 'unavailable' });
@@ -102,9 +102,11 @@ describe('single idea service', () => {
       return ok(ideaReply('slow'));
     }, { productContext: async () => '' });
     const first = slow.generate();
+    const otherPost = slow.generate('inspired', { statusId: '77', authorHandle: 'someone', text: 'a different post' });
     expect(await slow.generate()).toEqual({ status: 'busy' });
     release();
     expect(await first).toMatchObject({ status: 'ok' });
+    expect(await otherPost).toMatchObject({ status: 'ok' });
 
     const failing = createSingleIdeaService(db, config(), async () => err('fake failure'), { productContext: async () => '', wait: noWait });
     expect(await failing.generate()).toMatchObject({ status: 'failed', kind: 'cli', resumesAt: null });

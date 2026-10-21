@@ -1,10 +1,10 @@
-import { polishJobId, type JobProgress, type JobStep } from '@xc/shared/types';
+import { polishJobId, type JobEntry, type JobProgress, type JobStep } from '@xc/shared/types';
 import { elapsedText, renderStep } from './digest-progress';
 import { element } from './dom';
 import { formatAbsoluteTime } from './post-format';
 
-/** Fetches a job's progress; null when the server does not know it (not started yet, or restarted). */
-export type FetchJob = (jobId: string) => Promise<JobProgress | null>;
+/** Fetches a job; null when the server does not know it (not started yet, or restarted); rejects when unreachable. */
+export type FetchJob = (jobId: string) => Promise<JobEntry | null>;
 
 export interface JobProgressOptions {
   jobId: string;
@@ -17,6 +17,10 @@ export interface JobProgressOptions {
   onRetry?: () => void;
   /** Shown as Cancel while the job runs longer than usual. */
   onCancel?: () => void;
+  /** Called once (asynchronously) when polling sees the job end, with what it made. */
+  onFinish?: (view: JobEntry) => void;
+  /** The job as already listed: a finished one paints at once, with no polling. */
+  initial?: JobEntry;
 }
 
 export interface JobProgressHandle {
@@ -28,6 +32,8 @@ export interface JobProgressHandle {
   settle(outcome: Outcome): void;
   /** Stops following the job (done, or the user cancelled). */
   stop(): void;
+  /** The server has reported this job at least once. */
+  known(): boolean;
 }
 
 const POLL_MS = 1000;
@@ -35,12 +41,12 @@ const POLL_MS = 1000;
 const MAX_WATCH_MS = 15 * 60_000;
 const MAX_WATCHES = 50;
 
-type Paint = (view: JobProgress | null) => void;
+type Paint = (view: JobEntry | null) => void;
 type Outcome = NonNullable<JobProgress['outcome']>;
 
 /** One poll loop per job, however many boxes show it (the panel rebuilds its cards on every refresh). */
 interface Watch {
-  view: JobProgress | null;
+  view: JobEntry | null;
   paints: Set<Paint>;
   startedAt: number;
   polling: boolean;
@@ -56,10 +62,19 @@ const MAX_MISSES = 5;
 const isOver = (watch: Watch) =>
   watch.view?.outcome != null || watch.misses >= MAX_MISSES || Date.now() - watch.startedAt > MAX_WATCH_MS;
 
+const RESTARTED = 'server restarted';
+
+// Unreachable (undefined) keeps the last view; a job the server no longer knows while it ran died with a restart.
+function nextView(watch: Watch, fetched: JobEntry | null | undefined): JobEntry | null {
+  if (fetched) return fetched;
+  if (fetched === null && watch.view && !watch.view.outcome) return settledView(watch.view, { ok: false, reason: RESTARTED, resumesAt: null });
+  return watch.view;
+}
+
 async function refresh(jobId: string, watch: Watch, fetchJob: FetchJob): Promise<void> {
-  const view = await fetchJob(jobId).catch(() => null);
-  watch.misses = view || watch.view ? 0 : watch.misses + 1;
-  watch.view = view ?? watch.view;
+  const fetched = await fetchJob(jobId).catch(() => undefined);
+  watch.view = nextView(watch, fetched);
+  watch.misses = watch.view ? 0 : watch.misses + 1;
   for (const paint of watch.paints) paint(watch.view);
 }
 
@@ -76,18 +91,18 @@ async function poll(jobId: string, watch: Watch, fetchJob: FetchJob): Promise<vo
 }
 
 // A box expecting a running job never reuses a finished watch: a polish job id comes back on the next Regenerate.
-function watchFor(jobId: string, expectRunning: boolean): Watch {
+function watchFor(jobId: string, expectRunning: boolean, initial: JobEntry | null): Watch {
   const kept = watches.get(jobId);
   if (kept && !(expectRunning && isOver(kept))) return kept;
   watches.delete(jobId);
-  const watch: Watch = { view: null, paints: new Set(), startedAt: Date.now(), polling: false, misses: 0 };
+  const watch: Watch = { view: initial, paints: new Set(), startedAt: Date.now(), polling: false, misses: 0 };
   watches.set(jobId, watch);
   if (watches.size > MAX_WATCHES) watches.delete(watches.keys().next().value ?? jobId);
   return watch;
 }
 
-function follow({ jobId, fetchJob, unknown }: JobProgressOptions, paint: Paint): () => void {
-  const watch = watchFor(jobId, unknown === 'queued');
+function follow({ jobId, fetchJob, unknown, initial }: JobProgressOptions, paint: Paint): () => void {
+  const watch = watchFor(jobId, unknown === 'queued' && !initial?.outcome, initial ?? null);
   paint(watch.view);
   if (isOver(watch)) return () => undefined;
   watch.paints.add(paint);
@@ -102,14 +117,15 @@ function placeholder(jobId: string, startedAt: number): JobProgress {
 }
 
 /** The reply's outcome on the last steps seen: the current step ends done or failed, elapsed stops. */
-function settledView(view: JobProgress, outcome: Outcome): JobProgress {
+function settledView<T extends JobProgress>(view: T, outcome: Outcome): T {
   const state = outcome.ok ? ('done' as const) : ('failed' as const);
   const steps = view.steps.map((s) => (s.state === 'current' || (outcome.ok && s.state === 'pending') ? { ...s, state } : s));
   const elapsedMs = view.outcome ? view.elapsedMs : Date.now() - view.startedAt;
   return { ...view, slow: false, elapsedMs, steps, outcome };
 }
 
-function titleText(view: JobProgress, title: string): string {
+/** The box title: what runs (or that it is slow), then Done, the failure reason, or the quota pause's end. */
+export function jobTitleText(view: JobProgress, title: string): string {
   const outcome = view.outcome;
   if (!outcome) return view.slow ? `${title}: taking longer than usual` : title;
   if (outcome.ok) return 'Done';
@@ -141,7 +157,7 @@ function actionBar(view: JobProgress, options: JobProgressOptions): HTMLElement[
 
 function renderHead(view: JobProgress, title: string): HTMLElement {
   const head = element('div', '', 'digest-progress-head');
-  const titleLine = element('span', titleText(view, title), 'digest-progress-title');
+  const titleLine = element('span', jobTitleText(view, title), 'digest-progress-title');
   titleLine.dataset.testid = 'job-progress-title';
   const elapsed = element('span', elapsedText(view.elapsedMs), 'digest-progress-elapsed');
   elapsed.dataset.testid = 'job-progress-elapsed';
@@ -159,10 +175,11 @@ function paintBox(box: HTMLElement, view: JobProgress, options: JobProgressOptio
   box.replaceChildren(renderHead(view, options.title), steps, ...actionBar(view, options));
 }
 
-function newBox(): HTMLElement {
+function newBox(jobId: string): HTMLElement {
   const box = document.createElement('section');
   box.className = 'digest-progress job-progress';
   box.dataset.testid = 'job-progress';
+  box.dataset.jobId = jobId;
   box.setAttribute('aria-label', 'Progress');
   box.setAttribute('aria-live', 'polite');
   return box;
@@ -170,12 +187,17 @@ function newBox(): HTMLElement {
 
 /** A live step list with an elapsed timer for one idea or polish job, polled from the server every second. */
 export function watchJobProgress(options: JobProgressOptions): JobProgressHandle {
-  const box = newBox();
+  const box = newBox(options.jobId);
   const startedAt = Date.now();
   let last: JobProgress | null = null;
   let settled = false;
+  let finished = false;
   const paint: Paint = (view) => {
     if (settled) return;
+    if (view?.outcome && !finished && options.onFinish) {
+      finished = true;
+      queueMicrotask(() => options.onFinish?.(view));
+    }
     last = view ?? last;
     if (!last && options.unknown === 'hidden') return void (box.hidden = true);
     paintBox(box, last ?? placeholder(options.jobId, startedAt), options);
@@ -193,7 +215,7 @@ export function watchJobProgress(options: JobProgressOptions): JobProgressHandle
       if (view?.outcome) paintBox(box, view, options);
     }, () => undefined);
   };
-  return { box, settle, stop };
+  return { box, settle, stop, known: () => last !== null };
 }
 
 export interface PolishProgressOptions {

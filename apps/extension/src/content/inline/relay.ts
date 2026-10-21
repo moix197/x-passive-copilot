@@ -1,6 +1,7 @@
 import {
   ComposeIdeasReplySchema,
-  JobProgressSchema,
+  JobEntrySchema,
+  JobListSchema,
   ToReplyByIdsResponseSchema,
   type ComposeIdeasMessage,
   type ComposeIdeasReply,
@@ -9,7 +10,8 @@ import {
   type InlineActionKind,
   type InlineActionMessage,
   type InlineDraftsMessage,
-  type JobProgress,
+  type JobEntry,
+  type JobListMessage,
   type JobProgressMessage,
   type ToReplyByIdsResponse,
 } from '@xc/shared/types';
@@ -58,15 +60,27 @@ export async function askComposeIdeas(
   }
 }
 
-/** A job's steps (an idea, a polish); null when unknown or unreachable, so the caller just asks again. */
-export async function fetchJobProgress(jobId: string): Promise<JobProgress | null> {
+/** A job's steps (an idea, a polish); null when the server does not know it; throws when unreachable, so the caller asks again. */
+export async function fetchJobProgress(jobId: string): Promise<JobEntry | null> {
   const message: JobProgressMessage = { type: 'job-progress', jobId };
+  const reply = (await chrome.runtime.sendMessage(message)) as { job?: unknown; error?: unknown } | undefined;
+  if (!reply || reply.error) throw new Error('unreachable');
+  return reply.job ? JobEntrySchema.parse(reply.job) : null;
+}
+
+/** Running and recent jobs, newest first; empty when unreachable. */
+export async function fetchJobList(): Promise<JobEntry[]> {
+  const message: JobListMessage = { type: 'job-list' };
   try {
-    const reply = (await chrome.runtime.sendMessage(message)) as { job?: unknown } | undefined;
-    return reply?.job ? JobProgressSchema.parse(reply.job) : null;
+    return JobListSchema.parse(await chrome.runtime.sendMessage(message)).jobs;
   } catch {
-    return null;
+    return [];
   }
+}
+
+/** The newest job with this key (a post's idea, the compose box), running or finished. */
+export async function latestJobFor(key: string): Promise<JobEntry | null> {
+  return (await fetchJobList()).find((job) => job.key === key) ?? null;
 }
 
 /** A fresh id for following one idea generation. */

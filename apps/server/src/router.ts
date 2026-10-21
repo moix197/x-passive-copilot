@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import {
@@ -8,6 +9,11 @@ import {
   JobIdSchema,
   RepliedRequestSchema,
   describeModelFailure,
+  ideaJobKey,
+  ideaJobKind,
+  polishJobId,
+  type DigestIdea,
+  type IdeaGenerateRequest,
   type FlaggedFeed,
   type ToReplyByIdsResponse,
   PostBatchSchema,
@@ -21,9 +27,9 @@ import {
 import { isAuthorized } from './auth';
 import type { ManualDigestOutcome } from './digest/digest';
 import type { SingleIdeaOutcome, SingleIdeaService } from './digest/single-idea';
-import { NO_JOB, type JobRegistry, type JobTracker } from './jobs';
+import type { JobMeta, JobRegistry, JobTracker } from './jobs';
 import { selectVersion } from './polish/drafts-store';
-import type { PolishState } from './polish/polish';
+import { ideaDraftKey, type PolishState } from './polish/polish';
 import { log } from './log';
 import { ingestPosts, listFlaggedPosts, listPosts, lookupInlineStates, setCopied, setReplied, type PolishContext } from './posts';
 import type { PrefilterRules } from './triage/prefilter';
@@ -152,11 +158,13 @@ const IDEA_POLISH_PATH = /^\/v1\/ideas\/(\d{1,9}-\d)\/polish$/;
 
 const POLISH_STATUS: Record<PolishState, number> = { started: 202, already: 202, unknown: 404, limit: 409 };
 
-function postPolish(onPolish: (id: string, regenerate: boolean) => PolishState): ParamHandler {
+// The reply carries the draft's job, so a client asking while it already runs follows that run.
+function postPolish(onPolish: (id: string, regenerate: boolean) => PolishState, jobs: JobRegistry, draftKey: (id: string) => string): ParamHandler {
   return (id) => (_req, res, url) => {
     const state = onPolish(id, url.searchParams.get('regenerate') === '1');
     if (state === 'unknown') return sendJson(res, 404, { error: 'not found' });
-    sendJson(res, POLISH_STATUS[state], { state });
+    const job = jobs.view(polishJobId(draftKey(id)));
+    sendJson(res, POLISH_STATUS[state], { state, ...(job ? { job } : {}) });
   };
 }
 
@@ -279,7 +287,7 @@ function postDigestRun(runNow: () => Promise<ManualDigestOutcome>): Handler {
 
 interface IdeaReply {
   status: number;
-  body: { idea?: unknown; error?: string; resumesAt?: number };
+  body: { idea?: DigestIdea; error?: string; resumesAt?: number };
 }
 
 function ideaReply(outcome: SingleIdeaOutcome): IdeaReply {
@@ -304,25 +312,33 @@ function ideaReply(outcome: SingleIdeaOutcome): IdeaReply {
 
 // The job ends with the same words the HTTP reply carries, so the popover's step list and its note agree.
 function finishIdeaJob(job: JobTracker, { body }: IdeaReply): void {
+  if (body.idea) return job.finish({ ok: true, result: { type: 'idea', idea: body.idea } });
   if (body.error === undefined) return job.finish({ ok: true });
   job.finish({ ok: false, reason: body.error, resumesAt: body.resumesAt ?? null });
 }
 
-function startIdeaJob(jobs: JobRegistry, jobId: string | undefined): JobTracker {
-  if (!jobId) return NO_JOB;
-  const job = jobs.start(jobId);
+function ideaJobMeta({ kind, source }: IdeaGenerateRequest): JobMeta {
+  const target = source ? { type: 'post' as const, ...source } : { type: 'compose' as const };
+  return { kind: ideaJobKind(source, kind), key: ideaJobKey(source, kind), target, ideaKind: kind ?? null };
+}
+
+// A request without its own id is still listed (panel Activity tab).
+function startIdeaJob(jobs: JobRegistry, request: IdeaGenerateRequest): JobTracker {
+  const job = jobs.start(request.jobId ?? `idea-${randomUUID()}`, ideaJobMeta(request));
   job.step('queued', 'Queued');
   return job;
 }
 
-// An empty body asks for the mixed rotation.
+// An empty body asks for the mixed rotation. A target already generating answers 202 with that job to follow, never an error.
 function postIdeaGenerate(generate: SingleIdeaService['generate'], jobs: JobRegistry): Handler {
   return async (req, res) => {
     const raw = await readBody(req);
     if (raw === null) return sendJson(res, 413, { error: 'body too large' });
     const request = IdeaGenerateRequestSchema.safeParse(raw.trim() === '' ? {} : parseJson(raw));
     if (!request.success) return sendJson(res, 400, { error: 'invalid idea request' });
-    const job = startIdeaJob(jobs, request.data.jobId);
+    const running = jobs.running(ideaJobKey(request.data.source, request.data.kind));
+    if (running) return sendJson(res, 202, { job: running });
+    const job = startIdeaJob(jobs, request.data);
     try {
       const reply = ideaReply(await generate(request.data.kind, request.data.source, job));
       finishIdeaJob(job, reply);
@@ -333,8 +349,10 @@ function postIdeaGenerate(generate: SingleIdeaService['generate'], jobs: JobRegi
   };
 }
 
-function getJob(jobs: JobRegistry): Handler {
+// No id lists the running and recent jobs.
+function getJobs(jobs: JobRegistry): Handler {
   return (_req, res, url) => {
+    if (!url.searchParams.has('id')) return sendJson(res, 200, { jobs: jobs.list() });
     const id = JobIdSchema.safeParse(url.searchParams.get('id'));
     if (!id.success) return sendJson(res, 400, { error: 'bad query' });
     const view = jobs.view(id.data);
@@ -390,11 +408,11 @@ export function createRouter(
     'GET /v1/digest': (_req, res) => sendJson(res, 200, hooks.digestView()),
     'POST /v1/digest/run': postDigestRun(hooks.runDigestNow),
     'POST /v1/ideas/generate': postIdeaGenerate(hooks.generateIdea, hooks.jobs),
-    'GET /v1/jobs': getJob(hooks.jobs),
+    'GET /v1/jobs': getJobs(hooks.jobs),
   };
   const paramRoutes: ParamRoute[] = [
-    { pattern: POLISH_PATH, handler: postPolish(hooks.onPolish) },
-    { pattern: IDEA_POLISH_PATH, handler: postPolish(hooks.onIdeaPolish) },
+    { pattern: POLISH_PATH, handler: postPolish(hooks.onPolish, hooks.jobs, (id) => id) },
+    { pattern: IDEA_POLISH_PATH, handler: postPolish(hooks.onIdeaPolish, hooks.jobs, ideaDraftKey) },
     { pattern: RETRIAGE_PATH, handler: postRetriage(hooks.onRetriage) },
     { pattern: FLAG_PATH, handler: postFlag(hooks.onFlag) },
     { pattern: REPLIED_PATH, handler: postReplied(db) },

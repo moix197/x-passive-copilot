@@ -1,23 +1,18 @@
-import type { DigestIdea, IdeaSourceInput } from '@xc/shared/types';
+import { postJobKey, type DigestIdea, type IdeaSourceInput } from '@xc/shared/types';
 import { element } from '../../panel/dom';
 import panelCss from '../../panel/panel.css';
-import type { JobProgressHandle } from '../../panel/job-progress';
-import { ideaJobProgress, ideaRow, noteLine, settleIdeaJob } from './compose-card';
+import { ideaRow, noteLine } from './compose-card';
+import { finishIdeaRequest, followIdeaJob, type IdeaJobHooks, type IdeaJobState } from './idea-job';
 import inlineCss from './inline.css';
 import { sparkleIcon } from './inline-card';
 import { closePopover, isPopoverOpenFor, openPopover } from './inline-popover';
-import { askComposeIdeas, newIdeaJobId } from './relay';
+import { askComposeIdeas, latestJobFor, newIdeaJobId } from './relay';
 
 /** The post on screen as a manual idea's source; null when it is gone or has no text. */
 export type ReadIdeaSource = (statusId: string) => IdeaSourceInput | null;
 
-interface IdeaState {
+interface IdeaState extends IdeaJobState {
   idea: DigestIdea | null;
-  generating: boolean;
-  note: string;
-  noteTitle: string;
-  job: JobProgressHandle | null;
-  jobId: string | null;
 }
 
 // One section per post, so a re-rendered Ready card (or a new pill) keeps the generated idea.
@@ -58,6 +53,7 @@ function createSection(statusId: string, readSource: ReadIdeaSource): HTMLElemen
     Object.assign(state, { generating: false, jobId: null, job: null });
     render();
   };
+  const hooks: IdeaJobHooks = { render, retry: () => generate(), cancel, onIdea: (idea) => (state.idea = idea) };
   function generate(): void {
     const source = readSource(statusId);
     state.job?.stop();
@@ -66,16 +62,22 @@ function createSection(statusId: string, readSource: ReadIdeaSource): HTMLElemen
       return render();
     }
     const jobId = newIdeaJobId();
-    Object.assign(state, { generating: true, note: '', noteTitle: '', jobId, job: ideaJobProgress(jobId, generate, cancel) });
-    render();
-    void askComposeIdeas('generate', 'inspired', source, jobId).then((reply) => {
-      state.idea = reply.ideas[0] ?? state.idea;
-      if (state.jobId === jobId) Object.assign(state, { generating: false, jobId: null, job: settleIdeaJob(state.job, reply) });
-      render();
-    });
+    followIdeaJob(state, jobId, hooks);
+    void askComposeIdeas('generate', 'inspired', source, jobId).then((reply) => finishIdeaRequest(state, jobId, reply, hooks));
   }
   render();
+  reattach(statusId, state, hooks);
   return section;
+}
+
+// After a reload: a generation still running for this post shows its steps again; one that finished meanwhile shows its idea.
+function reattach(statusId: string, state: IdeaState, hooks: IdeaJobHooks): void {
+  void latestJobFor(postJobKey('post-idea', statusId)).then((job) => {
+    if (!job || state.generating || state.idea) return;
+    if (!job.outcome) return followIdeaJob(state, job.id, hooks, job);
+    if (job.result?.type === 'idea') hooks.onIdea(job.result.idea);
+    hooks.render();
+  });
 }
 
 /**

@@ -1,4 +1,5 @@
 import { DIGEST_STEP_IDS, type DigestProgress, type DigestStep, type DigestStepId, type ModelFailureKind, type Result } from '@xc/shared';
+import { NO_JOB, type JobMeta, type JobRegistry, type JobTracker } from '../jobs';
 import type { ModelObserver } from '../llm/model-pool';
 import { classifyFailure, withRetry } from '../triage/retry';
 import type { RunModel } from '../voice/voice';
@@ -84,6 +85,41 @@ export function createDigestProgress(labels: Record<DigestStepId, string>, now: 
       if (run && run.finishedAt === null) finish({ ok: false, reason: 'the digest run stopped unexpectedly (see the server log)' });
     },
     view,
+  };
+}
+
+const DIGEST_JOB: JobMeta = { kind: 'digest', key: 'digest', target: { type: 'digest' } };
+
+/** The digest tracker that also lists each run as a `digest-<start time>` job (the panel Activity tab). */
+export function listedDigestProgress(
+  progress: DigestProgressTracker,
+  labels: Record<DigestStepId, string>,
+  jobs: JobRegistry,
+  now: () => number,
+): DigestProgressTracker {
+  let job: JobTracker = NO_JOB;
+  return {
+    start() {
+      progress.start();
+      job = jobs.start(`digest-${now()}`, DIGEST_JOB);
+    },
+    step(id, label) {
+      progress.step(id, label);
+      job.step(id, label ?? labels[id]);
+    },
+    note(detail) {
+      progress.note(detail);
+      job.note(detail);
+    },
+    finish(outcome) {
+      progress.finish(outcome);
+      job.finish(outcome.ok ? { ok: true } : { ok: false, reason: outcome.reason });
+    },
+    close() {
+      progress.close();
+      job.close();
+    },
+    view: progress.view,
   };
 }
 

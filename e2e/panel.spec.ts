@@ -460,7 +460,7 @@ test('regenerate stops at the version cap with 409 limit and the panel hides the
   await expect.poll(async () => (await storedVersions(id)).length).toBe(MAX_DRAFT_VERSIONS);
   const capped = await polish(true);
   expect(capped.status).toBe(409);
-  expect(await capped.json()).toEqual({ state: 'limit' });
+  expect(await capped.json()).toMatchObject({ state: 'limit' });
 
   const panel = await openFlagged();
   const claude = panel.locator(`[data-status-id="${id}"]`).getByTestId('claude-version');

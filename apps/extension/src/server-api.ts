@@ -1,4 +1,4 @@
-import { JobProgressSchema, type JobProgress } from '@xc/shared/types';
+import { JobEntrySchema, JobListSchema, type JobEntry } from '@xc/shared/types';
 import { authHeaders, getServerConfig } from './server-config';
 
 export type FeedbackKind = 'copy' | 'edit' | 'up' | 'down';
@@ -21,13 +21,18 @@ export async function getJson(path: string): Promise<unknown> {
   return res.json();
 }
 
-/** An idea or polish job's steps; null when the server does not know the job. */
-export async function fetchJob(jobId: string): Promise<JobProgress | null> {
+/** A job's steps and what it is for; null when the server does not know the job; throws when unreachable. */
+export async function fetchJob(jobId: string): Promise<JobEntry | null> {
   const config = await getServerConfig();
   const res = await fetch(`${config.baseUrl}/v1/jobs?id=${encodeURIComponent(jobId)}`, { headers: authHeaders(config) });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`server ${res.status}`);
-  return JobProgressSchema.parse(await res.json());
+  return JobEntrySchema.parse(await res.json());
+}
+
+/** Running and recent jobs, newest first. */
+export async function fetchJobs(): Promise<JobEntry[]> {
+  return JobListSchema.parse(await getJson('/v1/jobs')).jobs;
 }
 
 export async function errorText(res: Response): Promise<string> {

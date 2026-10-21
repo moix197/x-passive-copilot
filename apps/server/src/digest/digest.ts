@@ -23,6 +23,7 @@ import {
   type Result,
 } from '@xc/shared';
 import { z } from 'zod';
+import type { JobRegistry } from '../jobs';
 import { extractJson } from '../llm/opencode';
 import { log } from '../log';
 import { getMeta, setMeta } from '../meta';
@@ -36,7 +37,7 @@ import type { RunModel } from '../voice/voice';
 import { capIdeaKinds, DIGEST_IDEA_COUNT, kindPlanLine, kindRules, needsSource, planDigestKinds } from './idea-kind';
 import { ideaToneRules } from './idea-tone';
 import { clipBytes, gatherProductContext, MAX_CONTEXT_BYTES } from './product-context';
-import { askPool, createDigestProgress, runModelReported } from './progress';
+import { askPool, createDigestProgress, listedDigestProgress, runModelReported } from './progress';
 import { freshSourcePosts, ideaSourceOf, toPromptSource, type SourceCandidate, type SourcePost } from './source-posts';
 
 const POST_LIMIT = 60;
@@ -407,10 +408,14 @@ export function createDigestService(
   wait?: (ms: number) => Promise<void>,
   /** When the model pool is out of quota on every model (0 = usable). */
   pausedUntil: () => number = () => 0,
+  /** Lists each run as a job too (the panel Activity tab). */
+  jobs: JobRegistry | null = null,
 ): DigestService {
   let running = false;
   let lastManualAt: number | null = null;
-  const progress = createDigestProgress(stepLabels(config.product.name), now);
+  const labels = stepLabels(config.product.name);
+  const ownProgress = createDigestProgress(labels, now);
+  const progress = jobs ? listedDigestProgress(ownProgress, labels, jobs, now) : ownProgress;
 
   function askModel(prompt: string, parse: (text: string) => Result<DigestContent>): Promise<Result<DigestContent>> {
     return runModelReported(askPool(runModel, prompt), progress, { parse, wait: wait ?? sleep });

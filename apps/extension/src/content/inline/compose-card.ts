@@ -1,11 +1,11 @@
-import { IDEA_KINDS, type ComposeIdeasReply, type DigestIdea, type IdeaKind, type IdeaSourceInput } from '@xc/shared/types';
+import { IDEA_KINDS, ideaJobKey, type ComposeIdeasReply, type DigestIdea, type IdeaKind, type IdeaSourceInput } from '@xc/shared/types';
 import { mergeIdeas } from '../../drafts/idea-list';
 import { element } from '../../panel/dom';
 import { copyButton, copyText } from '../../panel/draft-actions';
 import { IDEA_KIND_LABELS, ideaMeta } from '../../panel/idea-meta';
-import { watchJobProgress, type JobProgressHandle } from '../../panel/job-progress';
 import { draftingLabel } from './inline-pills';
-import { askComposeIdeas, fetchJobProgress, newIdeaJobId } from './relay';
+import { finishIdeaRequest, followIdeaJob, runningJobFor, type IdeaJobHooks, type IdeaJobState } from './idea-job';
+import { askComposeIdeas, newIdeaJobId } from './relay';
 
 export interface IdeasCard {
   card: HTMLElement;
@@ -16,19 +16,12 @@ export interface IdeasCard {
   refresh: (quoted: IdeaSourceInput | null) => void;
 }
 
-interface CardState {
+interface CardState extends IdeaJobState {
   ideas: DigestIdea[];
-  generating: boolean;
   /** The kind Generate asks for; null is Mix (the server's rotation). */
   kind: IdeaKind | null;
   /** The post quoted in the open composer; null outside X's Quote composer. */
   quoted: IdeaSourceInput | null;
-  /** Why the last request gave nothing: a refusal, or the quota pause's resume time. */
-  note: string;
-  noteTitle: string;
-  /** The running (or failed) generation's step list, and the id it follows. */
-  job: JobProgressHandle | null;
-  jobId: string | null;
 }
 
 function generateButton(state: CardState, onGenerate: () => void): HTMLButtonElement {
@@ -109,17 +102,6 @@ const askGenerate = (state: CardState, jobId: string): Promise<ComposeIdeasReply
     ? askComposeIdeas('generate', 'quote', state.quoted, jobId)
     : askComposeIdeas('generate', state.kind ?? undefined, undefined, jobId);
 
-/** The live step list of one idea generation; Retry starts another, Cancel stops waiting for it. */
-export function ideaJobProgress(jobId: string, onRetry: () => void, onCancel: () => void): JobProgressHandle {
-  return watchJobProgress({ jobId, title: 'Generating idea', fetchJob: fetchJobProgress, unknown: 'queued', onRetry, onCancel });
-}
-
-/** Once the reply is in, the step list ends with it: Done, or the reason (and Retry). */
-export function settleIdeaJob(job: JobProgressHandle | null, reply: ComposeIdeasReply): JobProgressHandle | null {
-  job?.settle(reply.error ? { ok: false, reason: reply.error, resumesAt: reply.resumesAt } : { ok: true });
-  return job;
-}
-
 // Listing failed (offline): the reason shows as the status line.
 function replyNote(reply: ComposeIdeasReply): Pick<CardState, 'note' | 'noteTitle'> {
   return { note: reply.error ? (reply.resumesAt ? draftingLabel(reply.resumesAt) : reply.error) : '', noteTitle: reply.error ?? '' };
@@ -150,11 +132,12 @@ export function createIdeasCard(): IdeasCard {
       ...ideaRows(state),
     );
 
-  function finishGenerate(jobId: string, reply: ComposeIdeasReply): void {
-    state.ideas = mergeIdeas(state.ideas, reply.ideas);
-    if (state.jobId === jobId) Object.assign(state, { generating: false, jobId: null, job: settleIdeaJob(state.job, reply) });
-    render();
-  }
+  const hooks: IdeaJobHooks = {
+    render: () => render(),
+    retry: () => generate(),
+    cancel: () => cancel(),
+    onIdea: (idea) => (state.ideas = mergeIdeas(state.ideas, [idea])),
+  };
 
   function cancel(): void {
     state.job?.stop();
@@ -164,15 +147,20 @@ export function createIdeasCard(): IdeasCard {
 
   function generate(): void {
     const jobId = newIdeaJobId();
-    state.job?.stop();
-    Object.assign(state, { generating: true, note: '', noteTitle: '', jobId, job: ideaJobProgress(jobId, generate, cancel) });
-    render();
-    void askGenerate(state, jobId).then((reply) => finishGenerate(jobId, reply));
+    followIdeaJob(state, jobId, hooks);
+    void askGenerate(state, jobId).then((reply) => finishIdeaRequest(state, jobId, reply, hooks));
   }
+
+  // A generation still running for this composer (the page was reloaded) shows its steps again.
+  const reattach = (quoted: IdeaSourceInput | null) =>
+    void runningJobFor(ideaJobKey(quoted, quoted ? 'quote' : undefined)).then((job) => {
+      if (job && !state.generating) followIdeaJob(state, job.id, hooks, job);
+    });
 
   const refresh = (quoted: IdeaSourceInput | null) => {
     state.quoted = quoted;
     render();
+    reattach(quoted);
     void askComposeIdeas('list').then((reply) => {
       applyReply(state, reply);
       render();
