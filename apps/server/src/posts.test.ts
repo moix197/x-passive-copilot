@@ -37,13 +37,23 @@ describe('listFlaggedPosts', () => {
     expect(ids).toEqual(['2', '1']);
   });
 
-  it('orders To reply by score, with unscored (pending) posts on top newest first', () => {
+  it('orders To reply newest flagged first (manual flag time, else triage time, else capture), ignoring score', () => {
     const db = openDb(mkdtempSync(join(tmpdir(), 'xc-posts-')));
     ingestPosts(db, [post(1, 1), post(2, 1), post(3, 1), post(4, 1), post(5, 1)], NOW, 'me');
-    db.exec(`INSERT INTO triage (status_id, score, must_flag, triaged_at) VALUES ('1', 99, 'watchlist', 0), ('2', 10, 'watchlist', 0), ('4', 99, 'watchlist', 0)`);
+    db.exec(`INSERT INTO triage (status_id, score, must_flag, triaged_at) VALUES ('1', 99, 'watchlist', 300), ('2', 10, 'watchlist', 100), ('4', 99, 'watchlist', 200)`);
 
     const ids = listFlaggedPosts(db, 10, undefined, rules, NOW).posts.map((p) => p.statusId);
-    expect(ids).toEqual(['5', '3', '4', '1', '2']);
+    expect(ids).toEqual(['5', '3', '1', '4', '2']);
+  });
+
+  it('puts a manual flag at its flag time and drops reply-worthy posts past the age limit', () => {
+    const db = openDb(mkdtempSync(join(tmpdir(), 'xc-posts-')));
+    ingestPosts(db, [post(1, 1), post(2, 30), post(3, 30), post(4, 1)], NOW, 'me');
+    db.exec(`INSERT INTO triage (status_id, score, reply_worthy, triaged_at) VALUES ('1', 50, 1, 100), ('2', 90, 1, 100), ('4', 50, 1, 200)`);
+    db.exec(`UPDATE posts SET manual_flag_at = 500 WHERE status_id IN ('1', '3')`);
+
+    const ids = listFlaggedPosts(db, 10, undefined, rules, NOW).posts.map((p) => p.statusId);
+    expect(ids).toEqual(['3', '1', '4']);
   });
 
   it('moves replied posts to Replied (newest replied first), exempt from age limits, with counts', () => {

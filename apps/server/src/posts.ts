@@ -141,6 +141,7 @@ interface PostRow {
   copied_at: number | null;
   manual_flag_at: number | null;
   t_status_id: string | null;
+  t_triaged_at: number | null;
   score: number | null;
   reason: string | null;
   rough_draft: string | null;
@@ -228,7 +229,7 @@ function toStoredPost(row: PostRow, ctx: PolishContext): StoredPost {
   };
 }
 
-const SELECT_WITH_TRIAGE = `SELECT p.*, t.status_id AS t_status_id, t.score, t.reason, t.rough_draft,
+const SELECT_WITH_TRIAGE = `SELECT p.*, t.status_id AS t_status_id, t.triaged_at AS t_triaged_at, t.score, t.reason, t.rough_draft,
   t.reply_worthy, t.skip_reason, t.must_flag, t.error,
   d.status AS d_status, d.kind AS d_kind, d.text AS d_text, d.violations AS d_violations, d.error AS d_error,
   d.selected_version AS d_selected_version, ${VERSIONS_SUBQUERY('p.status_id')} AS d_versions,
@@ -266,40 +267,45 @@ function pendingTriage(mustFlag: MustFlag): StoredPost['triage'] {
   };
 }
 
-/** Stored must-flag rows hide once past their age limit; reply-worthy-only rows were age-filtered by prefilter. */
-function isStaleMustFlag(post: StoredPost, rules: PrefilterRules | null, now: number): boolean {
+/** Stored rows hide once past their age limit (24h, mentions 3 days); a manual flag never ages out. */
+function isStaleFlagged(post: StoredPost, rules: PrefilterRules | null, now: number): boolean {
   const mustFlag = post.triage?.mustFlag ?? undefined;
-  return !!rules && !!mustFlag && !isWithinAgeLimit(post.postedAt, mustFlag, rules, now);
+  return !!rules && !isWithinAgeLimit(post.postedAt, mustFlag, rules, now);
 }
 
 function eligibleFlagged(post: StoredPost, rules: PrefilterRules | null, now: number): StoredPost | null {
-  if (post.triage) return isStaleMustFlag(post, rules, now) ? null : post;
+  if (post.triage) return isStaleFlagged(post, rules, now) ? null : post;
   if (post.manualFlaggedAt !== null) return { ...post, triage: pendingTriage('manual') };
   return rules ? asPendingMustFlag(post, rules, now) : null;
 }
 
-/** Pending (unscored) posts first, newest first; then highest score, ties newest captured. */
-function byReplyPriority(a: StoredPost, b: StoredPost): number {
-  const sa = a.triage?.score ?? null;
-  const sb = b.triage?.score ?? null;
-  if (sa === null || sb === null) return sa === sb ? b.seq - a.seq : sa === null ? -1 : 1;
-  return sb - sa || b.seq - a.seq;
+interface FlaggedEntry {
+  post: StoredPost;
+  /** When the post was flagged: by hand, else triaged, else (still pending) captured. */
+  flaggedAt: number;
+}
+
+const flaggedAtOf = (row: PostRow): number => row.manual_flag_at ?? row.t_triaged_at ?? row.captured_at;
+
+/** Newest flagged first; ties newest captured. */
+function byNewestFlagged(a: FlaggedEntry, b: FlaggedEntry): number {
+  return b.flaggedAt - a.flaggedAt || b.post.seq - a.post.seq;
 }
 
 const FLAGGED_WHERE = '(t.must_flag IS NOT NULL OR t.reply_worthy = 1 OR t.status_id IS NULL OR p.manual_flag_at IS NOT NULL)';
 
 /** Every unreplied post still worth a reply. Stale rows drop out after the SQL page, so scan all pages. */
-function collectToReply(db: DatabaseSync, ctx: PolishContext, rules: PrefilterRules | null, now: number): StoredPost[] {
+function collectToReply(db: DatabaseSync, ctx: PolishContext, rules: PrefilterRules | null, now: number): FlaggedEntry[] {
   const query = db.prepare(
     `${SELECT_WITH_TRIAGE} WHERE p.seq < ? AND p.replied_at IS NULL AND ${FLAGGED_WHERE} ORDER BY p.seq DESC LIMIT ?`,
   );
-  const posts: StoredPost[] = [];
+  const posts: FlaggedEntry[] = [];
   let before = Number.MAX_SAFE_INTEGER;
   for (;;) {
     const rows = query.all(before, FLAGGED_BATCH) as unknown as PostRow[];
     for (const row of rows) {
       const post = eligibleFlagged(toStoredPost(row, ctx), rules, now);
-      if (post) posts.push(post);
+      if (post) posts.push({ post, flaggedAt: flaggedAtOf(row) });
     }
     const last = rows[rows.length - 1];
     if (rows.length < FLAGGED_BATCH || !last) return posts;
@@ -328,9 +334,9 @@ export function listFlaggedPosts(
   now: number = Date.now(),
   feed: FlaggedFeed = 'to_reply',
 ): PostListResponse {
-  const toReply = collectToReply(db, ctx, rules, now).sort(byReplyPriority);
+  const toReply = collectToReply(db, ctx, rules, now).sort(byNewestFlagged);
   const counts: FlaggedCounts = { toReply: toReply.length, replied: countReplied(db) };
-  const posts = feed === 'replied' ? listReplied(db, limit, ctx) : toReply.slice(0, limit);
+  const posts = feed === 'replied' ? listReplied(db, limit, ctx) : toReply.slice(0, limit).map((entry) => entry.post);
   return { posts, nextBefore: null, counts };
 }
 

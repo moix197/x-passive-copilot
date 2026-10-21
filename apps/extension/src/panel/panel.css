@@ -122,6 +122,13 @@ h1 {
   font-weight: 700;
   border-color: var(--accent);
 }
+.load-more {
+  display: block;
+  margin: 12px auto;
+}
+.load-more[hidden] {
+  display: none;
+}
 .replied-actions {
   display: flex;
   align-items: center;

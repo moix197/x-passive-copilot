@@ -8,6 +8,8 @@ export interface PostsViewOptions {
   load: () => Promise<StoredPost[]>;
   render?: (post: StoredPost) => HTMLElement;
   emptyText?: string;
+  /** Hands the owner a function that reloads now instead of waiting for the next poll. */
+  bindRefresh?: (refresh: () => void) => void;
 }
 
 function tagsFor(post: StoredPost): string[] {
@@ -79,13 +81,18 @@ export function mountPostsView(root: HTMLElement, options: PostsViewOptions): ()
   const status = element('p', 'Loading...', 'status');
   const list = document.createElement('div');
   root.replaceChildren(status, list);
-  return pollWhileVisible(async () => {
+  let latest = 0;
+  const refresh = async () => {
+    const mine = ++latest;
     try {
       const posts = await options.load();
+      if (mine !== latest) return;
       replaceRows(list, posts.map(options.render ?? renderPost));
       status.textContent = posts.length ? '' : (options.emptyText ?? 'No posts captured yet.');
     } catch {
       status.textContent = 'Server offline.';
     }
-  });
+  };
+  options.bindRefresh?.(() => void refresh());
+  return pollWhileVisible(refresh);
 }

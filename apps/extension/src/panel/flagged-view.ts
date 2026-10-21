@@ -281,7 +281,7 @@ export function renderFlagged(
 
 export function mountFlaggedView(
   root: HTMLElement,
-  options: Pick<PostsViewOptions, 'load' | 'emptyText'> & FlaggedHandlers,
+  options: Pick<PostsViewOptions, 'load' | 'emptyText' | 'bindRefresh'> & FlaggedHandlers,
 ): () => void {
   const editors: OpenEditors = new Map();
   const load = async () => {
@@ -290,5 +290,5 @@ export function mountFlaggedView(
     return posts;
   };
   const render = (post: StoredPost) => editors.get(post.statusId)?.row ?? renderFlagged(post, options, editors);
-  return mountPostsView(root, { load, render, emptyText: options.emptyText });
+  return mountPostsView(root, { load, render, emptyText: options.emptyText, bindRefresh: options.bindRefresh });
 }

@@ -17,17 +17,17 @@ type View = 'all' | 'flagged' | 'digest' | 'voice';
 const title = document.getElementById('title');
 if (title) title.textContent = 'X passive copilot';
 
-async function fetchPosts(query: string) {
+async function fetchPosts(query: string, limit = 100) {
   const config = await getServerConfig();
-  const res = await fetch(`${config.baseUrl}/v1/posts?limit=100${query}`, { headers: authHeaders(config) });
+  const res = await fetch(`${config.baseUrl}/v1/posts?limit=${limit}${query}`, { headers: authHeaders(config) });
   if (!res.ok) throw new Error(`server ${res.status}`);
   return PostListResponseSchema.parse(await res.json());
 }
 
 const loadAllPosts = async (): Promise<StoredPost[]> => (await fetchPosts('')).posts;
 
-async function loadFlagged(feed: FlaggedFeed): Promise<FlaggedPage> {
-  const { posts, counts } = await fetchPosts(`&view=flagged&feed=${feed}`);
+async function loadFlagged(feed: FlaggedFeed, limit: number): Promise<FlaggedPage> {
+  const { posts, counts } = await fetchPosts(`&view=flagged&feed=${feed}`, limit);
   return { posts, counts: counts ?? { toReply: posts.length, replied: 0 } };
 }
 

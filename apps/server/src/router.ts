@@ -30,6 +30,8 @@ import { readStyleNotes, saveStyleNotes } from './voice/style-notes';
 const MAX_BODY_BYTES = 1024 * 1024;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
+// Flagged "Load more" asks for the whole window again (limit grows), so its cap is higher.
+const MAX_FLAGGED_LIMIT = 1000;
 
 type Handler = (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<void> | void;
 type ParamHandler = (id: string) => Handler;
@@ -97,8 +99,9 @@ function getPosts(db: DatabaseSync, polishContext: () => PolishContext, flagRule
   return (_req, res, url) => {
     const limit = parseIntParam(url.searchParams.get('limit'), DEFAULT_LIMIT);
     const before = parseIntParam(url.searchParams.get('before'), 0);
-    if (!limit || before === null || limit > MAX_LIMIT) return sendJson(res, 400, { error: 'bad query' });
     const view = url.searchParams.get('view');
+    const maxLimit = view === 'flagged' ? MAX_FLAGGED_LIMIT : MAX_LIMIT;
+    if (!limit || before === null || limit > maxLimit) return sendJson(res, 400, { error: 'bad query' });
     const feed = url.searchParams.get('feed') ?? 'to_reply';
     if (view === 'flagged') {
       if (!isFlaggedFeed(feed)) return sendJson(res, 400, { error: 'bad query' });

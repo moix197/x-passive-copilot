@@ -78,7 +78,7 @@ const rowIds = (panel: Page, mine: string[]) =>
 
 const row = (panel: Page, statusId: string) => panel.locator(`[data-status-id="${statusId}"]`);
 
-test('To reply orders by score with pending posts on top; Replied is newest replied first; Move back returns a card; all survive reload', async () => {
+test('To reply orders newest flagged first whatever the score, pending posts included; Replied is newest replied first; Move back returns a card; all survive reload', async () => {
   const mine = ['6101', '6102', '6103', '6104'];
   await ingest(
     capturedPost('6101', 'low one [score:40]'),
@@ -86,11 +86,11 @@ test('To reply orders by score with pending posts on top; Replied is newest repl
     capturedPost('6103', 'middle one [score:60]'),
   );
   const panel = await openFlagged();
-  await expect.poll(() => rowIds(panel, mine)).toEqual(['6102', '6103', '6101']);
+  await expect.poll(() => rowIds(panel, mine)).toEqual(['6103', '6102', '6101']);
 
   writeFileSync(holdFile(), 'hold');
   await ingest({ ...capturedPost('6104', '@e2eowner pending mention'), authorHandle: 'orderer' });
-  await expect.poll(() => rowIds(panel, mine)).toEqual(['6104', '6102', '6103', '6101']);
+  await expect.poll(() => rowIds(panel, mine)).toEqual(['6104', '6103', '6102', '6101']);
   await expect(row(panel, '6104')).toContainText('triage pending');
   rmSync(holdFile(), { force: true });
 
@@ -115,6 +115,18 @@ test('To reply orders by score with pending posts on top; Replied is newest repl
   await reloaded.getByTestId('feed-to-reply').click();
   await expect.poll(() => rowIds(reloaded, mine)).toEqual(['6104', '6102', '6101']);
   await expect(reloaded.getByTestId('feed-replied')).toContainText('Replied (1)');
+});
+
+// The post is triaged while still fresh, then ages past the 24h limit while the panel is open.
+test('a reply-worthy post past the age limit leaves To reply and the inline lookup', async () => {
+  const agesOutIn = 25_000;
+  await ingest({ ...capturedPost('6401', 'about to age out'), postedAt: new Date(Date.now() - 24 * HOUR + agesOutIn).toISOString() });
+  const panel = await openFlagged();
+  await expect(row(panel, '6401').getByTestId('first-draft')).toContainText('Congrats on shipping!', { timeout: 20_000 });
+
+  await expect(row(panel, '6401')).toHaveCount(0, { timeout: 40_000 });
+  const res = await fetch(`${server.baseUrl}/v1/posts/to-reply?ids=6401`, { headers: authHeader });
+  expect(((await res.json()) as { posts: unknown[] }).posts).toEqual([]);
 });
 
 const postPageUrl = (statusId: string) => `https://x.com/someone/status/${statusId}`;
