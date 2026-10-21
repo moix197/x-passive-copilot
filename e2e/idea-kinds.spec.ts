@@ -108,7 +108,7 @@ test('a Quote idea shows its source post with an Open post link to it, never quo
   await expect(newest.getByRole('link', { name: 'Open post' })).toHaveAttribute('href', 'https://x.com/bob/status/9602');
 
   await generate.click();
-  await expect(card.getByTestId('compose-ideas-status')).toHaveText('No fresh captured posts to draw from yet');
+  await expect(card.getByTestId('job-progress-title')).toHaveText('Failed: No fresh captured posts to draw from yet');
   await expect(card.getByTestId('compose-idea-text')).toHaveText(['Fake idea 2', 'Fake idea 1']);
   expect(await page.evaluate(() => (window as unknown as { __composer: object }).__composer)).toEqual({ leaked: 0, posted: 0 });
   await page.close();

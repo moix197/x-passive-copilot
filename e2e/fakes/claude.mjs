@@ -1,5 +1,6 @@
 // Fake `claude -p` CLI: answers each polish prompt with the next scripted reply.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { join } from 'node:path';
 
 const REPLIES = [
@@ -26,6 +27,16 @@ if (!process.argv.includes('-p')) {
 }
 const prompt = await readStdin();
 writeFileSync(join(dir, 'claude-last-cwd.txt'), process.cwd());
+// Tests hold a polish (its steps stay observable) by creating claude-hold.txt next to this script.
+while (existsSync(join(dir, 'claude-hold.txt'))) await sleep(50);
+// claude-fail.txt = N: the next N calls report an error (without using up a scripted reply).
+const failFile = join(dir, 'claude-fail.txt');
+const failsLeft = existsSync(failFile) ? Number(readFileSync(failFile, 'utf8')) : 0;
+if (failsLeft > 0) {
+  writeFileSync(failFile, String(failsLeft - 1));
+  process.stdout.write(JSON.stringify({ type: 'result', is_error: true, result: 'fake claude failure' }));
+  process.exit(0);
+}
 if (prompt.includes(PITCH_PROBE)) {
   process.stdout.write(JSON.stringify({ type: 'result', is_error: false, structured_output: { reply: PITCH, rationale: 'fake' } }));
   process.exit(0);

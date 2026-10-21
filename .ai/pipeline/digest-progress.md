@@ -4,9 +4,9 @@ type: decision
 summary: Digest runs record steps in server memory; GET /v1/digest returns them as `progress`; the panel shows a step list, polling 1s while active
 tags: [digest, progress, polling, panel, model-pool, retry]
 paths: [apps/server/src/digest/progress.ts, apps/server/src/digest/digest.ts, apps/server/src/llm/model-pool.ts, apps/server/src/voice/voice.ts, apps/extension/src/panel/digest-progress.ts, apps/extension/src/panel/digest-section.ts, apps/extension/src/panel/posts-view.ts, apps/extension/src/panel/voice-tab.ts, shared/src/types.ts, e2e/digest-generate.spec.ts]
-related: [pipeline/voice-and-digest, pipeline/model-quota, pipeline/digest-product-context]
+related: [pipeline/voice-and-digest, pipeline/model-quota, pipeline/digest-product-context, pipeline/job-progress]
 status: active
-updated: 2026-10-19
+updated: 2026-10-21
 ---
 
 # Digest run progress
@@ -22,8 +22,9 @@ panel needs no timer to hide it. `DigestView.progress` carries it (nullable).
 **Model step:** `RunModel`/`ModelPool.run` take an optional `ModelObserver` (`onModel`, `onSwitch`).
 `createModelReporter` turns these into the label "Asking <model> (attempt k)" (provider prefix
 stripped; k = `withRetry` attempt) and a detail line "Quota reached on A, switching to B" / "no model
-left"; the digest wraps `withRetry`'s `wait` so a retry shows "<model> busy|timed out|..., retrying
-in Ns". Triage and voice ignore the observer.
+left"; `runModelReported` (shared with idea and polish jobs) wraps `withRetry`'s `wait` so a retry
+shows "<model> under high demand|timed out|..., retrying in Ns". Triage and voice ignore the observer.
+The step row renderer (`renderStep`) is shared with the job progress box.
 
 **Panel:** `digest-progress.ts` renders a compact box under Generate (done ✓, current spinner,
 pending •, failed ✕, elapsed seconds; title "Generating ideas", then "Done — N ideas" or

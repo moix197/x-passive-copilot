@@ -8,6 +8,8 @@ export type PostMark = 'replied' | 'flaggable' | null;
 export interface CacheEntry {
   post: StoredPost | null;
   mark: PostMark;
+  /** Flaggable and not judged by triage yet: it may turn Ready any moment. */
+  triaging?: boolean;
   at: number;
   /** Set after a user action, so the next sync asks again whatever the age. */
   stale?: boolean;
@@ -20,10 +22,11 @@ export const REFRESH_MS = 15_000;
 export const BUSY_REFRESH_MS = 2_000;
 const FORGET_MS = 10 * 60_000;
 
-/** A polish running, or a flagged post waiting for triage: its pill follows the server closely. */
+/** A polish running, or a post waiting for triage: its pill follows the server closely. */
 export function isBusy(entry: CacheEntry | undefined): boolean {
   const post = entry?.post;
-  return Boolean(post && (post.polish?.status === 'polishing' || isTriagePending(post)));
+  if (!post) return entry?.triaging === true;
+  return post.polish?.status === 'polishing' || isTriagePending(post);
 }
 
 const maxAge = (entry: CacheEntry): number => (entry.stale ? 0 : isBusy(entry) ? BUSY_REFRESH_MS : REFRESH_MS);
@@ -46,7 +49,7 @@ export function nextRefreshMs(visible: string[], cache: DraftCache, now: number)
   return Math.min(REFRESH_MS, ...waits);
 }
 
-export type LookupAnswer = Pick<ToReplyByIdsResponse, 'posts' | 'replied' | 'flaggable'>;
+export type LookupAnswer = Pick<ToReplyByIdsResponse, 'posts' | 'replied' | 'flaggable'> & Partial<Pick<ToReplyByIdsResponse, 'triaging'>>;
 
 function markOf(id: string, answer: LookupAnswer): PostMark {
   if (answer.replied.includes(id)) return 'replied';
@@ -55,7 +58,10 @@ function markOf(id: string, answer: LookupAnswer): PostMark {
 
 export function storeLookup(cache: DraftCache, asked: string[], answer: LookupAnswer, now: number): void {
   const byId = new Map(answer.posts.map((post) => [post.statusId, post]));
-  for (const id of asked) cache.set(id, { post: byId.get(id) ?? null, mark: markOf(id, answer), at: now });
+  const triaging = new Set(answer.triaging ?? []);
+  for (const id of asked) {
+    cache.set(id, { post: byId.get(id) ?? null, mark: markOf(id, answer), ...(triaging.has(id) ? { triaging: true } : {}), at: now });
+  }
 }
 
 /** A failed lookup keeps what is shown and waits a full interval before asking again. */

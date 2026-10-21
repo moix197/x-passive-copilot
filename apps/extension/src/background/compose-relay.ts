@@ -24,8 +24,9 @@ async function refusal(res: Response): Promise<ComposeIdeasReply> {
   return reply({ error: await errorText(res), resumesAt });
 }
 
-async function generateIdea({ kind, source }: ComposeIdeasMessage): Promise<ComposeIdeasReply> {
-  const res = await postJson('/v1/ideas/generate', kind ? { kind, ...(source ? { source } : {}) } : undefined);
+async function generateIdea({ kind, source, jobId }: ComposeIdeasMessage): Promise<ComposeIdeasReply> {
+  const body = { ...(kind ? { kind, ...(source ? { source } : {}) } : {}), ...(jobId ? { jobId } : {}) };
+  const res = await postJson('/v1/ideas/generate', Object.keys(body).length ? body : undefined);
   if (!res.ok) return refusal(res);
   const { idea } = (await res.json()) as { idea?: unknown };
   return reply({ ideas: [DigestIdeaSchema.parse(idea)] });

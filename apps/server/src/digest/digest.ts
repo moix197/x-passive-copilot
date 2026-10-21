@@ -31,12 +31,12 @@ import { ideaDraftKey, type Idea } from '../polish/polish';
 import { readIngestCount } from '../posts';
 import { replaceDashes } from '../text/dashes';
 import { dataJson } from '../triage/prompts';
-import { classifyFailure, errorClass, safeReason, sleep, withRetry } from '../triage/retry';
+import { classifyFailure, errorClass, safeReason, sleep } from '../triage/retry';
 import type { RunModel } from '../voice/voice';
 import { capIdeaKinds, DIGEST_IDEA_COUNT, kindPlanLine, kindRules, needsSource, planDigestKinds } from './idea-kind';
 import { ideaToneRules } from './idea-tone';
 import { clipBytes, gatherProductContext, MAX_CONTEXT_BYTES } from './product-context';
-import { createDigestProgress, createModelReporter } from './progress';
+import { askPool, createDigestProgress, runModelReported } from './progress';
 import { freshSourcePosts, ideaSourceOf, toPromptSource, type SourceCandidate, type SourcePost } from './source-posts';
 
 const POST_LIMIT = 60;
@@ -413,17 +413,7 @@ export function createDigestService(
   const progress = createDigestProgress(stepLabels(config.product.name), now);
 
   function askModel(prompt: string, parse: (text: string) => Result<DigestContent>): Promise<Result<DigestContent>> {
-    const report = createModelReporter(progress);
-    const waitAndReport = (ms: number) => {
-      report.retrying(ms);
-      return (wait ?? sleep)(ms);
-    };
-    return withRetry(async () => {
-      const out = await runModel(prompt, report.nextAttempt());
-      const result = out.ok ? parse(out.value) : out;
-      if (!result.ok) report.failed(result.error);
-      return result;
-    }, waitAndReport);
+    return runModelReported(askPool(runModel, prompt), progress, { parse, wait: wait ?? sleep });
   }
 
   async function generate(): Promise<Result<DigestContent>> {

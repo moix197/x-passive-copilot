@@ -4,9 +4,9 @@ type: decision
 summary: Polish guards each reply (one auto-retry); Regenerate appends guarded versions with a persisted pick; auto top picks use a per-day meta counter
 tags: [polish, claude, guard, daily-cap, auto-polish, versions, regenerate]
 paths: [apps/server/src/polish/**, apps/server/src/llm/claude.ts, apps/server/src/posts.ts, apps/server/src/db.ts, apps/extension/src/panel/flagged-view.ts, apps/extension/src/panel/version-nav.ts, apps/extension/src/panel/draft-actions.ts, apps/extension/src/panel/posts-view.ts]
-related: [security/llm-subprocess-sandbox, pipeline/triage-flow, pipeline/reply-tone]
+related: [security/llm-subprocess-sandbox, pipeline/triage-flow, pipeline/reply-tone, pipeline/job-progress]
 status: active
-updated: 2026-10-19
+updated: 2026-10-21
 ---
 
 # Polish flow
@@ -15,6 +15,8 @@ updated: 2026-10-19
 in-memory in-flight set keyed by statusId plus a `drafts` row (`polishing`) make double clicks one
 job. generate -> `checkReply` -> on violations regenerate once with them listed -> `ready` or
 `needs_edit` (rule names stored). Failures store `error` (class only) and allow a manual retry.
+Each job records its steps (Claude, retry waits, guard, guard-flag regenerate, save) as
+`polish-<key>` for the live step lists (pipeline/job-progress).
 Auto-polish is OFF by default (`autoPolish.enabled`, default false; Claude runs only on a user click). When enabled, after each triage batch `auto-polish` takes posts with score >= `autoPolish.threshold` and no draft,
 best first, reserving a slot in `meta` (key `autoPolish:<local day>`); a failed job releases its
 slot and stops the loop; a candidate already in flight is skipped (slot released) instead. `dailyCap: 0` disables auto; manual Polish ignores the cap.

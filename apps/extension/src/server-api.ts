@@ -1,3 +1,4 @@
+import { JobProgressSchema, type JobProgress } from '@xc/shared/types';
 import { authHeaders, getServerConfig } from './server-config';
 
 export type FeedbackKind = 'copy' | 'edit' | 'up' | 'down';
@@ -18,6 +19,15 @@ export async function getJson(path: string): Promise<unknown> {
   const res = await fetch(`${config.baseUrl}${path}`, { headers: authHeaders(config) });
   if (!res.ok) throw new Error(`server ${res.status}`);
   return res.json();
+}
+
+/** An idea or polish job's steps; null when the server does not know the job. */
+export async function fetchJob(jobId: string): Promise<JobProgress | null> {
+  const config = await getServerConfig();
+  const res = await fetch(`${config.baseUrl}/v1/jobs?id=${encodeURIComponent(jobId)}`, { headers: authHeaders(config) });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`server ${res.status}`);
+  return JobProgressSchema.parse(await res.json());
 }
 
 export async function errorText(res: Response): Promise<string> {

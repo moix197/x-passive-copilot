@@ -1,6 +1,7 @@
-import { DIGEST_STEP_IDS, type DigestProgress, type DigestStep, type DigestStepId, type ModelFailureKind } from '@xc/shared';
+import { DIGEST_STEP_IDS, type DigestProgress, type DigestStep, type DigestStepId, type ModelFailureKind, type Result } from '@xc/shared';
 import type { ModelObserver } from '../llm/model-pool';
-import { classifyFailure } from '../triage/retry';
+import { classifyFailure, withRetry } from '../triage/retry';
+import type { RunModel } from '../voice/voice';
 
 /** A finished run stays visible this long so the panel can show its outcome before hiding it. */
 export const FINISHED_VISIBLE_MS = 6000;
@@ -86,10 +87,10 @@ export function createDigestProgress(labels: Record<DigestStepId, string>, now: 
   };
 }
 
-const shortModel = (model: string) => model.slice(model.lastIndexOf('/') + 1);
+export const shortModel = (model: string) => model.slice(model.lastIndexOf('/') + 1);
 
 const RETRY_REASON: Partial<Record<ModelFailureKind, string>> = {
-  busy: 'busy',
+  busy: 'under high demand',
   timeout: 'timed out',
   malformed: 'answered in an unreadable format',
 };
@@ -101,15 +102,31 @@ export interface ModelReporter {
   retrying(delayMs: number): void;
 }
 
+/** Where model progress goes: the digest run, or a job (an idea, a polish). */
+export interface ProgressSink {
+  /** Method syntax on purpose: the digest tracker takes only its own step ids (bivariant check). */
+  step(id: string, label: string): void;
+  note(detail: string | null): void;
+}
+
+export interface ReporterOptions {
+  /** The step the attempts show on (a job may run the model more than once). */
+  stepId?: string;
+  label?: (model: string, attempt: number) => string;
+}
+
+const askingLabel = (model: string, attempt: number) => `Asking ${model} (attempt ${attempt})`;
+
 /** Turns model-pool events and retry waits into the "Asking <model>" step and its detail line. */
-export function createModelReporter(progress: DigestProgressTracker): ModelReporter {
+export function createModelReporter(progress: ProgressSink, options: ReporterOptions = {}): ModelReporter {
+  const { stepId = 'model', label = askingLabel } = options;
   let attempt = 0;
   let model = '';
   let lastKind: ModelFailureKind = 'cli';
   const observer: ModelObserver = {
     onModel(next) {
       model = next;
-      progress.step('model', `Asking ${shortModel(model)} (attempt ${attempt})`);
+      progress.step(stepId, label(shortModel(model), attempt));
     },
     onSwitch(from, next) {
       const then = next ? `switching to ${shortModel(next)}` : 'no model left';
@@ -131,3 +148,31 @@ export function createModelReporter(progress: DigestProgressTracker): ModelRepor
     },
   };
 }
+
+export interface ReportedCall<A, T> extends ReporterOptions {
+  /** Checks the model's answer; a failure counts as a failed attempt. */
+  parse: (answer: A) => Result<T>;
+  wait: (ms: number) => Promise<void>;
+}
+
+/** One model call with retries; each attempt, quota switch and retry wait shows on `sink`. */
+export function runModelReported<A, T>(
+  run: (observer: ModelObserver) => Promise<Result<A>>,
+  sink: ProgressSink,
+  call: ReportedCall<A, T>,
+): Promise<Result<T>> {
+  const report = createModelReporter(sink, call);
+  const waitAndReport = (ms: number) => {
+    report.retrying(ms);
+    return call.wait(ms);
+  };
+  return withRetry(async () => {
+    const out = await run(report.nextAttempt());
+    const result = out.ok ? call.parse(out.value) : out;
+    if (!result.ok) report.failed(result.error);
+    return result;
+  }, waitAndReport);
+}
+
+/** The prompt on the model pool, as one reported call. */
+export const askPool = (runModel: RunModel, prompt: string) => (observer: ModelObserver) => runModel(prompt, observer);

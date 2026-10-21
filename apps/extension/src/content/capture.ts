@@ -3,13 +3,14 @@ import { watchComposers } from './inline/compose-ideas';
 import { createInlineDrafts } from './inline/inline-drafts';
 import { isOwnInsertion } from './inline/own-nodes';
 import { parseArticle } from './parse-article';
+import { createScheduler } from './scheduler';
 import { SEL } from './selectors';
 
-const DEBOUNCE_MS = 1000;
+/** Capture runs at most this long after the first change of a burst, so the pills can show soon after load. */
+const CAPTURE_DELAY_MS = 300;
 const MAX_BATCH = 50;
 
 const seen = new Set<string>();
-let timer: number | undefined;
 
 function collectNewPosts(column: Element): CapturedPost[] {
   const fresh: CapturedPost[] = [];
@@ -27,7 +28,7 @@ async function sendBatch(posts: CapturedPost[]): Promise<void> {
   const message: CaptureMessage = { type: 'posts', posts };
   try {
     const reply = await chrome.runtime.sendMessage(message);
-    if (reply?.ok) return;
+    if (reply?.ok) return inlineDrafts.captured(posts.map((post) => post.statusId));
   } catch {
     // service worker unreachable: fall through and allow a retry
   }
@@ -43,11 +44,7 @@ function flush(): void {
   }
 }
 
-function schedule(): void {
-  window.clearTimeout(timer);
-  timer = window.setTimeout(flush, DEBOUNCE_MS);
-}
-
+const schedule = createScheduler(flush, CAPTURE_DELAY_MS);
 const inlineDrafts = createInlineDrafts();
 
 // Our own card insertions must not wake capture or the cards again (that would loop).

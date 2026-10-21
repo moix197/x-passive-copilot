@@ -3,8 +3,9 @@ import { mergeIdeas } from '../../drafts/idea-list';
 import { element } from '../../panel/dom';
 import { copyButton, copyText } from '../../panel/draft-actions';
 import { IDEA_KIND_LABELS, ideaMeta } from '../../panel/idea-meta';
+import { watchJobProgress, type JobProgressHandle } from '../../panel/job-progress';
 import { draftingLabel } from './inline-pills';
-import { askComposeIdeas } from './relay';
+import { askComposeIdeas, fetchJobProgress, newIdeaJobId } from './relay';
 
 export interface IdeasCard {
   card: HTMLElement;
@@ -25,6 +26,9 @@ interface CardState {
   /** Why the last request gave nothing: a refusal, or the quota pause's resume time. */
   note: string;
   noteTitle: string;
+  /** The running (or failed) generation's step list, and the id it follows. */
+  job: JobProgressHandle | null;
+  jobId: string | null;
 }
 
 function generateButton(state: CardState, onGenerate: () => void): HTMLButtonElement {
@@ -100,11 +104,24 @@ function ideaRows(state: CardState): HTMLElement[] {
   return state.generating ? [] : [element('p', 'No ideas yet. Generate one to copy into your post.', 'status')];
 }
 
-const askGenerate = (state: CardState): Promise<ComposeIdeasReply> =>
-  state.quoted ? askComposeIdeas('generate', 'quote', state.quoted) : askComposeIdeas('generate', state.kind ?? undefined);
+const askGenerate = (state: CardState, jobId: string): Promise<ComposeIdeasReply> =>
+  state.quoted
+    ? askComposeIdeas('generate', 'quote', state.quoted, jobId)
+    : askComposeIdeas('generate', state.kind ?? undefined, undefined, jobId);
 
-// A quota pause shows when generating resumes; any other refusal shows the server's reason.
-export function replyNote(reply: ComposeIdeasReply): Pick<CardState, 'note' | 'noteTitle'> {
+/** The live step list of one idea generation; Retry starts another, Cancel stops waiting for it. */
+export function ideaJobProgress(jobId: string, onRetry: () => void, onCancel: () => void): JobProgressHandle {
+  return watchJobProgress({ jobId, title: 'Generating idea', fetchJob: fetchJobProgress, unknown: 'queued', onRetry, onCancel });
+}
+
+/** Once the reply is in, the step list ends with it: Done, or the reason (and Retry). */
+export function settleIdeaJob(job: JobProgressHandle | null, reply: ComposeIdeasReply): JobProgressHandle | null {
+  job?.settle(reply.error ? { ok: false, reason: reply.error, resumesAt: reply.resumesAt } : { ok: true });
+  return job;
+}
+
+// Listing failed (offline): the reason shows as the status line.
+function replyNote(reply: ComposeIdeasReply): Pick<CardState, 'note' | 'noteTitle'> {
   return { note: reply.error ? (reply.resumesAt ? draftingLabel(reply.resumesAt) : reply.error) : '', noteTitle: reply.error ?? '' };
 }
 
@@ -118,33 +135,48 @@ export function createIdeasCard(): IdeasCard {
   const card = element('section', '', 'inline-card');
   card.dataset.testid = 'compose-ideas-card';
   card.setAttribute('aria-label', 'Post ideas');
-  const state: CardState = { ideas: [], generating: false, kind: null, quoted: null, note: '', noteTitle: '' };
+  const state: CardState = { ideas: [], generating: false, kind: null, quoted: null, note: '', noteTitle: '', job: null, jobId: null };
 
   const pickKind = (kind: IdeaKind | null) => {
     state.kind = kind;
     render();
   };
   const render = () =>
-    card.replaceChildren(cardHead(state, generate), kindControls(state, pickKind), noteLine(state, 'compose-ideas-status'), ...ideaRows(state));
-  const ask = async (action: 'list' | 'generate') => {
-    applyReply(state, await (action === 'list' ? askComposeIdeas('list') : askGenerate(state)));
+    card.replaceChildren(
+      cardHead(state, generate),
+      kindControls(state, pickKind),
+      noteLine(state, 'compose-ideas-status'),
+      ...(state.job ? [state.job.box] : []),
+      ...ideaRows(state),
+    );
+
+  function finishGenerate(jobId: string, reply: ComposeIdeasReply): void {
+    state.ideas = mergeIdeas(state.ideas, reply.ideas);
+    if (state.jobId === jobId) Object.assign(state, { generating: false, jobId: null, job: settleIdeaJob(state.job, reply) });
     render();
-  };
+  }
+
+  function cancel(): void {
+    state.job?.stop();
+    Object.assign(state, { generating: false, jobId: null, job: null });
+    render();
+  }
 
   function generate(): void {
-    state.generating = true;
-    state.note = 'Generating…';
+    const jobId = newIdeaJobId();
+    state.job?.stop();
+    Object.assign(state, { generating: true, note: '', noteTitle: '', jobId, job: ideaJobProgress(jobId, generate, cancel) });
     render();
-    void ask('generate').finally(() => {
-      state.generating = false;
-      render();
-    });
+    void askGenerate(state, jobId).then((reply) => finishGenerate(jobId, reply));
   }
 
   const refresh = (quoted: IdeaSourceInput | null) => {
     state.quoted = quoted;
     render();
-    void ask('list');
+    void askComposeIdeas('list').then((reply) => {
+      applyReply(state, reply);
+      render();
+    });
   };
   render();
   return { card, refresh };

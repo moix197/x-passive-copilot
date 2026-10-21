@@ -19,9 +19,10 @@ import { closeDetachedPopover } from './inline-popover';
 import { removeInlineDraft, upsertInlineDraft, type InlineContext, type InlineHandlers } from './inline-card';
 import { draftingLabel, upsertFlagPill, upsertStatusPill } from './inline-pills';
 import { postIdeaButton, postIdeaSection, type ReadIdeaSource } from './post-idea';
+import { createScheduler, type Schedule } from '../scheduler';
 import { fetchToReply, sendInlineAction } from './relay';
 
-const SYNC_DELAY_MS = 400;
+const SYNC_DELAY_MS = 200;
 /** Floor between syncs, so ids still due (a lookup in flight) never spin the timer. */
 const MIN_GAP_MS = 250;
 /** Soon after an action, so the card shows "Polishing..." and then the new version. */
@@ -30,9 +31,9 @@ const AFTER_ACTION_MS = 300;
 export interface InlineDrafts {
   /** Call on every relevant DOM change; a burst of changes syncs at most every SYNC_DELAY_MS. */
   schedule: () => void;
+  /** The server just stored these posts: an earlier "not captured" answer is out of date, so ask again now. */
+  captured: (statusIds: string[]) => void;
 }
-
-type Schedule = (delay?: number) => void;
 
 function visibleArticles(): Map<string, Element> {
   const column = document.querySelector(SEL.primaryColumn);
@@ -42,22 +43,6 @@ function visibleArticles(): Map<string, Element> {
     if (statusId) byId.set(statusId, article);
   }
   return byId;
-}
-
-// The earliest request wins, so constant X re-renders cannot postpone a sync forever.
-function createScheduler(run: () => void): Schedule {
-  let timer: number | undefined;
-  let dueAt = 0;
-  return (delay = SYNC_DELAY_MS) => {
-    const at = Date.now() + delay;
-    if (timer !== undefined && dueAt <= at) return;
-    window.clearTimeout(timer);
-    dueAt = at;
-    timer = window.setTimeout(() => {
-      timer = undefined;
-      run();
-    }, delay);
-  };
 }
 
 /** Every action goes through the service worker; afterwards the card's post is looked up again. */
@@ -128,7 +113,7 @@ export function createInlineDrafts(): InlineDrafts {
   const cache: DraftCache = new Map();
   let syncing = false;
   let triagePausedUntil: number | null = null;
-  const schedule = createScheduler(() => void sync());
+  const schedule = createScheduler(() => void sync(), SYNC_DELAY_MS);
   const ctx: InlineContext = {
     handlers: inlineHandlers((statusId) => {
       markStale(cache, statusId);
@@ -157,5 +142,9 @@ export function createInlineDrafts(): InlineDrafts {
   }
 
   document.addEventListener('visibilitychange', () => schedule());
-  return { schedule: () => schedule() };
+  const captured = (statusIds: string[]) => {
+    for (const id of statusIds) markStale(cache, id);
+    schedule(0);
+  };
+  return { schedule: () => schedule(), captured };
 }

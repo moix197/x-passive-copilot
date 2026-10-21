@@ -93,6 +93,15 @@ if (readLines('quota-models.txt').includes(model)) {
 writeFileSync(join(import.meta.dirname, 'opencode-last-env.json'), JSON.stringify({ gemini: process.env.GEMINI_API_KEY ?? null, google: process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? null }));
 writeFileSync(join(import.meta.dirname, isDigest ? 'opencode-digest-prompt.txt' : 'opencode-last-prompt.txt'), prompt);
 let digestCall = 0;
+// digest-busy.txt = N: the next N digest calls answer like Gemini under high demand (a retried failure).
+const busyFile = join(dir, 'digest-busy.txt');
+const busyLeft = isDigest && existsSync(busyFile) ? Number(readFileSync(busyFile, 'utf8')) : 0;
+if (busyLeft > 0) {
+  writeFileSync(busyFile, String(busyLeft - 1));
+  const message = '503 The model is overloaded due to high demand. Please try again later.';
+  process.stdout.write(JSON.stringify({ type: 'error', error: { name: 'APIError', data: { message } } }) + '\n');
+  process.exit(1);
+}
 if (isDigest) {
   digestCall = nextDigestCall();
   if (digestMode() === 'fail') {

@@ -143,7 +143,8 @@ test('a quota pause on every model shows when generating resumes, and keeps the 
 
   writeFileSync(join(binDir, 'quota-models.txt'), 'google/fake-flash\n');
   await card.getByRole('button', { name: 'Generate idea' }).click();
-  await expect(card.getByTestId('compose-ideas-status')).toHaveText(/^Paused · resumes \d{1,2}:\d{2} [AP]M/);
+  await expect(card.getByTestId('job-progress-title')).toHaveText(/^Quota paused until \d{1,2}:\d{2} [AP]M/);
+  await expect(card.getByTestId('job-retry')).toBeVisible();
   await expect(card.getByTestId('compose-idea-text')).toHaveText(['Fake idea 1']);
   await expect(card.getByRole('button', { name: 'Generate idea' })).toBeEnabled();
   await page.close();

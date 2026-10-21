@@ -150,6 +150,8 @@ export const ToReplyByIdsResponseSchema = z.object({
   replied: z.array(capturedStatusId).max(MAX_INLINE_IDS).default([]),
   /** Asked ids captured but in neither list (and not the user's own): they can be flagged by hand. */
   flaggable: z.array(capturedStatusId).max(MAX_INLINE_IDS).default([]),
+  /** Flaggable ids triage has not judged yet (it may still flag them); empty while triage is off or paused. */
+  triaging: z.array(capturedStatusId).max(MAX_INLINE_IDS).default([]),
   /** When triage resumes after a quota pause on every model; null when it is not paused. */
   triagePausedUntil: z.number().int().nonnegative().nullable().default(null),
 });
@@ -320,8 +322,14 @@ const SOURCED_KINDS: readonly IdeaKind[] = ['inspired', 'quote'];
  * POST /v1/ideas/generate body; no kind means the mixed rotation. A source (inspired or quote only) is the
  * post the user picked, replacing the automatic source selection.
  */
+/** A generation the clients can follow: `idea-<client-made id>` for one idea, `polish-<draft key>` for a polish or regenerate. */
+export const JobIdSchema = z.string().regex(/^(?:idea-[A-Za-z0-9-]{8,64}|polish-(?:\d{1,30}|idea-\d{1,9}-\d))$/);
+
+/** The job a polish or regenerate of this draft (a post's statusId, or `idea-<id>`) records its steps under. */
+export const polishJobId = (draftKey: string): string => `polish-${draftKey}`;
+
 export const IdeaGenerateRequestSchema = z
-  .object({ kind: IdeaKindSchema.optional(), source: IdeaSourceInputSchema.optional() })
+  .object({ kind: IdeaKindSchema.optional(), source: IdeaSourceInputSchema.optional(), jobId: JobIdSchema.optional() })
   .refine((r) => !r.source || (r.kind !== undefined && SOURCED_KINDS.includes(r.kind)), { message: 'a source needs kind inspired or quote' });
 export type IdeaGenerateRequest = z.infer<typeof IdeaGenerateRequestSchema>;
 export type DigestIdea = z.infer<typeof DigestIdeaSchema>;
@@ -351,6 +359,36 @@ export const DigestProgressSchema = z.object({
     .nullable(),
 });
 export type DigestProgress = z.infer<typeof DigestProgressSchema>;
+
+export const MAX_JOB_STEPS = 12;
+export const JobStepSchema = DigestStepSchema.extend({ id: z.string().max(40) });
+export type JobStep = z.infer<typeof JobStepSchema>;
+
+/** One idea generation or polish, kept in server memory (`GET /v1/jobs?id=`); steps grow as the work goes. */
+export const JobProgressSchema = z.object({
+  id: JobIdSchema,
+  startedAt: z.number().int().nonnegative(),
+  elapsedMs: z.number().int().nonnegative(),
+  /** Still running after longer than such a job usually takes. */
+  slow: z.boolean(),
+  steps: z.array(JobStepSchema).max(MAX_JOB_STEPS),
+  outcome: z
+    .discriminatedUnion('ok', [
+      z.object({ ok: z.literal(true) }),
+      z.object({
+        ok: z.literal(false),
+        reason: z.string().max(300),
+        /** Set when every model is out of quota: when generating can resume. */
+        resumesAt: z.number().int().nonnegative().nullable().default(null),
+      }),
+    ])
+    .nullable(),
+});
+export type JobProgress = z.infer<typeof JobProgressSchema>;
+
+/** Content script -> service worker: the progress of a job it started. */
+export const JobProgressMessageSchema = z.object({ type: z.literal('job-progress'), jobId: JobIdSchema });
+export type JobProgressMessage = z.infer<typeof JobProgressMessageSchema>;
 
 export const EarlierDigestSchema = z.object({
   createdAt: z.number().int().nonnegative(),
@@ -394,6 +432,8 @@ export const ComposeIdeasMessageSchema = z.object({
   kind: IdeaKindSchema.optional(),
   /** Generate only: the post the user picked (the quote composer's quoted post, or a timeline post). */
   source: IdeaSourceInputSchema.optional(),
+  /** Generate only: the id the popover follows the generation's steps by. */
+  jobId: JobIdSchema.optional(),
 });
 export type ComposeIdeasMessage = z.infer<typeof ComposeIdeasMessageSchema>;
 

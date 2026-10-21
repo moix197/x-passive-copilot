@@ -2,9 +2,11 @@ import type { StoredPost } from '@xc/shared/types';
 import { canPolish, canRegenerate, currentDraft, type CurrentDraft } from '../../drafts/current-draft';
 import { element } from '../../panel/dom';
 import { copiedBadge, polishButton, renderDraftActions, type DraftCallbacks, type Rating } from '../../panel/draft-actions';
+import { polishProgressBox } from '../../panel/job-progress';
 import panelCss from '../../panel/panel.css';
 import { SEL } from '../selectors';
 import inlineCss from './inline.css';
+import { fetchJobProgress } from './relay';
 import { adoptOpenCard, closePopover, isPopoverOpenFor, openCardFor, openPopover } from './inline-popover';
 import { findHost, HOST_TAG, isolate, removeStaleHosts } from './own-nodes';
 
@@ -135,10 +137,22 @@ function draftCallbacks(post: StoredPost, draft: CurrentDraft, head: HTMLElement
   };
 }
 
-// The First draft offers Polish (or shows it running); the Claude version offers Regenerate in its actions.
+const runningBox = (post: StoredPost, regenerating: boolean) =>
+  polishProgressBox(post.statusId, { regenerating, fetchJob: fetchJobProgress, unknown: 'queued' });
+
+/** How the last polish or regenerate failed, with Retry; nothing once the server forgot the job. */
+const failedBox = (post: StoredPost, regenerating: boolean, onRetry: () => void) =>
+  polishProgressBox(post.statusId, { regenerating, fetchJob: fetchJobProgress, unknown: 'hidden', onRetry });
+
+// The First draft offers Polish (or shows it running, or how it failed); the Claude version offers Regenerate in its actions.
 function roughExtras(post: StoredPost, handlers: InlineHandlers): HTMLElement[] {
-  if (post.polish?.status === 'polishing') return [element('div', 'Polishing...', 'post-tags')];
-  return canPolish(post) ? [polishButton(() => handlers.onPolish(post))] : [];
+  if (post.polish?.status === 'polishing') return [runningBox(post, false)];
+  const failed = post.polish?.status === 'error' ? [failedBox(post, false, () => void handlers.onPolish(post))] : [];
+  return [...failed, ...(canPolish(post) ? [polishButton(() => handlers.onPolish(post))] : [])];
+}
+
+function claudeExtras(post: StoredPost, handlers: InlineHandlers): HTMLElement[] {
+  return post.polish?.error ? [failedBox(post, true, () => void handlers.onRegenerate(post))] : [];
 }
 
 function renderSection(post: StoredPost, draft: CurrentDraft, handlers: InlineHandlers): HTMLElement {
@@ -146,15 +160,13 @@ function renderSection(post: StoredPost, draft: CurrentDraft, handlers: InlineHa
   const head = sectionHead(draft, post.copiedAt !== null);
   const text = element('p', draft.text, 'reply-text');
   text.dataset.testid = 'inline-draft-text';
-  const actions = draft.busy
-    ? [element('div', 'Regenerating...', 'post-tags')]
-    : [renderDraftActions(draft.text, draftCallbacks(post, draft, head, handlers))];
-  box.append(head, text, ...actions, ...(draft.kind === 'rough' ? roughExtras(post, handlers) : []));
+  const actions = draft.busy ? [runningBox(post, true)] : [renderDraftActions(draft.text, draftCallbacks(post, draft, head, handlers))];
+  box.append(head, text, ...actions, ...(draft.kind === 'rough' ? roughExtras(post, handlers) : claudeExtras(post, handlers)));
   return box;
 }
 
 const signatureOf = (post: StoredPost, draft: CurrentDraft): string =>
-  JSON.stringify([draft, post.copiedAt !== null, post.polish?.status ?? null, post.polish?.versions.length ?? 0]);
+  JSON.stringify([draft, post.copiedAt !== null, post.polish?.status ?? null, post.polish?.versions.length ?? 0, post.polish?.error ?? null]);
 
 const isDrafting = (post: StoredPost, draft: CurrentDraft): boolean => draft.busy || post.polish?.status === 'polishing';
 

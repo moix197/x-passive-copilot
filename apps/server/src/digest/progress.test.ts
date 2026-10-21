@@ -41,7 +41,7 @@ describe('digest progress', () => {
     });
     report.failed('503 high demand');
     report.retrying(10_000);
-    expect(progress.view()?.steps[2]?.detail).toBe('gemini-lite busy, retrying in 10s');
+    expect(progress.view()?.steps[2]?.detail).toBe('gemini-lite under high demand, retrying in 10s');
     report.nextAttempt().onModel?.('google/gemini-lite');
     expect(progress.view()?.steps[2]).toMatchObject({ label: 'Asking gemini-lite (attempt 2)', detail: null });
   });

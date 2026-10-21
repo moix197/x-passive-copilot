@@ -1,11 +1,12 @@
 import type { DigestIdea, IdeaSourceInput } from '@xc/shared/types';
 import { element } from '../../panel/dom';
 import panelCss from '../../panel/panel.css';
-import { ideaRow, noteLine, replyNote } from './compose-card';
+import type { JobProgressHandle } from '../../panel/job-progress';
+import { ideaJobProgress, ideaRow, noteLine, settleIdeaJob } from './compose-card';
 import inlineCss from './inline.css';
 import { sparkleIcon } from './inline-card';
 import { closePopover, isPopoverOpenFor, openPopover } from './inline-popover';
-import { askComposeIdeas } from './relay';
+import { askComposeIdeas, newIdeaJobId } from './relay';
 
 /** The post on screen as a manual idea's source; null when it is gone or has no text. */
 export type ReadIdeaSource = (statusId: string) => IdeaSourceInput | null;
@@ -15,6 +16,8 @@ interface IdeaState {
   generating: boolean;
   note: string;
   noteTitle: string;
+  job: JobProgressHandle | null;
+  jobId: string | null;
 }
 
 // One section per post, so a re-rendered Ready card (or a new pill) keeps the generated idea.
@@ -38,25 +41,36 @@ function sectionHead(state: IdeaState, onGenerate: () => void): HTMLElement {
   return head;
 }
 
-async function askIdea(state: IdeaState, source: IdeaSourceInput | null): Promise<void> {
-  if (!source) return void Object.assign(state, { note: GONE, noteTitle: '' });
-  const reply = await askComposeIdeas('generate', 'inspired', source);
-  state.idea = reply.ideas[0] ?? state.idea;
-  Object.assign(state, replyNote(reply));
-}
-
 function createSection(statusId: string, readSource: ReadIdeaSource): HTMLElement {
   const section = element('section', '', 'reply-section post-idea');
   section.dataset.testid = 'post-idea';
   section.setAttribute('aria-label', 'Post idea');
-  const state: IdeaState = { idea: null, generating: false, note: '', noteTitle: '' };
+  const state: IdeaState = { idea: null, generating: false, note: '', noteTitle: '', job: null, jobId: null };
   const render = () =>
-    section.replaceChildren(sectionHead(state, generate), noteLine(state, 'post-idea-status'), ...(state.idea ? [ideaRow(state.idea, 'post-idea-result')] : []));
-  function generate(): void {
-    Object.assign(state, { generating: true, note: 'Generating…', noteTitle: '' });
+    section.replaceChildren(
+      sectionHead(state, generate),
+      noteLine(state, 'post-idea-status'),
+      ...(state.job ? [state.job.box] : []),
+      ...(state.idea ? [ideaRow(state.idea, 'post-idea-result')] : []),
+    );
+  const cancel = () => {
+    state.job?.stop();
+    Object.assign(state, { generating: false, jobId: null, job: null });
     render();
-    void askIdea(state, readSource(statusId)).finally(() => {
-      state.generating = false;
+  };
+  function generate(): void {
+    const source = readSource(statusId);
+    state.job?.stop();
+    if (!source) {
+      Object.assign(state, { note: GONE, noteTitle: '', job: null });
+      return render();
+    }
+    const jobId = newIdeaJobId();
+    Object.assign(state, { generating: true, note: '', noteTitle: '', jobId, job: ideaJobProgress(jobId, generate, cancel) });
+    render();
+    void askComposeIdeas('generate', 'inspired', source, jobId).then((reply) => {
+      state.idea = reply.ideas[0] ?? state.idea;
+      if (state.jobId === jobId) Object.assign(state, { generating: false, jobId: null, job: settleIdeaJob(state.job, reply) });
       render();
     });
   }

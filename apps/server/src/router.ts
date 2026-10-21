@@ -5,6 +5,7 @@ import {
   MAX_INLINE_IDS,
   FeedbackRequestSchema,
   IdeaGenerateRequestSchema,
+  JobIdSchema,
   RepliedRequestSchema,
   describeModelFailure,
   type FlaggedFeed,
@@ -19,7 +20,8 @@ import {
 } from '@xc/shared';
 import { isAuthorized } from './auth';
 import type { ManualDigestOutcome } from './digest/digest';
-import type { SingleIdeaService } from './digest/single-idea';
+import type { SingleIdeaOutcome, SingleIdeaService } from './digest/single-idea';
+import { NO_JOB, type JobRegistry, type JobTracker } from './jobs';
 import { selectVersion } from './polish/drafts-store';
 import type { PolishState } from './polish/polish';
 import { log } from './log';
@@ -128,10 +130,12 @@ function getToReplyByIds(db: DatabaseSync, hooks: RouterHooks): Handler {
     const ids = parseStatusIds(url.searchParams.get('ids'));
     if (!ids) return sendJson(res, 400, { error: 'bad query' });
     const now = Date.now();
-    const pausedUntil = hooks.triagePausedUntil();
+    const paused = hooks.triagePausedUntil() > now;
+    const states = lookupInlineStates(db, ids, hooks.polishContext(), hooks.flagRules, now);
     sendJson(res, 200, {
-      ...lookupInlineStates(db, ids, hooks.polishContext(), hooks.flagRules, now),
-      triagePausedUntil: pausedUntil > now ? pausedUntil : null,
+      ...states,
+      triaging: hooks.triageEnabled && !paused ? states.triaging : [],
+      triagePausedUntil: paused ? hooks.triagePausedUntil() : null,
     } satisfies ToReplyByIdsResponse);
   };
 }
@@ -273,31 +277,68 @@ function postDigestRun(runNow: () => Promise<ManualDigestOutcome>): Handler {
   };
 }
 
+interface IdeaReply {
+  status: number;
+  body: { idea?: unknown; error?: string; resumesAt?: number };
+}
+
+function ideaReply(outcome: SingleIdeaOutcome): IdeaReply {
+  switch (outcome.status) {
+    case 'ok':
+      return { status: 200, body: { idea: outcome.idea } };
+    case 'busy':
+      return { status: 409, body: { error: 'An idea is already being generated' } };
+    case 'no_source':
+      return { status: 422, body: { error: 'No fresh captured posts to draw from yet' } };
+    case 'unavailable':
+      return { status: 503, body: { error: 'No triage model configured' } };
+    case 'paused':
+      return { status: 503, body: { error: describeModelFailure('paused'), resumesAt: outcome.until } };
+    case 'failed':
+      return {
+        status: 502,
+        body: { error: `Idea generation failed: ${describeModelFailure(outcome.kind)}`, ...(outcome.resumesAt ? { resumesAt: outcome.resumesAt } : {}) },
+      };
+  }
+}
+
+// The job ends with the same words the HTTP reply carries, so the popover's step list and its note agree.
+function finishIdeaJob(job: JobTracker, { body }: IdeaReply): void {
+  if (body.error === undefined) return job.finish({ ok: true });
+  job.finish({ ok: false, reason: body.error, resumesAt: body.resumesAt ?? null });
+}
+
+function startIdeaJob(jobs: JobRegistry, jobId: string | undefined): JobTracker {
+  if (!jobId) return NO_JOB;
+  const job = jobs.start(jobId);
+  job.step('queued', 'Queued');
+  return job;
+}
+
 // An empty body asks for the mixed rotation.
-function postIdeaGenerate(generate: SingleIdeaService['generate']): Handler {
+function postIdeaGenerate(generate: SingleIdeaService['generate'], jobs: JobRegistry): Handler {
   return async (req, res) => {
     const raw = await readBody(req);
     if (raw === null) return sendJson(res, 413, { error: 'body too large' });
     const request = IdeaGenerateRequestSchema.safeParse(raw.trim() === '' ? {} : parseJson(raw));
     if (!request.success) return sendJson(res, 400, { error: 'invalid idea request' });
-    const outcome = await generate(request.data.kind, request.data.source);
-    switch (outcome.status) {
-      case 'ok':
-        return sendJson(res, 200, { idea: outcome.idea });
-      case 'busy':
-        return sendJson(res, 409, { error: 'An idea is already being generated' });
-      case 'no_source':
-        return sendJson(res, 422, { error: 'No fresh captured posts to draw from yet' });
-      case 'unavailable':
-        return sendJson(res, 503, { error: 'No triage model configured' });
-      case 'paused':
-        return sendJson(res, 503, { error: describeModelFailure('paused'), resumesAt: outcome.until });
-      case 'failed':
-        return sendJson(res, 502, {
-          error: `Idea generation failed: ${describeModelFailure(outcome.kind)}`,
-          ...(outcome.resumesAt ? { resumesAt: outcome.resumesAt } : {}),
-        });
+    const job = startIdeaJob(jobs, request.data.jobId);
+    try {
+      const reply = ideaReply(await generate(request.data.kind, request.data.source, job));
+      finishIdeaJob(job, reply);
+      sendJson(res, reply.status, reply.body);
+    } finally {
+      job.close();
     }
+  };
+}
+
+function getJob(jobs: JobRegistry): Handler {
+  return (_req, res, url) => {
+    const id = JobIdSchema.safeParse(url.searchParams.get('id'));
+    if (!id.success) return sendJson(res, 400, { error: 'bad query' });
+    const view = jobs.view(id.data);
+    return view ? sendJson(res, 200, view) : sendJson(res, 404, { error: 'not found' });
   };
 }
 
@@ -318,12 +359,16 @@ export interface RouterHooks {
   onFlag: (statusId: string) => FlagOutcome;
   /** When triage resumes after a quota pause on every model (0 or past: not paused). */
   triagePausedUntil: () => number;
+  /** A triage model is configured, so captured posts get a verdict soon. */
+  triageEnabled: boolean;
   polishContext: () => PolishContext;
   doctor: () => Promise<DoctorReport>;
   voiceView: () => VoiceView;
   digestView: () => DigestView;
   runDigestNow: () => Promise<ManualDigestOutcome>;
   generateIdea: SingleIdeaService['generate'];
+  /** Idea and polish jobs the clients follow by id. */
+  jobs: JobRegistry;
   ownHandle: string;
   flagRules: PrefilterRules;
 }
@@ -344,7 +389,8 @@ export function createRouter(
     'POST /v1/style-notes': postStyleNotes(db),
     'GET /v1/digest': (_req, res) => sendJson(res, 200, hooks.digestView()),
     'POST /v1/digest/run': postDigestRun(hooks.runDigestNow),
-    'POST /v1/ideas/generate': postIdeaGenerate(hooks.generateIdea),
+    'POST /v1/ideas/generate': postIdeaGenerate(hooks.generateIdea, hooks.jobs),
+    'GET /v1/jobs': getJob(hooks.jobs),
   };
   const paramRoutes: ParamRoute[] = [
     { pattern: POLISH_PATH, handler: postPolish(hooks.onPolish) },

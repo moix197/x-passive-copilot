@@ -1,6 +1,7 @@
 import type { DraftVersion, PolishInfo, StoredPost } from '@xc/shared/types';
 import { canPolish, canRegenerate, polishedText } from '../drafts/current-draft';
 import { element } from './dom';
+import { polishProgressBox, type FetchJob } from './job-progress';
 import { copiedBadge, polishButton, renderDraftActions, type DraftCallbacks, type EditableDraftCallbacks, type Rating } from './draft-actions';
 import { renderPostCard } from './post-card';
 import { mountPostsView, type PostsViewOptions } from './posts-view';
@@ -19,6 +20,8 @@ export interface FlaggedHandlers {
   onRegenerate: PolishHandler;
   onSelectVersion: (statusId: string, versionId: number) => Promise<void>;
   draftCallbacks: (statusId: string, saved: Rating | null) => EditableDraftCallbacks;
+  /** Reads a polish job's steps, shown while it runs. */
+  fetchJob: FetchJob;
 }
 
 type DraftKind = 'rough' | 'claude';
@@ -236,7 +239,8 @@ function finalReply(post: StoredPost, polish: PolishInfo & { text: string }, ctx
   const reply = element('p', polish.text, 'reply-text');
   reply.dataset.testid = 'claude-text';
   const busy = polish.status === 'polishing';
-  const parts = [reply, busy ? element('div', 'Regenerating...', 'post-tags') : draftActionsFor(post, polish.text, ctx)];
+  const running = () => polishProgressBox(post.statusId, { regenerating: true, fetchJob: ctx.handlers.fetchJob, unknown: 'queued' });
+  const parts = [reply, busy ? running() : draftActionsFor(post, polish.text, ctx)];
   if (polish.violations.length) parts.push(element('div', `Needs edit: ${polish.violations.join(', ')}`, 'needs-edit'));
   if (polish.error) parts.push(element('div', `Regenerate failed: ${polish.error}`, 'needs-edit'));
   return parts;
@@ -246,7 +250,9 @@ function claudeBody(post: StoredPost, ctx: RowContext): HTMLElement[] {
   const polish = post.polish;
   const text = polishedText(polish);
   if (polish && text) return finalReply(post, { ...polish, text }, ctx);
-  if (polish?.status === 'polishing') return [element('div', 'Polishing...', 'post-tags')];
+  if (polish?.status === 'polishing') {
+    return [polishProgressBox(post.statusId, { regenerating: false, fetchJob: ctx.handlers.fetchJob, unknown: 'queued' })];
+  }
   const note = polish?.status === 'cap_reached' ? 'Daily cap reached' : polish?.error ? `Polish failed: ${polish.error}` : '';
   return [...(note ? [element('div', note, 'post-tags')] : []), ...(canPolish(post) ? [polishButton(() => ctx.handlers.onPolish(post.statusId))] : [])];
 }

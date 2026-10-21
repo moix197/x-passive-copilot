@@ -1,11 +1,14 @@
 import { log } from '../log';
 import { existsSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
-import { MAX_DRAFT_VERSIONS, type AppConfig, type PolishReply, type Result, type StoredIdea, type StoredPost } from '@xc/shared';
+import { MAX_DRAFT_VERSIONS, ok, polishJobId, type AppConfig, type PolishReply, type Result, type StoredIdea, type StoredPost } from '@xc/shared';
+import { runModelReported } from '../digest/progress';
+import { createJobRegistry, type JobRegistry, type JobTracker } from '../jobs';
 import { runClaude } from '../llm/claude';
+import type { ModelObserver } from '../llm/model-pool';
 import { getPost } from '../posts';
 import { dataJson, NO_STYLE, renderStyleBlocks } from '../triage/prompts';
-import { errorClass, withRetry } from '../triage/retry';
+import { errorClass, sleep } from '../triage/retry';
 import type { Style } from '../voice/select-examples';
 import {
   addVersion,
@@ -157,7 +160,31 @@ interface Job {
   subject: Subject;
   kind: DraftKind;
   regenerating: boolean;
+  progress: JobTracker;
 }
+
+const GUARD_LABEL = 'Checking guard (length, product mention, othering)';
+
+interface Round {
+  stepId: string;
+  guardId: string;
+  label: (model: string, attempt: number) => string;
+}
+
+const claudeLabel = (what: string) => (model: string, attempt: number) =>
+  `${what} with Claude (${model}${attempt > 1 ? `, attempt ${attempt}` : ''})`;
+
+const firstRound = (regenerating: boolean): Round => ({
+  stepId: 'model',
+  guardId: 'guard',
+  label: claudeLabel(regenerating ? 'Writing a new version' : 'Polishing'),
+});
+
+const fixRound = (violations: Violation[]): Round => ({
+  stepId: 'model-2',
+  guardId: 'guard-2',
+  label: claudeLabel(`Regenerating after guard flag (${ruleNames(violations).join(', ')})`),
+});
 
 type JobPlan = { ok: false; state: PolishState } | { ok: true; regenerating: boolean; kind: DraftKind | null };
 
@@ -166,6 +193,7 @@ export function createPolishService(
   config: AppConfig,
   generate: Generate,
   now: () => number = Date.now,
+  jobs: JobRegistry = createJobRegistry(now),
 ): PolishService {
   const inFlight = new Set<string>();
 
@@ -173,18 +201,27 @@ export function createPolishService(
     saveDraft(db, { statusId: key, kind, status: 'polishing', text: null, violations: [], error: null, ...fields }, now());
   }
 
-  async function attempt(subject: Subject, previous: GenerateRequest['previous'], alternatives: string[]) {
-    const reply = await withRetry(() => generate({ subject, previous, alternatives }));
-    if (!reply.ok) return reply;
-    const text = replaceDashes(reply.value.reply);
-    return { ok: true as const, value: { reply: text, violations: violationsFor(text, subject, config.product.name) } };
+  function checked(reply: PolishReply, subject: Subject, progress: JobTracker, round: Round) {
+    progress.step(round.guardId, GUARD_LABEL);
+    const text = replaceDashes(reply.reply);
+    return ok({ reply: text, violations: violationsFor(text, subject, config.product.name) });
+  }
+
+  function attempt(request: GenerateRequest, progress: JobTracker, round: Round) {
+    const run = (observer: ModelObserver) => {
+      observer.onModel?.(config.models.final);
+      return generate(request);
+    };
+    const parse = (reply: PolishReply) => checked(reply, request.subject, progress, round);
+    return runModelReported(run, progress, { parse, wait: sleep, stepId: round.stepId, label: round.label });
   }
 
   // Every version goes through the guard, with one regenerate when it fails.
-  async function generateChecked(subject: Subject, alternatives: string[]) {
-    const first = await attempt(subject, null, alternatives);
+  async function generateChecked(job: Job, alternatives: string[]) {
+    const { subject, progress } = job;
+    const first = await attempt({ subject, previous: null, alternatives }, progress, firstRound(job.regenerating));
     if (!first.ok || first.value.violations.length === 0) return first;
-    return attempt(subject, first.value, alternatives);
+    return attempt({ subject, previous: first.value, alternatives }, progress, fixRound(first.value.violations));
   }
 
   // A failed regenerate keeps the selected version and only reports the error.
@@ -192,19 +229,28 @@ export function createPolishService(
     if (job.regenerating) settleFailedRegenerate(db, job.key, problem);
     else save(job.key, job.kind, { status: 'error', error: problem });
     log(`polish ${job.key} failed: ${problem}`);
+    job.progress.finish({ ok: false, reason: problem });
     return false;
   }
 
   async function runJob(job: Job): Promise<boolean> {
-    const outcome = await generateChecked(job.subject, listVersionTexts(db, job.key));
+    const outcome = await generateChecked(job, listVersionTexts(db, job.key));
     if (!outcome.ok) return finishFailed(job, errorClass(outcome.error));
+    job.progress.step('save', 'Saving the new version');
     const { reply, violations } = outcome.value;
     const status = violations.length ? 'needs_edit' : 'ready';
     const version = { text: reply, status, violations: ruleNames(violations) } as const;
     const selectedVersion = addVersion(db, job.key, version, now());
     save(job.key, job.kind, { ...version, selectedVersion });
     log(`polish ${job.key} ${status}`);
+    job.progress.finish({ ok: true });
     return true;
+  }
+
+  function startProgress(key: string): JobTracker {
+    const progress = jobs.start(polishJobId(key));
+    progress.step('queued', 'Queued');
+    return progress;
   }
 
   function planJob(key: string, regenerate: boolean): JobPlan {
@@ -219,13 +265,18 @@ export function createPolishService(
   function start(key: string, subject: Subject, kind: DraftKind, regenerate = false): PolishJob {
     const plan = planJob(key, regenerate);
     if (!plan.ok) return { state: plan.state, done: NOT_STARTED };
-    const job: Job = { key, subject, kind: plan.kind ?? kind, regenerating: plan.regenerating };
+    const job: Job = { key, subject, kind: plan.kind ?? kind, regenerating: plan.regenerating, progress: startProgress(key) };
     inFlight.add(key);
     if (job.regenerating) markRegenerating(db, key);
     else save(key, job.kind, { status: 'polishing' });
     const configProblem = configError(config);
     const run = configProblem ? Promise.resolve(finishFailed(job, configProblem)) : runJob(job);
-    const done = run.catch(() => false).finally(() => inFlight.delete(key));
+    const done = run
+      .catch(() => false)
+      .finally(() => {
+        inFlight.delete(key);
+        job.progress.close();
+      });
     return { state: 'started', done };
   }
 

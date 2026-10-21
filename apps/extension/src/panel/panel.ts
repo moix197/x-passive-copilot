@@ -1,5 +1,5 @@
 import { PostListResponseSchema, type FlaggedFeed, type StoredPost } from '@xc/shared/types';
-import { errorText, getJson, markCopied, postJson, requestPolish, sendFeedback } from '../server-api';
+import { errorText, fetchJob, getJson, markCopied, postJson, requestPolish, sendFeedback } from '../server-api';
 import { authHeaders, getServerConfig } from '../server-config';
 import { copyText, type EditableDraftCallbacks, type Rating } from './draft-actions';
 import { generateErrorText } from './digest-notice';
@@ -144,6 +144,7 @@ function mountView(root: HTMLElement, view: View): () => void {
       onRegenerate: (statusId) => requestPolish(statusId, true),
       onSelectVersion: selectVersion,
       draftCallbacks,
+      fetchJob,
     });
   }
   return mountPostsView(root, { load: loadAllPosts });

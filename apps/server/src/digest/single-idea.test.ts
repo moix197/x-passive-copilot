@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { defaultConfig, err, IdeaGenerateRequestSchema, ok } from '@xc/shared';
 import { openDb } from '../db';
+import { createJobRegistry } from '../jobs';
 import { ingestPosts } from '../posts';
 import { buildDigestPrompt, buildSingleIdeaPrompt, readDigestView, sanitizeSingleIdea } from './digest';
 import { createSingleIdeaService } from './single-idea';
@@ -63,6 +64,28 @@ describe('single idea service', () => {
     expect(view.digest?.ideas.map((i) => i.text)).toEqual(['idea 2']);
     expect(view.digest?.trends.map((t) => t.title)).toEqual(['T']);
     expect(view.earlier.flatMap((d) => d.ideas.map((i) => i.text))).toEqual(['idea 1', 'digest idea']);
+  });
+
+  it('records its steps on the job: context, the model with each retry wait, the check and the save', async () => {
+    const jobs = createJobRegistry();
+    const job = jobs.start('idea-steps-01');
+    const labels: string[] = [];
+    const answers = [err('503 high demand'), ok(ideaReply('kept'))];
+    const service = createSingleIdeaService(freshDb(), config(), async (_prompt, observer) => {
+      observer?.onModel?.('google/flash-lite');
+      return answers.shift() ?? ok('');
+    }, {
+      productContext: async () => '',
+      wait: async () => void labels.push(jobs.view('idea-steps-01')?.steps.at(-1)?.detail ?? ''),
+    });
+    expect(await service.generate(undefined, undefined, job)).toMatchObject({ status: 'ok' });
+    expect(labels).toEqual(['flash-lite under high demand, retrying in 10s']);
+    expect(jobs.view('idea-steps-01')?.steps.map((s) => s.label)).toEqual([
+      'Building context (product notes, recent posts and ideas)',
+      'Asking flash-lite (attempt 2)',
+      'Checking the idea',
+      'Saving the idea',
+    ]);
   });
 
   it('refuses without a model, while paused or busy, and reports a failure without saving', async () => {

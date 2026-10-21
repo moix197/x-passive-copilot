@@ -1,11 +1,12 @@
 import {
   InlineActionMessageSchema,
   InlineDraftsMessageSchema,
+  JobProgressMessageSchema,
   ToReplyByIdsResponseSchema,
   type InlineActionMessage,
   type ToReplyByIdsResponse,
 } from '@xc/shared/types';
-import { flagPost, getJson, markCopied, requestPolish, sendFeedback } from '../server-api';
+import { fetchJob, flagPost, getJson, markCopied, requestPolish, sendFeedback } from '../server-api';
 import { getServerConfig } from '../server-config';
 
 /** Offline (no token): nothing is in To reply or flaggable, so no pills, and no request is made. */
@@ -54,5 +55,7 @@ export function answerInlineMessage(message: unknown): Promise<unknown> | null {
   const lookup = InlineDraftsMessageSchema.safeParse(message);
   if (lookup.success) return lookupToReply(lookup.data.statusIds);
   const action = InlineActionMessageSchema.safeParse(message);
-  return action.success ? runInlineAction(action.data) : null;
+  if (action.success) return runInlineAction(action.data);
+  const job = JobProgressMessageSchema.safeParse(message);
+  return job.success ? fetchJob(job.data.jobId).then((view) => ({ job: view }), () => ({ job: null })) : null;
 }

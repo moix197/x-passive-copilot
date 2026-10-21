@@ -13,16 +13,23 @@ export function outcomeText(outcome: NonNullable<DigestProgress['outcome']>): st
   return `Done — ${outcome.ideas} idea${outcome.ideas === 1 ? '' : 's'}`;
 }
 
-function renderStep(step: DigestStep): HTMLElement {
+/** One step row (done, current spinner, pending, failed), shared by the digest and job progress boxes. */
+export function renderStep(step: Pick<DigestStep, 'label' | 'state' | 'detail'>, testId = 'digest-step'): HTMLElement {
   const item = document.createElement('li');
   item.className = `digest-step ${step.state}`;
-  item.dataset.testid = 'digest-step';
+  item.dataset.testid = testId;
   item.dataset.state = step.state;
   const icon = element('span', ICON[step.state], 'digest-step-icon');
   icon.setAttribute('aria-hidden', 'true');
   const text = element('div', '', 'digest-step-text');
-  text.append(element('span', step.label, 'digest-step-label'));
-  if (step.detail) text.append(element('span', step.detail, 'digest-step-detail'));
+  const label = element('span', step.label, 'digest-step-label');
+  label.dataset.testid = 'step-label';
+  text.append(label);
+  if (step.detail) {
+    const detail = element('span', step.detail, 'digest-step-detail');
+    detail.dataset.testid = 'step-detail';
+    text.append(detail);
+  }
   item.append(icon, text);
   return item;
 }
@@ -44,7 +51,7 @@ export function paintDigestProgress(box: HTMLElement, progress: DigestProgress |
   box.className = `digest-progress${progress.outcome ? (progress.outcome.ok ? ' ok' : ' failed') : ''}`;
   const steps = document.createElement('ol');
   steps.className = 'digest-steps';
-  steps.append(...progress.steps.map(renderStep));
+  steps.append(...progress.steps.map((step) => renderStep(step)));
   box.replaceChildren(renderHead(progress), steps);
 }
 

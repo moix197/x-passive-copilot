@@ -1,5 +1,6 @@
 import {
   ComposeIdeasReplySchema,
+  JobProgressSchema,
   ToReplyByIdsResponseSchema,
   type ComposeIdeasMessage,
   type ComposeIdeasReply,
@@ -8,6 +9,8 @@ import {
   type InlineActionKind,
   type InlineActionMessage,
   type InlineDraftsMessage,
+  type JobProgress,
+  type JobProgressMessage,
   type ToReplyByIdsResponse,
 } from '@xc/shared/types';
 
@@ -35,11 +38,36 @@ export async function sendInlineAction(action: InlineActionKind, statusId: strin
  * Recent ideas, or the one just generated (of `kind`, or the mixed rotation; for `source` when the user picked
  * the post); never throws (an unreachable worker comes back as the error).
  */
-export async function askComposeIdeas(action: ComposeIdeasMessage['action'], kind?: IdeaKind, source?: IdeaSourceInput): Promise<ComposeIdeasReply> {
-  const message: ComposeIdeasMessage = { type: 'compose-ideas', action, ...(kind ? { kind } : {}), ...(source ? { source } : {}) };
+export async function askComposeIdeas(
+  action: ComposeIdeasMessage['action'],
+  kind?: IdeaKind,
+  source?: IdeaSourceInput,
+  jobId?: string,
+): Promise<ComposeIdeasReply> {
+  const message: ComposeIdeasMessage = {
+    type: 'compose-ideas',
+    action,
+    ...(kind ? { kind } : {}),
+    ...(source ? { source } : {}),
+    ...(jobId ? { jobId } : {}),
+  };
   try {
     return ComposeIdeasReplySchema.parse(await chrome.runtime.sendMessage(message));
   } catch {
     return ComposeIdeasReplySchema.parse({ error: 'Extension unreachable.' });
   }
 }
+
+/** A job's steps (an idea, a polish); null when unknown or unreachable, so the caller just asks again. */
+export async function fetchJobProgress(jobId: string): Promise<JobProgress | null> {
+  const message: JobProgressMessage = { type: 'job-progress', jobId };
+  try {
+    const reply = (await chrome.runtime.sendMessage(message)) as { job?: unknown } | undefined;
+    return reply?.job ? JobProgressSchema.parse(reply.job) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A fresh id for following one idea generation. */
+export const newIdeaJobId = (): string => `idea-${crypto.randomUUID()}`;

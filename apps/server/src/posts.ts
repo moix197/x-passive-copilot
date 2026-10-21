@@ -370,19 +370,25 @@ export interface InlineLookup {
   posts: StoredPost[];
   replied: string[];
   flaggable: string[];
+  /** Flaggable ids with no triage verdict yet. */
+  triaging: string[];
 }
 
 interface CapturedRow {
   status_id: string;
   is_own: number;
   replied_at: number | null;
+  triaged: number;
 }
 
 function capturedRows(db: DatabaseSync, statusIds: string[]): CapturedRow[] {
   if (statusIds.length === 0) return [];
   const marks = statusIds.map(() => '?').join(',');
   return db
-    .prepare(`SELECT status_id, is_own, replied_at FROM posts WHERE status_id IN (${marks})`)
+    .prepare(
+      `SELECT p.status_id, p.is_own, p.replied_at, t.status_id IS NOT NULL AS triaged
+       FROM posts p LEFT JOIN triage t ON t.status_id = p.status_id WHERE p.status_id IN (${marks})`,
+    )
     .all(...statusIds) as unknown as CapturedRow[];
 }
 
@@ -397,12 +403,12 @@ export function lookupInlineStates(
   const posts = listToReplyByIds(db, statusIds, ctx, rules, now);
   const inToReply = new Set(posts.map((post) => post.statusId));
   const rows = capturedRows(db, statusIds);
+  const flaggable = rows.filter((row) => row.replied_at === null && row.is_own === 0 && !inToReply.has(row.status_id));
   return {
     posts,
     replied: rows.filter((row) => row.replied_at !== null).map((row) => row.status_id),
-    flaggable: rows
-      .filter((row) => row.replied_at === null && row.is_own === 0 && !inToReply.has(row.status_id))
-      .map((row) => row.status_id),
+    flaggable: flaggable.map((row) => row.status_id),
+    triaging: flaggable.filter((row) => row.triaged === 0).map((row) => row.status_id),
   };
 }
 

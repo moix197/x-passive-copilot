@@ -61,6 +61,14 @@ describe('marks and failed lookups', () => {
     expect(idsToFetch(['1', '3'], cache, BUSY_REFRESH_MS)).toEqual(['1']);
   });
 
+  it('follows a flaggable post triage has not judged yet closely, so Ready shows soon after its verdict', () => {
+    const cache: DraftCache = new Map();
+    storeLookup(cache, ['1', '2'], { ...answer([], [], ['1', '2']), triaging: ['1'] }, 0);
+    expect(cache.get('1')).toEqual({ post: null, mark: 'flaggable', triaging: true, at: 0 });
+    expect(idsToFetch(['1', '2'], cache, BUSY_REFRESH_MS)).toEqual(['1']);
+    expect(nextRefreshMs(['1', '2'], cache, 0)).toBe(BUSY_REFRESH_MS);
+  });
+
   it('keeps the shown answer after a failed lookup and waits a full interval', () => {
     const cache: DraftCache = new Map();
     storeLookup(cache, ['1'], answer([], [], ['1']), 0);
