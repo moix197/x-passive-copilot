@@ -34,26 +34,28 @@ describe('listFlaggedPosts', () => {
     db.exec(`INSERT INTO triage (status_id, must_flag, triaged_at) SELECT status_id, 'watchlist', 0 FROM posts`);
 
     const ids = listFlaggedPosts(db, 2, undefined, rules, NOW).posts.map((p) => p.statusId);
-    expect(ids).toEqual(['2', '1']);
+    expect(ids).toEqual(['1', '2']);
   });
 
-  it('orders To reply newest flagged first (manual flag time, else triage time, else capture), ignoring score', () => {
+  it('orders To reply newest posted first (captured time when posted_at is unknown, ties newest seq), ignoring score and flag time', () => {
     const db = openDb(mkdtempSync(join(tmpdir(), 'xc-posts-')));
-    ingestPosts(db, [post(1, 1), post(2, 1), post(3, 1), post(4, 1), post(5, 1)], NOW, 'me');
-    db.exec(`INSERT INTO triage (status_id, score, must_flag, triaged_at) VALUES ('1', 99, 'watchlist', 300), ('2', 10, 'watchlist', 100), ('4', 99, 'watchlist', 200)`);
+    ingestPosts(db, [post(1, 3), post(2, 1), post(3, 2), post(4, 5), post(5, 2)], NOW, 'me');
+    db.exec(`UPDATE posts SET posted_at = NULL WHERE status_id = '4'`);
+    db.exec(`INSERT INTO triage (status_id, score, must_flag, triaged_at) VALUES ('1', 99, 'watchlist', 300), ('2', 10, 'watchlist', 100), ('3', 99, 'watchlist', 200)`);
+    db.exec(`UPDATE posts SET manual_flag_at = 900 WHERE status_id = '1'`);
 
     const ids = listFlaggedPosts(db, 10, undefined, rules, NOW).posts.map((p) => p.statusId);
-    expect(ids).toEqual(['5', '3', '1', '4', '2']);
+    expect(ids).toEqual(['4', '2', '5', '3', '1']);
   });
 
-  it('puts a manual flag at its flag time and drops reply-worthy posts past the age limit', () => {
+  it('places a manual flag by its posted time and drops reply-worthy posts past the age limit', () => {
     const db = openDb(mkdtempSync(join(tmpdir(), 'xc-posts-')));
     ingestPosts(db, [post(1, 1), post(2, 30), post(3, 30), post(4, 1)], NOW, 'me');
     db.exec(`INSERT INTO triage (status_id, score, reply_worthy, triaged_at) VALUES ('1', 85, 1, 100), ('2', 90, 1, 100), ('4', 85, 1, 200)`);
     db.exec(`UPDATE posts SET manual_flag_at = 500 WHERE status_id IN ('1', '3')`);
 
     const ids = listFlaggedPosts(db, 10, undefined, rules, NOW).posts.map((p) => p.statusId);
-    expect(ids).toEqual(['3', '1', '4']);
+    expect(ids).toEqual(['4', '1', '3']);
   });
 
   it('moves replied posts to Replied (newest replied first), exempt from age limits, with counts', () => {

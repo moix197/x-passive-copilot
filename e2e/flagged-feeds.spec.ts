@@ -45,13 +45,13 @@ test.afterAll(async () => {
 const holdFile = () => join(binDir, 'triage-hold.txt');
 test.afterEach(() => rmSync(holdFile(), { force: true }));
 
-function capturedPost(statusId: string, text: string) {
+function capturedPost(statusId: string, text: string, hoursAgo = 2) {
   return {
     statusId,
     authorName: 'N',
     authorHandle: 'someone',
     text,
-    postedAt: new Date(Date.now() - 2 * HOUR).toISOString(),
+    postedAt: new Date(Date.now() - hoursAgo * HOUR).toISOString(),
     metrics: { replies: 2, reposts: 3, likes: 40, views: 900 },
     isReply: false,
     replyTo: [],
@@ -78,18 +78,18 @@ const rowIds = (panel: Page, mine: string[]) =>
 
 const row = (panel: Page, statusId: string) => panel.locator(`[data-status-id="${statusId}"]`);
 
-test('To reply orders newest flagged first whatever the score, pending posts included; Replied is newest replied first; Move back returns a card; all survive reload', async () => {
+test('To reply orders newest posted first whatever the score, pending posts included; Replied is newest replied first; Move back returns a card; all survive reload', async () => {
   const mine = ['6101', '6102', '6103', '6104'];
   await ingest(
-    capturedPost('6101', 'low one [score:81]'),
-    capturedPost('6102', 'high one [score:99]'),
-    capturedPost('6103', 'middle one [score:90]'),
+    capturedPost('6101', 'low one [score:81]', 4),
+    capturedPost('6102', 'high one [score:99]', 3),
+    capturedPost('6103', 'middle one [score:90]', 2),
   );
   const panel = await openFlagged();
   await expect.poll(() => rowIds(panel, mine)).toEqual(['6103', '6102', '6101']);
 
   writeFileSync(holdFile(), 'hold');
-  await ingest({ ...capturedPost('6104', '@e2eowner pending mention'), authorHandle: 'orderer' });
+  await ingest({ ...capturedPost('6104', '@e2eowner pending mention', 1), authorHandle: 'orderer' });
   await expect.poll(() => rowIds(panel, mine)).toEqual(['6104', '6103', '6102', '6101']);
   await expect(row(panel, '6104')).toContainText('triage pending');
   rmSync(holdFile(), { force: true });
@@ -115,6 +115,16 @@ test('To reply orders newest flagged first whatever the score, pending posts inc
   await reloaded.getByTestId('feed-to-reply').click();
   await expect.poll(() => rowIds(reloaded, mine)).toEqual(['6104', '6102', '6101']);
   await expect(reloaded.getByTestId('feed-replied')).toContainText('Replied (1)');
+});
+
+test('To reply puts a post flagged later but posted earlier below a newer-posted one', async () => {
+  const mine = ['6201', '6202'];
+  await ingest(capturedPost('6201', 'newer posted [score:90]', 1));
+  const panel = await openFlagged();
+  await expect.poll(() => rowIds(panel, mine)).toEqual(['6201']);
+
+  await ingest(capturedPost('6202', 'older posted, flagged later [score:99]', 6));
+  await expect.poll(() => rowIds(panel, mine)).toEqual(['6201', '6202']);
 });
 
 const postPageUrl = (statusId: string) => `https://x.com/someone/status/${statusId}`;

@@ -288,15 +288,18 @@ function eligibleFlagged(post: StoredPost, rules: PrefilterRules | null, now: nu
 
 interface FlaggedEntry {
   post: StoredPost;
-  /** When the post was flagged: by hand, else triaged, else (still pending) captured. */
-  flaggedAt: number;
+  /** When the post was posted on X (epoch ms); captured time when posted_at is unknown. */
+  postedAt: number;
 }
 
-const flaggedAtOf = (row: PostRow): number => row.manual_flag_at ?? row.t_triaged_at ?? row.captured_at;
+function postedAtOf(row: PostRow): number {
+  const posted = row.posted_at ? Date.parse(row.posted_at) : NaN;
+  return Number.isNaN(posted) ? row.captured_at : posted;
+}
 
-/** Newest flagged first; ties newest captured. */
-function byNewestFlagged(a: FlaggedEntry, b: FlaggedEntry): number {
-  return b.flaggedAt - a.flaggedAt || b.post.seq - a.post.seq;
+/** Newest posted first; ties newest captured. */
+function byNewestPosted(a: FlaggedEntry, b: FlaggedEntry): number {
+  return b.postedAt - a.postedAt || b.post.seq - a.post.seq;
 }
 
 const FLAGGED_WHERE = '(t.must_flag IS NOT NULL OR t.reply_worthy = 1 OR t.status_id IS NULL OR p.manual_flag_at IS NOT NULL)';
@@ -312,7 +315,7 @@ function collectToReply(db: DatabaseSync, ctx: PolishContext, rules: PrefilterRu
     const rows = query.all(before, FLAGGED_BATCH) as unknown as PostRow[];
     for (const row of rows) {
       const post = eligibleFlagged(toStoredPost(row, ctx), rules, now);
-      if (post) posts.push({ post, flaggedAt: flaggedAtOf(row) });
+      if (post) posts.push({ post, postedAt: postedAtOf(row) });
     }
     const last = rows[rows.length - 1];
     if (rows.length < FLAGGED_BATCH || !last) return posts;
@@ -341,7 +344,7 @@ export function listFlaggedPosts(
   now: number = Date.now(),
   feed: FlaggedFeed = 'to_reply',
 ): PostListResponse {
-  const toReply = collectToReply(db, ctx, rules, now).sort(byNewestFlagged);
+  const toReply = collectToReply(db, ctx, rules, now).sort(byNewestPosted);
   const counts: FlaggedCounts = { toReply: toReply.length, replied: countReplied(db) };
   const posts = feed === 'replied' ? listReplied(db, limit, ctx) : toReply.slice(0, limit).map((entry) => entry.post);
   return { posts, nextBefore: null, counts };
