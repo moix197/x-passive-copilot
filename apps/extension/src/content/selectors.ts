@@ -9,6 +9,8 @@ export const SEL = {
   tweetText: '[data-testid="tweetText"]',
   time: 'time',
   metrics: '[role="group"][aria-label]',
+  // Live DOM unverified: the reply/repost/like/views row; the last group in the article is the outer post's.
+  actionBar: '[role="group"]',
   statusLink: 'a[href*="/status/"]',
   replyCandidate: 'div, span',
 } as const;

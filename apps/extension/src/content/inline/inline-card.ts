@@ -3,8 +3,10 @@ import { canPolish, canRegenerate, currentDraft, type CurrentDraft } from '../..
 import { element } from '../../panel/dom';
 import { copiedBadge, polishButton, renderDraftActions, type DraftCallbacks, type Rating } from '../../panel/draft-actions';
 import panelCss from '../../panel/panel.css';
+import { SEL } from '../selectors';
 import inlineCss from './inline.css';
-import { findHost, HOST_TAG, removeStaleHosts } from './own-nodes';
+import { adoptOpenCard, closePopover, isPopoverOpenFor, openCardFor, openPopover } from './inline-popover';
+import { findHost, HOST_TAG, isolate, removeStaleHosts } from './own-nodes';
 
 export interface InlineHandlers {
   /** Copies the text and records the copy; it never marks the post replied. */
@@ -16,56 +18,69 @@ export interface InlineHandlers {
 
 export interface InlineContext {
   handlers: InlineHandlers;
-  isExpanded: (statusId: string) => boolean;
-  setExpanded: (statusId: string, open: boolean) => void;
 }
 
 interface HostState {
   card: HTMLElement;
+  label: HTMLElement;
   signature: string;
 }
 
 const hosts = new WeakMap<Element, HostState>();
+const SVG_NS = 'http://www.w3.org/2000/svg';
 
-// Events from our card must never reach X's handlers (an article click opens the post, keys are shortcuts).
-const ISOLATED_EVENTS = [
-  'click', 'dblclick', 'auxclick', 'contextmenu', 'mousedown', 'mouseup', 'pointerdown', 'pointerup',
-  'touchstart', 'touchend', 'keydown', 'keyup', 'keypress',
-];
-
-function isolate(host: HTMLElement): void {
-  for (const type of ISOLATED_EVENTS) host.addEventListener(type, (event) => event.stopPropagation());
+function sparkleIcon(): SVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('class', 'pill-icon');
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('d', 'M12 2l2.4 6.6L21 11l-6.6 2.4L12 20l-2.4-6.6L3 11l6.6-2.4zM19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z');
+  svg.append(path);
+  return svg;
 }
 
-function badgeButton(statusId: string, card: HTMLElement, ctx: InlineContext): HTMLButtonElement {
-  const badge = document.createElement('button');
-  badge.type = 'button';
-  badge.className = 'inline-badge';
-  badge.textContent = 'Draft ready';
-  badge.dataset.testid = 'inline-draft-badge';
-  badge.setAttribute('aria-expanded', String(!card.hidden));
-  badge.addEventListener('click', () => {
-    card.hidden = !card.hidden;
-    badge.setAttribute('aria-expanded', String(!card.hidden));
-    ctx.setExpanded(statusId, !card.hidden);
-  });
-  return badge;
+function newCard(): HTMLElement {
+  const card = element('section', '', 'inline-card');
+  card.dataset.testid = 'inline-draft-card';
+  card.setAttribute('aria-label', 'Reply draft');
+  return card;
 }
 
-function createHost(article: Element, statusId: string, ctx: InlineContext): HostState {
+function pillButton(statusId: string, card: HTMLElement): { pill: HTMLButtonElement; label: HTMLElement } {
+  const pill = document.createElement('button');
+  pill.type = 'button';
+  pill.className = 'inline-badge';
+  pill.dataset.testid = 'inline-draft-badge';
+  pill.setAttribute('aria-expanded', 'false');
+  pill.setAttribute('aria-haspopup', 'dialog');
+  const label = element('span', 'Ready', 'pill-label');
+  pill.append(sparkleIcon(), label);
+  pill.addEventListener('click', () =>
+    isPopoverOpenFor(pill) ? closePopover() : openPopover(statusId, pill, card, panelCss + inlineCss),
+  );
+  return { pill, label };
+}
+
+// The pill sits at the end of the action bar so it reads as part of the post; without a bar it ends the article.
+function mountPoint(article: Element): Element {
+  const bars = article.querySelectorAll(SEL.actionBar);
+  return bars[bars.length - 1] ?? article;
+}
+
+function createHost(article: Element, statusId: string): HostState {
   const host = document.createElement(HOST_TAG);
   isolate(host);
   const shadow = host.attachShadow({ mode: 'open' });
   const style = document.createElement('style');
   style.textContent = panelCss + inlineCss;
-  const card = element('section', '', 'inline-card');
-  card.dataset.testid = 'inline-draft-card';
-  card.setAttribute('aria-label', 'Reply draft');
-  card.hidden = !ctx.isExpanded(statusId);
-  shadow.append(style, badgeButton(statusId, card, ctx), card);
+  const card = openCardFor(statusId) ?? newCard();
+  const { pill, label } = pillButton(statusId, card);
+  shadow.append(style, pill);
   removeStaleHosts(article, null);
-  article.append(host);
-  const state = { card, signature: '' };
+  mountPoint(article).append(host);
+  adoptOpenCard(statusId, pill);
+  const state = { card, label, signature: '' };
   hosts.set(host, state);
   return state;
 }
@@ -117,15 +132,20 @@ function renderSection(post: StoredPost, draft: CurrentDraft, handlers: InlineHa
 const signatureOf = (post: StoredPost, draft: CurrentDraft): string =>
   JSON.stringify([draft, post.copiedAt !== null, post.polish?.status ?? null, post.polish?.versions.length ?? 0]);
 
-/** Ensures exactly one up-to-date card under this article; re-renders only when its draft changed. */
+const isDrafting = (post: StoredPost, draft: CurrentDraft): boolean => draft.busy || post.polish?.status === 'polishing';
+
+/** Ensures exactly one up-to-date pill (and popover card) for this article; re-renders only when its draft changed. */
 export function upsertInlineDraft(article: Element, post: StoredPost, ctx: InlineContext): void {
   const draft = currentDraft(post);
   if (!draft) return removeInlineDraft(article);
   const host = findHost(article);
-  const state = (host && hosts.get(host)) || createHost(article, post.statusId, ctx);
+  const state = (host && hosts.get(host)) || createHost(article, post.statusId);
+  const mount = mountPoint(article);
+  if (host && host.parentElement !== mount) mount.append(host);
   const signature = signatureOf(post, draft);
   if (state.signature === signature) return;
   state.signature = signature;
+  state.label.textContent = isDrafting(post, draft) ? 'Drafting…' : 'Ready';
   state.card.replaceChildren(renderSection(post, draft, ctx.handlers));
 }
 

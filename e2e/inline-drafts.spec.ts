@@ -50,7 +50,10 @@ function articleHtml(post: Post): string {
     <div data-testid="User-Name"><a href="/${post.handle}"><span>${post.handle}</span></a></div>
     <a href="/${post.handle}/status/${post.statusId}"><time datetime="${new Date(Date.now() - 2 * HOUR).toISOString()}">2h</time></a>
     <div data-testid="tweetText"><span>${post.text}</span></div>
-    <div role="group" aria-label="2 replies, 3 reposts, 40 likes, 900 views"></div>
+    <div role="group" aria-label="2 replies, 3 reposts, 40 likes, 900 views" style="display:flex;justify-content:space-between;align-items:center;overflow:hidden">
+      <button type="button" aria-label="Reply">2</button><button type="button" aria-label="Repost">3</button>
+      <button type="button" aria-label="Like">40</button><span>900</span>
+    </div>
   </article>`;
 }
 
@@ -58,8 +61,8 @@ function articleHtml(post: Post): string {
 function timelineHtml(posts: Post[]): string {
   const html = Object.fromEntries(posts.map((p) => [p.statusId, articleHtml(p)]));
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Home / X (fixture)</title></head><body>
-    <div data-testid="primaryColumn"><section id="timeline">${Object.values(html).join('')}</section></div>
-    <script>
+    <div data-testid="primaryColumn"><section id="timeline" style="overflow:hidden;transform:translateY(0);width:600px;height:240px">${Object.values(html).join('')}</section></div>
+    <div style="height:3000px"></div><script>
       window.__articleHtml = ${JSON.stringify(html)};
       window.__leaked = 0;
       for (const type of ['click', 'mousedown', 'keydown']) {
@@ -122,7 +125,7 @@ function replaceArticle(page: Page, post: Post, mode: 'fresh' | 'clone'): Promis
   );
 }
 
-test('a flagged post on x.com gets one Draft ready badge; expanding shows the draft; Copy copies, records it and opens no tab', async () => {
+test('a flagged post on x.com gets one Ready pill in its action bar; clicking opens the popover with the draft; Copy copies, records it and opens no tab', async () => {
   const FLAGGED = flagged('9101', 'Inline flagged post about shipping');
   const rough = await seedTriaged(FLAGGED);
   expect((await postJson(server.baseUrl, '/v1/posts', { posts: [captured(OWN)] })).ok).toBe(true);
@@ -131,11 +134,21 @@ test('a flagged post on x.com gets one Draft ready badge; expanding shows the dr
   const article = articleOf(page, FLAGGED);
 
   const badge = article.getByTestId('inline-draft-badge');
-  await expect(badge).toHaveText('Draft ready', { timeout: 15_000 });
+  await expect(badge).toHaveText('Ready', { timeout: 15_000 });
   await expect(page.getByTestId('inline-draft-badge')).toHaveCount(1);
-  const card = article.getByTestId('inline-draft-card');
-  await expect(card).toBeHidden();
+  await expect(article.getByRole('group').getByTestId('inline-draft-badge')).toHaveCount(1);
+  const card = page.getByTestId('inline-draft-card');
+  await expect(card).toHaveCount(0);
+  const heightBefore = (await article.boundingBox())!.height;
   await badge.click();
+  expect((await article.boundingBox())!.height).toBe(heightBefore);
+  await expect(card).toBeVisible();
+  const box = (await card.boundingBox())!;
+  const view = page.viewportSize()!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(view.width);
+  expect(box.y).toBeGreaterThanOrEqual(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(view.height);
   await expect(badge).toHaveAttribute('aria-expanded', 'true');
   await expect(card).toContainText('First draft');
   await expect(card.getByTestId('inline-draft-text')).toHaveText(rough);
@@ -155,7 +168,7 @@ test('a flagged post on x.com gets one Draft ready badge; expanding shows the dr
   await page.close();
 });
 
-test('the badge re-attaches, once, after X replaces or clones the article node', async () => {
+test('the pill re-attaches, once, after X replaces or clones the article node', async () => {
   const FLAGGED = flagged('9201', 'Inline post that X re-renders');
   await seedTriaged(FLAGGED);
   const page = await openTimeline([FLAGGED]);
@@ -173,7 +186,7 @@ test('the badge re-attaches, once, after X replaces or clones the article node',
   await page.evaluate(() => document.getElementById('timeline')!.append(document.createElement('div')));
   await expect(badges).toHaveCount(1);
   await articleOf(page, FLAGGED).getByTestId('inline-draft-badge').click();
-  await expect(articleOf(page, FLAGGED).getByTestId('inline-draft-text')).toBeVisible();
+  await expect(page.getByTestId('inline-draft-text')).toBeVisible();
   await page.close();
 });
 
@@ -183,7 +196,7 @@ test('Polish, Regenerate and thumbs work from the inline card', async () => {
   const page = await openTimeline([FLAGGED]);
   const article = articleOf(page, FLAGGED);
   await article.getByTestId('inline-draft-badge').click({ timeout: 15_000 });
-  const card = article.getByTestId('inline-draft-card');
+  const card = page.getByTestId('inline-draft-card');
 
   await card.getByTestId('polish-button').click();
   await expect(card).toContainText('Claude version', { timeout: 20_000 });
@@ -199,6 +212,33 @@ test('Polish, Regenerate and thumbs work from the inline card', async () => {
   await page.reload();
   await article.getByTestId('inline-draft-badge').click({ timeout: 15_000 });
   await expect(card.getByTestId('draft-up')).toHaveAttribute('aria-pressed', 'true');
+  await page.close();
+});
+
+test('the popover closes on Escape, on an outside click and on a second pill click', async () => {
+  const FLAGGED = flagged('9501', 'Inline post for popover closing');
+  await seedTriaged(FLAGGED);
+  const page = await openTimeline([FLAGGED]);
+  const badge = articleOf(page, FLAGGED).getByTestId('inline-draft-badge');
+  const card = page.getByTestId('inline-draft-card');
+
+  for (const close of [
+    () => page.keyboard.press('Escape'),
+    () => page.mouse.click(5, 300),
+    () => badge.click(),
+  ]) {
+    await badge.click({ timeout: 15_000 });
+    await expect(badge).toHaveAttribute('aria-expanded', 'true');
+    await expect(card).toBeVisible();
+    await close();
+    await expect(card).toHaveCount(0);
+    await expect(badge).toHaveAttribute('aria-expanded', 'false');
+  }
+
+  await badge.click();
+  await expect(card).toBeVisible();
+  await page.mouse.wheel(0, 200);
+  await expect(card).toHaveCount(0);
   await page.close();
 });
 

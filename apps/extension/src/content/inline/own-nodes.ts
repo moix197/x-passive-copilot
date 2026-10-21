@@ -1,4 +1,4 @@
-/** Tag of the one node we add to an X article; everything we render lives in its shadow root. */
+/** Tag of the one pill node we add to an X article (in its action bar); everything we render lives in its shadow root. */
 export const HOST_TAG = 'xc-draft';
 
 export const isOwnNode = (node: Node): boolean => node instanceof Element && node.localName === HOST_TAG;
@@ -12,16 +12,23 @@ export function isOwnInsertion(record: MutationRecord): boolean {
   return record.removedNodes.length === 0 && added.length > 0 && added.every(isOwnNode);
 }
 
+const ownHosts = (article: Element): HTMLElement[] => Array.from(article.querySelectorAll<HTMLElement>(HOST_TAG));
+
 /** Our live host in this article; a copy without a shadow root (a cloned article) does not count. */
 export function findHost(article: Element): HTMLElement | null {
-  for (const child of Array.from(article.children)) {
-    if (isOwnNode(child) && child.shadowRoot) return child as HTMLElement;
-  }
-  return null;
+  return ownHosts(article).find((host) => host.shadowRoot) ?? null;
 }
 
 export function removeStaleHosts(article: Element, keep: Element | null): void {
-  for (const child of Array.from(article.children)) {
-    if (isOwnNode(child) && child !== keep) child.remove();
-  }
+  for (const host of ownHosts(article)) if (host !== keep) host.remove();
+}
+
+// Events from our nodes must never reach X's handlers (an article click opens the post, keys are shortcuts).
+const ISOLATED_EVENTS = [
+  'click', 'dblclick', 'auxclick', 'contextmenu', 'mousedown', 'mouseup', 'pointerdown', 'pointerup',
+  'touchstart', 'touchend', 'keydown', 'keyup', 'keypress',
+];
+
+export function isolate(host: HTMLElement): void {
+  for (const type of ISOLATED_EVENTS) host.addEventListener(type, (event) => event.stopPropagation());
 }

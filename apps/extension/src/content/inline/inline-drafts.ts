@@ -3,6 +3,7 @@ import { copyText } from '../../panel/draft-actions';
 import { readArticleStatusId } from '../parse-article';
 import { SEL } from '../selectors';
 import { forgetOld, idsToFetch, markStale, nextRefreshMs, REFRESH_MS, storeLookup, type DraftCache } from './draft-cache';
+import { closeDetachedPopover } from './inline-popover';
 import { removeInlineDraft, upsertInlineDraft, type InlineContext, type InlineHandlers } from './inline-card';
 import { fetchToReply, sendInlineAction } from './relay';
 
@@ -74,6 +75,7 @@ function render(articles: Map<string, Element>, cache: DraftCache, ctx: InlineCo
     if (post) upsertInlineDraft(article, post, ctx);
     else removeInlineDraft(article);
   }
+  closeDetachedPopover();
 }
 
 // Unreachable server or worker: keep what is shown and ask again after the refresh interval.
@@ -88,15 +90,12 @@ function nextDelay(cache: DraftCache): number {
   return Math.max(MIN_GAP_MS, nextRefreshMs([...visibleArticles().keys()], cache, Date.now()));
 }
 
-/** "Draft ready" cards under X articles that are in To reply; the server is reached via the service worker. */
+/** "Ready" pills (with a popover card) in the action bar of X articles that are in To reply; the server is reached via the service worker. */
 export function createInlineDrafts(): InlineDrafts {
   const cache: DraftCache = new Map();
-  const expanded = new Set<string>();
   let syncing = false;
   const schedule = createScheduler(() => void sync());
   const ctx: InlineContext = {
-    isExpanded: (statusId) => expanded.has(statusId),
-    setExpanded: (statusId, open) => void (open ? expanded.add(statusId) : expanded.delete(statusId)),
     handlers: inlineHandlers((post) => {
       markStale(cache, post.statusId);
       schedule(AFTER_ACTION_MS);

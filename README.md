@@ -197,8 +197,8 @@ for the digest.
   (and spaced/bare en dashes) to commas or hyphens in triage drafts, polished replies, versions and
   digest text, before the reply guard runs.
 - Every post card has a **View on X ↗** link (new tab) next to the metrics; the time also links.
-- On x.com, a post that is in To reply with a draft gets a small **Draft ready** badge under it
-  (shadow DOM, never touching X's own buttons or compose box). It expands to the current draft
+- On x.com, a post that is in To reply with a draft gets a small violet **Ready** pill at the end of its action bar
+  (shadow DOM, never touching X's own buttons or compose box). Clicking it opens a popover with the current draft
   (Claude version, else first draft) with Copy (no new tab), Polish / Regenerate and thumbs. Lookups
   are batched for visible posts through the service worker; nothing shows while offline.
 

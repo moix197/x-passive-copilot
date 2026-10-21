@@ -1,30 +1,66 @@
-/* Inline draft card on x.com, inside our shadow root; panel.css supplies the tokens and buttons. */
+/* Inline "Ready" pill (in X's action bar) and its popover card, each inside our own shadow root; panel.css supplies the tokens and buttons. */
 :host {
-  display: block;
-  margin: 4px 0 8px;
+  --ready: #6d4aff;
+  --ready-soft: rgba(109, 74, 255, 0.35);
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-left: 8px;
   font-family: -apple-system, 'Segoe UI', system-ui, Roboto, sans-serif;
   font-size: 14px;
   line-height: 1.4;
   color: var(--text);
   text-align: left;
 }
-.inline-badge {
-  padding: 2px 10px;
-  border-color: var(--accent);
+:host(xc-draft-pop) {
+  position: fixed;
+  z-index: 2147483647;
+  display: block;
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
   background: var(--bg);
-  color: var(--accent);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  margin: 0;
+}
+.inline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px 2px 8px;
+  border: 0;
+  background: var(--ready);
+  color: #fff;
   font-size: 12px;
+  line-height: 18px;
+  transition: filter 0.15s, transform 0.15s;
+}
+.inline-badge:hover:not(:disabled) {
+  background: var(--ready);
+  filter: brightness(1.15);
 }
 .inline-badge[aria-expanded='true'] {
-  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--ready-soft);
 }
-.inline-card[hidden] {
-  display: none;
+.inline-badge:focus-visible {
+  outline-color: var(--ready);
+}
+.pill-icon {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
 }
 .inline-card .reply-section {
-  margin: 8px 0 0;
+  margin: 0;
   background: var(--surface);
 }
 .inline-card .copied-badge {
   margin-left: auto;
+}
+@media (prefers-reduced-motion: reduce) {
+  .inline-badge {
+    transition: none;
+  }
 }
