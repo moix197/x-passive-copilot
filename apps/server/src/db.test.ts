@@ -1,8 +1,8 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { openDb } from './db';
 import { listPosts } from './posts';
 
@@ -32,9 +32,24 @@ function createOldDb(home: string): void {
   old.close();
 }
 
+// Each openDb on a fresh file creates a WAL database; on Windows that is disk-bound (100ms-1s idle, seconds
+// under load), and these tests open 2-3 per case, so the 5s default is too tight. Migration needs a real file.
+const FILE_DB_TIMEOUT_MS = 30_000;
+const homes: string[] = [];
+
+function makeHome(): string {
+  const home = mkdtempSync(join(tmpdir(), 'xc-db-'));
+  homes.push(home);
+  return home;
+}
+
+afterEach(() => {
+  for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true, maxRetries: 3 });
+});
+
 describe('openDb migration', () => {
   it('turns a pre-versioning draft into version 1, selected, and leaves failed drafts without versions', () => {
-    const home = mkdtempSync(join(tmpdir(), 'xc-db-'));
+    const home = makeHome();
     createOldDb(home);
     openDb(home).close();
     const db = openDb(home);
@@ -45,12 +60,13 @@ describe('openDb migration', () => {
     expect(migrated?.selectedVersion).toBe(migrated?.versions[0]?.id);
     expect(migrated?.text).toBe('old reply');
     expect(polish.get('2')?.versions).toEqual([]);
-  });
+    db.close();
+  }, FILE_DB_TIMEOUT_MS);
 });
 
 describe('openDb idea kinds migration', () => {
   it('labels ideas saved before kinds existed as spacehub, keeping their order', () => {
-    const home = mkdtempSync(join(tmpdir(), 'xc-db-'));
+    const home = makeHome();
     const first = openDb(home);
     const insert = first.prepare("INSERT INTO digests (bucket, trends, ideas, created_at) VALUES (?, '[]', ?, 1)");
     insert.run(1, JSON.stringify([{ text: 'a', feature: 'f' }, { text: 'b', feature: 'g' }]));
@@ -62,5 +78,6 @@ describe('openDb idea kinds migration', () => {
       [{ kind: 'spacehub', text: 'a', feature: 'f' }, { kind: 'spacehub', text: 'b', feature: 'g' }],
       [{ text: 'c', feature: 'f', kind: 'eco' }],
     ]);
-  });
+    db.close();
+  }, FILE_DB_TIMEOUT_MS);
 });
