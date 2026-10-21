@@ -118,6 +118,11 @@ export function adoptOpenCard(statusId: string, anchor: HTMLElement): void {
   setExpanded(anchor, true);
 }
 
+/** A re-rendered pill takes over the open popover only when its old pill is gone (another pill may share the key). */
+export function adoptDetachedCard(key: string, anchor: HTMLElement): void {
+  if (active?.anchor.isConnected === false) adoptOpenCard(key, anchor);
+}
+
 /** Closes a popover whose pill is gone for good (the post is no longer flagged, or X dropped the article). */
 export function closeDetachedPopover(): void {
   if (active && !active.anchor.isConnected) closePopover();

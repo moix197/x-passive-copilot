@@ -1,4 +1,5 @@
 import type { CaptureMessage, CapturedPost } from '@xc/shared/types';
+import { watchComposers } from './inline/compose-ideas';
 import { createInlineDrafts } from './inline/inline-drafts';
 import { isOwnInsertion } from './inline/own-nodes';
 import { parseArticle } from './parse-article';
@@ -73,3 +74,4 @@ function watch(): void {
 }
 
 watch();
+watchComposers();

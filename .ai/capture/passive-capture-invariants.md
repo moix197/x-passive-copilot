@@ -4,9 +4,9 @@ type: constraint
 summary: Content script reads X's DOM and calls sendMessage (no fetch, click, scroll, events, localhost); only DOM write: our own inline host; selectors.ts
 tags: [ban-risk, content-script, passivity, selectors, untrusted-input]
 paths: [apps/extension/src/content/**, apps/extension/src/background/sw.ts, apps/extension/src/panel/posts-view.ts, apps/extension/src/panel/post-card.ts, shared/src/types.ts]
-related: [tooling/lean-v1-scaffold, capture/inline-drafts]
+related: [tooling/lean-v1-scaffold, capture/inline-drafts, capture/compose-ideas]
 status: active
-updated: 2026-10-20
+updated: 2026-10-21
 ---
 
 # Passive capture invariants
@@ -17,12 +17,12 @@ service worker via `chrome.runtime.sendMessage`. It must never call `fetch`/XHR,
 dispatch events, modify X's nodes or attributes, or talk to localhost. Only the service
 worker (host permission `http://127.0.0.1/*`) talks to the server. The one exception to "no DOM
 writes" is `content/inline/`: it appends a single `<xc-draft>` host of our own to an article and
-renders everything inside its shadow root (see capture/inline-drafts); it never touches X's nodes.
+renders everything inside its shadow root (see capture/inline-drafts), and appends a single `<xc-compose>` Ideas host to a compose toolbar (capture/compose-ideas); it never touches X's nodes, never types into the compose box, never clicks Post.
 
 **Check:** grep `apps/extension/src/content/` (excluding tests) for `fetch(`, `XMLHttpRequest`,
 `.click(`, `scroll`, `dispatchEvent`, `appendChild`, `setAttribute`, `innerHTML`, `.append(`: empty
 outside `content/inline/`; inside it, every hit must act on our own host, shadow root or card nodes
-(only `article.append(host)` touches X's tree).
+(only `article.append(host)` and the compose toolbar's `mount.append(host)` touch X's tree).
 Run it every phase that touches the extension.
 
 **One selector module:** every X selector lives in `content/selectors.ts`. X's DOM is volatile;

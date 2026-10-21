@@ -18,6 +18,7 @@ import {
 } from '@xc/shared';
 import { isAuthorized } from './auth';
 import type { ManualDigestOutcome } from './digest/digest';
+import type { SingleIdeaOutcome } from './digest/single-idea';
 import { selectVersion } from './polish/drafts-store';
 import type { PolishState } from './polish/polish';
 import { log } from './log';
@@ -271,6 +272,27 @@ function postDigestRun(runNow: () => Promise<ManualDigestOutcome>): Handler {
   };
 }
 
+function postIdeaGenerate(generate: () => Promise<SingleIdeaOutcome>): Handler {
+  return async (_req, res) => {
+    const outcome = await generate();
+    switch (outcome.status) {
+      case 'ok':
+        return sendJson(res, 200, { idea: outcome.idea });
+      case 'busy':
+        return sendJson(res, 409, { error: 'An idea is already being generated' });
+      case 'unavailable':
+        return sendJson(res, 503, { error: 'No triage model configured' });
+      case 'paused':
+        return sendJson(res, 503, { error: describeModelFailure('paused'), resumesAt: outcome.until });
+      case 'failed':
+        return sendJson(res, 502, {
+          error: `Idea generation failed: ${describeModelFailure(outcome.kind)}`,
+          ...(outcome.resumesAt ? { resumesAt: outcome.resumesAt } : {}),
+        });
+    }
+  };
+}
+
 function findParamHandler(method: string | undefined, pathname: string, routes: ParamRoute[]): Handler | undefined {
   if (method !== 'POST') return undefined;
   for (const route of routes) {
@@ -293,6 +315,7 @@ export interface RouterHooks {
   voiceView: () => VoiceView;
   digestView: () => DigestView;
   runDigestNow: () => Promise<ManualDigestOutcome>;
+  generateIdea: () => Promise<SingleIdeaOutcome>;
   ownHandle: string;
   flagRules: PrefilterRules;
 }
@@ -313,6 +336,7 @@ export function createRouter(
     'POST /v1/style-notes': postStyleNotes(db),
     'GET /v1/digest': (_req, res) => sendJson(res, 200, hooks.digestView()),
     'POST /v1/digest/run': postDigestRun(hooks.runDigestNow),
+    'POST /v1/ideas/generate': postIdeaGenerate(hooks.generateIdea),
   };
   const paramRoutes: ParamRoute[] = [
     { pattern: POLISH_PATH, handler: postPolish(hooks.onPolish) },

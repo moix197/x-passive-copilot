@@ -1,7 +1,10 @@
 /** Tag of the one pill node we add to an X article (in its action bar); everything we render lives in its shadow root. */
 export const HOST_TAG = 'xc-draft';
+/** Tag of the one Ideas pill node we add to a compose toolbar. */
+export const COMPOSE_TAG = 'xc-compose';
 
-export const isOwnNode = (node: Node): boolean => node instanceof Element && node.localName === HOST_TAG;
+export const isOwnNode = (node: Node): boolean =>
+  node instanceof Element && (node.localName === HOST_TAG || node.localName === COMPOSE_TAG);
 
 /**
  * True when a mutation only inserted our own host. Those must not wake the observers (that would loop),

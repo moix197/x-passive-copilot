@@ -13,6 +13,10 @@ export const SEL = {
   actionBar: '[role="group"]',
   statusLink: 'a[href*="/status/"]',
   replyCandidate: 'div, span',
+  // Live DOM unverified: the icon row (media, GIF, poll, emoji...) under X's compose box, in the Post modal and the home composer.
+  composerToolbar: '[data-testid="toolBar"]',
+  // Live DOM unverified: the scrollable icon list inside that row; the toolbar itself when it is missing.
+  composerTools: '[data-testid="ScrollSnap-List"]',
 } as const;
 
 // Live DOM unverified: X renders "Replying to @a and @b" outside tweetText (ES: "En respuesta a").

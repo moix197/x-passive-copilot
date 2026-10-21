@@ -33,7 +33,7 @@ interface HostState {
 const hosts = new WeakMap<Element, HostState>();
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-function sparkleIcon(): SVGElement {
+export function sparkleIcon(): SVGElement {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('aria-hidden', 'true');
@@ -72,14 +72,20 @@ function mountPoint(article: Element): Element {
   return bars[bars.length - 1] ?? article;
 }
 
-/** A new host holding these nodes at the end of the article's action bar, replacing any other host of ours there. */
-export function attachHost(article: Element, ...nodes: Node[]): HTMLElement {
-  const host = document.createElement(HOST_TAG);
+/** Our own isolated element of this tag, holding these nodes in a shadow root styled like the panel. */
+export function shadowHost(tag: string, ...nodes: Node[]): HTMLElement {
+  const host = document.createElement(tag);
   isolate(host);
   const shadow = host.attachShadow({ mode: 'open' });
   const style = document.createElement('style');
   style.textContent = panelCss + inlineCss;
   shadow.append(style, ...nodes);
+  return host;
+}
+
+/** A new host holding these nodes at the end of the article's action bar, replacing any other host of ours there. */
+export function attachHost(article: Element, ...nodes: Node[]): HTMLElement {
+  const host = shadowHost(HOST_TAG, ...nodes);
   removeStaleHosts(article, null);
   mountPoint(article).append(host);
   return host;

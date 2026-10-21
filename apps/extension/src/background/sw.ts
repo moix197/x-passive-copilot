@@ -5,6 +5,7 @@ import {
   type CapturedPost,
 } from '@xc/shared/types';
 import { authHeaders, getServerConfig } from '../server-config';
+import { answerComposeMessage } from './compose-relay';
 import { answerInlineMessage } from './inline-relay';
 import { restoreNativeLink, setDesiredOnline } from './native-link';
 
@@ -41,7 +42,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void setDesiredOnline(control.data.online).then(() => sendResponse({ ok: true }));
     return true;
   }
-  const inline = answerInlineMessage(message);
+  const inline = answerInlineMessage(message) ?? answerComposeMessage(message);
   if (inline) {
     void inline.then(sendResponse);
     return true;

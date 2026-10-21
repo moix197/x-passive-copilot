@@ -174,6 +174,8 @@ export const InlineActionMessageSchema = z.object({
 });
 export type InlineActionMessage = z.infer<typeof InlineActionMessageSchema>;
 
+
+
 export const DEFAULT_SERVER_URL = 'http://127.0.0.1:7457';
 
 export const NATIVE_HOST_NAME = 'com.xpassivecopilot.host';
@@ -335,6 +337,22 @@ export const DigestViewSchema = z.object({
   progress: DigestProgressSchema.nullable(),
 });
 export type DigestView = z.infer<typeof DigestViewSchema>;
+
+/** Content script -> service worker: the compose "Ideas" popover lists recent ideas or generates one more. */
+export const ComposeIdeasMessageSchema = z.object({
+  type: z.literal('compose-ideas'),
+  action: z.enum(['list', 'generate']),
+});
+export type ComposeIdeasMessage = z.infer<typeof ComposeIdeasMessageSchema>;
+
+/** Service worker -> content script: the listed (or the one generated) ideas, or why there are none. */
+export const ComposeIdeasReplySchema = z.object({
+  ideas: z.array(DigestIdeaSchema).max(100).default([]),
+  error: z.string().max(300).nullable().default(null),
+  /** When generating resumes after a quota pause on every model. */
+  resumesAt: z.number().int().nonnegative().nullable().default(null),
+});
+export type ComposeIdeasReply = z.infer<typeof ComposeIdeasReplySchema>;
 
 export const MAX_STYLE_NOTES = 2000;
 export const StyleNotesSchema = z.object({ notes: z.string().max(MAX_STYLE_NOTES) });

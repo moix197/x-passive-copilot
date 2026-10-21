@@ -4,7 +4,7 @@ type: decision
 summary: x.com action-bar shadow-DOM pills: Ready (To reply) opens a fixed popover card, else Drafting…/Replied/+ Flag; own nodes ignored; events never leak
 tags: [content-script, inline, shadow-dom, mutation-observer, ban-risk, drafts, service-worker]
 paths: [apps/extension/src/content/**, apps/extension/src/background/inline-relay.ts, apps/extension/src/background/sw.ts, apps/extension/src/drafts/**, apps/extension/src/server-api.ts, apps/extension/src/panel/draft-actions.ts, apps/extension/src/panel/panel.css, apps/extension/src/css.d.ts, apps/server/src/posts.ts, apps/server/src/router.ts, shared/src/types.ts, scripts/build.mjs, e2e/inline-drafts.spec.ts, e2e/manual-flag.spec.ts, e2e/x-timeline.ts]
-related: [capture/passive-capture-invariants, pipeline/copy-keeps-to-reply, pipeline/polish-flow, pipeline/manual-flag]
+related: [capture/compose-ideas, capture/passive-capture-invariants, pipeline/copy-keeps-to-reply, pipeline/polish-flow, pipeline/manual-flag]
 status: active
 updated: 2026-10-20
 ---

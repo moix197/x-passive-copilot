@@ -3,6 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import type { AppConfig } from '@xc/shared';
 import { openDb } from './db';
 import { createDigestService, getIdea, readDigestView } from './digest/digest';
+import { createSingleIdeaService } from './digest/single-idea';
 import { createDoctor } from './doctor';
 import { log } from './log';
 import { createModelPool, modelChain } from './llm/model-pool';
@@ -54,6 +55,7 @@ function createServices(db: DatabaseSync, home: string, config: AppConfig) {
   const polish = createPolishService(db, config, claudeGenerate(config, home, style));
   const voice = createVoiceService(db, config, model);
   const digest = createDigestService(db, config, model, undefined, Date.now, undefined, pool.pausedUntil);
+  const singleIdea = createSingleIdeaService(db, config, model, { pausedUntil: pool.pausedUntil });
   const autoPolish = createAutoPolish(db, config, polish);
   const classify = opencodeClassify(config, home, model, style);
   const triage = createTriageService(db, config, classify, Date.now, () => void autoPolish.run(), pool.pausedUntil);
@@ -62,7 +64,7 @@ function createServices(db: DatabaseSync, home: string, config: AppConfig) {
     voice.notify();
     digest.notify();
   };
-  return { polish, notifyAll, pool, digest, triage };
+  return { polish, notifyAll, pool, digest, singleIdea, triage };
 }
 
 type Services = ReturnType<typeof createServices>;
@@ -86,6 +88,7 @@ function buildHooks(db: DatabaseSync, home: string, config: AppConfig, services:
     voiceView: () => readVoiceView(db, config),
     digestView: () => readDigestView(db, services.digest.isRunning(), services.digest.progress()),
     runDigestNow: services.digest.runNow,
+    generateIdea: services.singleIdea.generate,
     ownHandle: config.handle,
     flagRules: rulesFromConfig(config),
     polishContext: () => ({ threshold: config.autoPolish.threshold, capReached: capReached(db, config) }),

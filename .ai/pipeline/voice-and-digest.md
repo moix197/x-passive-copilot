@@ -4,9 +4,9 @@ type: decision
 summary: Own posts (author == handle) feed a voice profile and style examples injected into triage/polish prompts; a digest runs every N new non-own posts
 tags: [voice, feedback, examples, digest, ideas]
 paths: [apps/extension/src/panel/digest-section.ts, apps/server/src/text/**, apps/server/src/voice/**, apps/server/src/digest/**, apps/server/src/digest/idea-tone.ts, apps/server/src/triage/prompts.ts, apps/server/src/polish/polish.ts]
-related: [pipeline/triage-flow, pipeline/polish-flow, pipeline/digest-product-context, pipeline/reply-tone, security/llm-subprocess-sandbox, pipeline/model-quota]
+related: [capture/compose-ideas, pipeline/triage-flow, pipeline/polish-flow, pipeline/digest-product-context, pipeline/reply-tone, security/llm-subprocess-sandbox, pipeline/model-quota]
 status: active
-updated: 2026-10-19
+updated: 2026-10-21
 ---
 
 # Voice profile, feedback examples and digest
@@ -46,7 +46,7 @@ triage/polish/guard keeps the sandbox and hard rules identical for new LLM calls
 `extractJson` is reused. `is_own` is not backfilled when `handle` changes. Digest product context is gathered per run (see
 pipeline/digest-product-context). Reply tone (no product pitch) is pipeline/reply-tone.
 
-**Fresh ideas, not repeats:** the digest prompt carries the idea texts of the last 5 digests in a
+**Fresh ideas, not repeats:** the digest prompt (and the single-idea prompt, capture/compose-ideas) carries the last 15 idea texts (counted in ideas, since a single idea is its own row) in a
 `<previous-ideas>` untrusted block with an instruction to cover clearly different topics (without it the
 model re-suggested the same 3 themes every run, which looked like the panel not updating; the panel and
 `GET /v1/digest` were correct: latest row by `id`). The Digest view shows "Generated <time>" so staleness is visible.
