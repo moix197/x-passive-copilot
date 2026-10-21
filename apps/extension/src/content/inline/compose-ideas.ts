@@ -1,5 +1,6 @@
 import { element } from '../../panel/dom';
 import panelCss from '../../panel/panel.css';
+import { readQuotedPost } from '../idea-source';
 import { SEL } from '../selectors';
 import { createIdeasCard, type IdeasCard } from './compose-card';
 import inlineCss from './inline.css';
@@ -10,7 +11,7 @@ import { COMPOSE_TAG, isOwnInsertion } from './own-nodes';
 /** Popover key of the Ideas card; every compose toolbar's pill opens the same card. */
 const POPOVER_KEY = 'compose-ideas';
 
-function ideasPill(ideas: IdeasCard): HTMLButtonElement {
+function ideasPill(ideas: IdeasCard, toolbar: Element): HTMLButtonElement {
   const pill = document.createElement('button');
   pill.type = 'button';
   pill.className = 'inline-badge';
@@ -22,7 +23,7 @@ function ideasPill(ideas: IdeasCard): HTMLButtonElement {
   pill.addEventListener('click', () => {
     if (isPopoverOpenFor(pill)) return closePopover();
     openPopover(POPOVER_KEY, pill, ideas.card, panelCss + inlineCss);
-    ideas.refresh();
+    ideas.refresh(readQuotedPost(toolbar));
   });
   return pill;
 }
@@ -37,7 +38,7 @@ function ensurePill(toolbar: Element, ideas: IdeasCard): void {
   const hosts = ownHosts(mount);
   for (const stale of hosts.filter((host) => !host.shadowRoot)) stale.remove();
   if (hosts.some((host) => host.shadowRoot)) return;
-  const pill = ideasPill(ideas);
+  const pill = ideasPill(ideas, toolbar);
   mount.append(shadowHost(COMPOSE_TAG, pill));
   adoptDetachedCard(POPOVER_KEY, pill);
 }

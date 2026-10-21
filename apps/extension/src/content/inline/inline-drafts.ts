@@ -1,6 +1,7 @@
 import type { StoredPost, ToReplyByIdsResponse } from '@xc/shared/types';
 import { currentDraft, isTriagePending } from '../../drafts/current-draft';
 import { copyText } from '../../panel/draft-actions';
+import { readArticleSource } from '../idea-source';
 import { readArticleStatusId } from '../parse-article';
 import { SEL } from '../selectors';
 import {
@@ -17,6 +18,7 @@ import {
 import { closeDetachedPopover } from './inline-popover';
 import { removeInlineDraft, upsertInlineDraft, type InlineContext, type InlineHandlers } from './inline-card';
 import { draftingLabel, upsertFlagPill, upsertStatusPill } from './inline-pills';
+import { postIdeaButton, postIdeaSection, type ReadIdeaSource } from './post-idea';
 import { fetchToReply, sendInlineAction } from './relay';
 
 const SYNC_DELAY_MS = 400;
@@ -86,13 +88,20 @@ function inlineHandlers(refreshSoon: (statusId: string) => void): InlineHandlers
   };
 }
 
+const readVisibleSource: ReadIdeaSource = (statusId) => {
+  const article = visibleArticles().get(statusId);
+  return article ? readArticleSource(article) : null;
+};
+
 // Ready with a draft; Drafting… (or the quota resume time) while triage runs; muted Replied; + Flag on the rest.
+// Every captured post also gets "Post idea": inside the Ready card, else as a small button beside the pill.
 function renderArticle(article: Element, statusId: string, entry: CacheEntry | undefined, ctx: InlineContext): void {
   const post = entry?.post;
+  const idea = () => postIdeaButton(statusId, readVisibleSource);
   if (post && currentDraft(post)) return upsertInlineDraft(article, post, ctx);
-  if (post && isTriagePending(post)) return upsertStatusPill(article, draftingLabel(ctx.triagePausedUntil()), 'pending');
-  if (!post && entry?.mark === 'replied') return upsertStatusPill(article, 'Replied', 'muted');
-  if (!post && entry?.mark === 'flaggable') return upsertFlagPill(article, statusId, ctx.handlers.onFlag);
+  if (post && isTriagePending(post)) return upsertStatusPill(article, draftingLabel(ctx.triagePausedUntil()), 'pending', idea);
+  if (!post && entry?.mark === 'replied') return upsertStatusPill(article, 'Replied', 'muted', idea);
+  if (!post && entry?.mark === 'flaggable') return upsertFlagPill(article, statusId, ctx.handlers.onFlag, idea);
   removeInlineDraft(article);
 }
 
@@ -126,6 +135,7 @@ export function createInlineDrafts(): InlineDrafts {
       schedule(AFTER_ACTION_MS);
     }),
     triagePausedUntil: () => triagePausedUntil,
+    ideaSection: (statusId) => postIdeaSection(statusId, readVisibleSource),
   };
 
   async function sync(): Promise<void> {

@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { AppConfig, DigestIdea, IdeaKind, ModelFailureKind, Result } from '@xc/shared';
+import type { AppConfig, DigestIdea, IdeaKind, IdeaSourceInput, ModelFailureKind, Result } from '@xc/shared';
 import { log } from '../log';
 import type { Idea } from '../polish/polish';
 import { classifyFailure, errorClass, safeReason, sleep, withRetry } from '../triage/retry';
@@ -14,6 +14,7 @@ import {
   saveSingleIdea,
 } from './digest';
 import { needsSource, pickNextKind } from './idea-kind';
+import { resolvePickedSource, type PickedSource } from './picked-source';
 import { gatherProductContext } from './product-context';
 import { freshSourcePosts, toPromptSource, type SourceCandidate } from './source-posts';
 
@@ -27,8 +28,11 @@ export type SingleIdeaOutcome =
   | { status: 'failed'; kind: ModelFailureKind; resumesAt: number | null };
 
 export interface SingleIdeaService {
-  /** One new idea of the given kind (none: the mixed rotation), saved where the panel Digest tab reads it. */
-  generate(kind?: IdeaKind): Promise<SingleIdeaOutcome>;
+  /**
+   * One new idea of the given kind (none: the mixed rotation), saved where the panel Digest tab reads it.
+   * A picked post (inspired or quote only) replaces the automatic source selection.
+   */
+  generate(kind?: IdeaKind, picked?: IdeaSourceInput): Promise<SingleIdeaOutcome>;
 }
 
 export interface SingleIdeaDeps {
@@ -42,6 +46,7 @@ export interface SingleIdeaDeps {
 interface IdeaPlan {
   kind: IdeaKind;
   sources: SourceCandidate[];
+  picked?: PickedSource;
 }
 
 export function createSingleIdeaService(db: DatabaseSync, config: AppConfig, runModel: RunModel, deps: SingleIdeaDeps = {}): SingleIdeaService {
@@ -56,20 +61,21 @@ export function createSingleIdeaService(db: DatabaseSync, config: AppConfig, run
   }
 
   // Source posts go into the prompt only for the kinds that draw on them.
-  function plan(requested: IdeaKind | undefined): IdeaPlan | null {
+  function plan(requested: IdeaKind | undefined, picked: IdeaSourceInput | undefined): IdeaPlan | null {
+    if (requested && picked) return { kind: requested, sources: [], picked: resolvePickedSource(db, picked) };
     const fresh = freshSourcePosts(db, config.triage.maxAgeHours, now());
     const kind = requested ?? pickNextKind(recentIdeaKinds(db), fresh.length > 0);
     if (!needsSource(kind)) return { kind, sources: [] };
     return fresh.length > 0 ? { kind, sources: fresh } : null;
   }
 
-  async function ask({ kind, sources }: IdeaPlan): Promise<Result<Idea>> {
-    const inputs = { kind, sources: sources.map(toPromptSource) };
+  async function ask({ kind, sources, picked }: IdeaPlan): Promise<Result<Idea>> {
+    const inputs = { kind, sources: picked ? [picked.prompt] : sources.map(toPromptSource) };
     const prompt = buildSingleIdeaPrompt(config.product.name, await productContext(), recentPosts(db), recentIdeaTexts(db), inputs);
     const offered = offeredSources(sources);
     return withRetry(async () => {
       const out = await runModel(prompt);
-      return out.ok ? parseSingleIdea(out.value, kind, offered) : out;
+      return out.ok ? parseSingleIdea(out.value, kind, offered, picked?.source) : out;
     }, wait);
   }
 
@@ -79,10 +85,10 @@ export function createSingleIdeaService(db: DatabaseSync, config: AppConfig, run
     return { status: 'failed', kind: classifyFailure(error), resumesAt: resumesAt > 0 ? resumesAt : null };
   }
 
-  async function generate(requested?: IdeaKind): Promise<SingleIdeaOutcome> {
+  async function generate(requested?: IdeaKind, picked?: IdeaSourceInput): Promise<SingleIdeaOutcome> {
     const refused = refusal();
     if (refused) return refused;
-    const planned = plan(requested);
+    const planned = plan(requested, picked);
     if (!planned) return { status: 'no_source' };
     running = true;
     try {

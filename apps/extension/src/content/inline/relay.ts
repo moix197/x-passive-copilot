@@ -4,6 +4,7 @@ import {
   type ComposeIdeasMessage,
   type ComposeIdeasReply,
   type IdeaKind,
+  type IdeaSourceInput,
   type InlineActionKind,
   type InlineActionMessage,
   type InlineDraftsMessage,
@@ -30,9 +31,12 @@ export async function sendInlineAction(action: InlineActionKind, statusId: strin
   }
 }
 
-/** Recent ideas, or the one just generated (of `kind`, or the mixed rotation); never throws (an unreachable worker comes back as the error). */
-export async function askComposeIdeas(action: ComposeIdeasMessage['action'], kind?: IdeaKind): Promise<ComposeIdeasReply> {
-  const message: ComposeIdeasMessage = { type: 'compose-ideas', action, ...(kind ? { kind } : {}) };
+/**
+ * Recent ideas, or the one just generated (of `kind`, or the mixed rotation; for `source` when the user picked
+ * the post); never throws (an unreachable worker comes back as the error).
+ */
+export async function askComposeIdeas(action: ComposeIdeasMessage['action'], kind?: IdeaKind, source?: IdeaSourceInput): Promise<ComposeIdeasReply> {
+  const message: ComposeIdeasMessage = { type: 'compose-ideas', action, ...(kind ? { kind } : {}), ...(source ? { source } : {}) };
   try {
     return ComposeIdeasReplySchema.parse(await chrome.runtime.sendMessage(message));
   } catch {

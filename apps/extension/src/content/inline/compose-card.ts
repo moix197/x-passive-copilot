@@ -1,4 +1,4 @@
-import { IDEA_KINDS, type ComposeIdeasReply, type DigestIdea, type IdeaKind } from '@xc/shared/types';
+import { IDEA_KINDS, type ComposeIdeasReply, type DigestIdea, type IdeaKind, type IdeaSourceInput } from '@xc/shared/types';
 import { mergeIdeas } from '../../drafts/idea-list';
 import { element } from '../../panel/dom';
 import { copyButton, copyText } from '../../panel/draft-actions';
@@ -8,8 +8,11 @@ import { askComposeIdeas } from './relay';
 
 export interface IdeasCard {
   card: HTMLElement;
-  /** Lists the recent ideas again (digests and earlier generations); call on each open. */
-  refresh: () => void;
+  /**
+   * Lists the recent ideas again (digests and earlier generations); call on each open with the post quoted in
+   * that composer (X's Quote), or null. While quoting, Generate makes a quote idea for it and the kind chips hide.
+   */
+  refresh: (quoted: IdeaSourceInput | null) => void;
 }
 
 interface CardState {
@@ -17,6 +20,8 @@ interface CardState {
   generating: boolean;
   /** The kind Generate asks for; null is Mix (the server's rotation). */
   kind: IdeaKind | null;
+  /** The post quoted in the open composer; null outside X's Quote composer. */
+  quoted: IdeaSourceInput | null;
   /** Why the last request gave nothing: a refusal, or the quota pause's resume time. */
   note: string;
   noteTitle: string;
@@ -57,33 +62,55 @@ function kindChips(state: CardState, onPick: (kind: IdeaKind | null) => void): H
   return bar;
 }
 
-function noteLine(state: CardState): HTMLElement {
-  const line = element('p', state.note, 'post-tags');
-  line.dataset.testid = 'compose-ideas-status';
-  line.setAttribute('role', 'status');
-  line.title = state.noteTitle;
+const QUOTING_EXCERPT_CHARS = 80;
+
+function quotingLine(quoted: IdeaSourceInput): HTMLElement {
+  const excerpt = quoted.text.replace(/\s+/g, ' ').slice(0, QUOTING_EXCERPT_CHARS);
+  const line = element('p', `Quoting @${quoted.authorHandle}: ${excerpt}`, 'idea-source');
+  line.dataset.testid = 'compose-quoting';
+  line.title = quoted.text;
   return line;
 }
 
-function ideaRow(idea: DigestIdea): HTMLElement {
+// Inside X's Quote composer the idea is always a quote of that post, so there is no kind to pick.
+const kindControls = (state: CardState, onPick: (kind: IdeaKind | null) => void): HTMLElement =>
+  state.quoted ? quotingLine(state.quoted) : kindChips(state, onPick);
+
+/** Why the last request gave nothing (with the full reason as title), shown as a live status line. */
+export function noteLine(note: Pick<CardState, 'note' | 'noteTitle'>, testId: string): HTMLElement {
+  const line = element('p', note.note, 'post-tags');
+  line.dataset.testid = testId;
+  line.setAttribute('role', 'status');
+  line.title = note.noteTitle;
+  return line;
+}
+
+/** One idea with its kind tag, source line and Copy; test ids `<testId>` and `<testId>-text`. */
+export function ideaRow(idea: DigestIdea, testId = 'compose-idea'): HTMLElement {
   const row = element('article', '', 'reply-section');
-  row.dataset.testid = 'compose-idea';
+  row.dataset.testid = testId;
   const text = element('p', idea.text, 'reply-text');
-  text.dataset.testid = 'compose-idea-text';
+  text.dataset.testid = `${testId}-text`;
   row.append(text, ...ideaMeta(idea), copyButton(idea.text, copyText));
   return row;
 }
 
 function ideaRows(state: CardState): HTMLElement[] {
-  if (state.ideas.length > 0) return state.ideas.map(ideaRow);
+  if (state.ideas.length > 0) return state.ideas.map((idea) => ideaRow(idea));
   return state.generating ? [] : [element('p', 'No ideas yet. Generate one to copy into your post.', 'status')];
 }
 
+const askGenerate = (state: CardState): Promise<ComposeIdeasReply> =>
+  state.quoted ? askComposeIdeas('generate', 'quote', state.quoted) : askComposeIdeas('generate', state.kind ?? undefined);
+
 // A quota pause shows when generating resumes; any other refusal shows the server's reason.
+export function replyNote(reply: ComposeIdeasReply): Pick<CardState, 'note' | 'noteTitle'> {
+  return { note: reply.error ? (reply.resumesAt ? draftingLabel(reply.resumesAt) : reply.error) : '', noteTitle: reply.error ?? '' };
+}
+
 function applyReply(state: CardState, reply: ComposeIdeasReply): void {
   state.ideas = mergeIdeas(state.ideas, reply.ideas);
-  state.note = reply.error ? (reply.resumesAt ? draftingLabel(reply.resumesAt) : reply.error) : '';
-  state.noteTitle = reply.error ?? '';
+  Object.assign(state, replyNote(reply));
 }
 
 /** The compose popover's card: recent ideas newest first, each with Copy, and "Generate idea" adding one of the picked kind per click. */
@@ -91,16 +118,16 @@ export function createIdeasCard(): IdeasCard {
   const card = element('section', '', 'inline-card');
   card.dataset.testid = 'compose-ideas-card';
   card.setAttribute('aria-label', 'Post ideas');
-  const state: CardState = { ideas: [], generating: false, kind: null, note: '', noteTitle: '' };
+  const state: CardState = { ideas: [], generating: false, kind: null, quoted: null, note: '', noteTitle: '' };
 
   const pickKind = (kind: IdeaKind | null) => {
     state.kind = kind;
     render();
   };
   const render = () =>
-    card.replaceChildren(cardHead(state, generate), kindChips(state, pickKind), noteLine(state), ...ideaRows(state));
+    card.replaceChildren(cardHead(state, generate), kindControls(state, pickKind), noteLine(state, 'compose-ideas-status'), ...ideaRows(state));
   const ask = async (action: 'list' | 'generate') => {
-    applyReply(state, await askComposeIdeas(action, action === 'generate' ? (state.kind ?? undefined) : undefined));
+    applyReply(state, await (action === 'list' ? askComposeIdeas('list') : askGenerate(state)));
     render();
   };
 
@@ -114,6 +141,11 @@ export function createIdeasCard(): IdeasCard {
     });
   }
 
+  const refresh = (quoted: IdeaSourceInput | null) => {
+    state.quoted = quoted;
+    render();
+    void ask('list');
+  };
   render();
-  return { card, refresh: () => void ask('list') };
+  return { card, refresh };
 }

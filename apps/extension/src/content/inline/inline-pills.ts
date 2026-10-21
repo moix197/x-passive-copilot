@@ -5,6 +5,8 @@ import { findHost } from './own-nodes';
 
 export type StatusTone = 'pending' | 'muted';
 type FlagHandler = (statusId: string) => Promise<string | null>;
+/** Builds the small "Post idea" button shown beside the pill. */
+export type IdeaButton = () => HTMLElement;
 
 /** What each pill host shows, so an unchanged pill is kept and a changed one is rebuilt. */
 const pillKeys = new WeakMap<Element, string>();
@@ -16,8 +18,8 @@ function reuseHost(article: Element, key: string): boolean {
   return true;
 }
 
-function mountPill(article: Element, key: string, pill: HTMLElement): void {
-  pillKeys.set(attachHost(article, pill), key);
+function mountPill(article: Element, key: string, ...nodes: HTMLElement[]): void {
+  pillKeys.set(attachHost(article, ...nodes), key);
 }
 
 /** "Drafting…" while a flagged post waits for triage, or when it resumes after a quota pause. */
@@ -26,13 +28,13 @@ export function draftingLabel(pausedUntil: number | null): string {
 }
 
 /** A read-only pill: a draft on the way (pending) or a post already replied to (muted). */
-export function upsertStatusPill(article: Element, label: string, tone: StatusTone): void {
+export function upsertStatusPill(article: Element, label: string, tone: StatusTone, ideaButton: IdeaButton): void {
   const key = `status:${tone}:${label}`;
   if (reuseHost(article, key)) return;
   const pill = element('span', label, `inline-badge inline-status ${tone}`);
   pill.dataset.testid = 'inline-status-pill';
   pill.setAttribute('role', 'status');
-  mountPill(article, key, pill);
+  mountPill(article, key, pill, ideaButton());
 }
 
 async function flag(button: HTMLButtonElement, statusId: string, onFlag: FlagHandler): Promise<void> {
@@ -57,8 +59,8 @@ function flagButton(statusId: string, onFlag: FlagHandler): HTMLButtonElement {
 }
 
 /** A subtle "+ Flag" on a captured post outside Flagged; once clicked it stays "Drafting…" until the next lookup. */
-export function upsertFlagPill(article: Element, statusId: string, onFlag: FlagHandler): void {
+export function upsertFlagPill(article: Element, statusId: string, onFlag: FlagHandler, ideaButton: IdeaButton): void {
   const key = `flag:${statusId}`;
   if (reuseHost(article, key)) return;
-  mountPill(article, key, flagButton(statusId, onFlag));
+  mountPill(article, key, flagButton(statusId, onFlag), ideaButton());
 }

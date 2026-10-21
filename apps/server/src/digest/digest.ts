@@ -17,6 +17,7 @@ import {
   type DigestView,
   type EarlierDigest,
   type IdeaKind,
+  type IdeaSource,
   type ModelFailureKind,
   type PolishInfo,
   type Result,
@@ -113,16 +114,18 @@ const NO_SOURCES: OfferedSources = new Map();
 export const offeredSources = (sources: readonly SourceCandidate[]): OfferedSources => new Map(sources.map((s) => [s.statusId, s]));
 
 // An inspired or quote idea without an offered source post is dropped; a quote keeps exactly one.
-function withSource(base: Pick<Idea, 'text' | 'feature'>, kind: IdeaKind, ids: string[], sources: OfferedSources): Idea | null {
+// A post the user picked is the source, whatever the model cites.
+function withSource(base: Pick<Idea, 'text' | 'feature'>, kind: IdeaKind, ids: string[], sources: OfferedSources, picked?: IdeaSource): Idea | null {
   if (!needsSource(kind)) return { ...base, kind, source: null, sourceIds: [] };
+  if (picked) return { ...base, kind, source: picked, sourceIds: picked.statusId ? [picked.statusId] : [] };
   const known = [...new Set(ids)].filter((id) => sources.has(id)).slice(0, kind === 'quote' ? 1 : MAX_IDEA_SOURCE_IDS);
   const first = known[0] === undefined ? undefined : sources.get(known[0]);
   return first ? { ...base, kind, source: ideaSourceOf(first), sourceIds: known } : null;
 }
 
-function cleanIdea(raw: RawIdea, kind: IdeaKind, sources: OfferedSources): Idea | null {
+function cleanIdea(raw: RawIdea, kind: IdeaKind, sources: OfferedSources, picked?: IdeaSource): Idea | null {
   const base = { text: clip(raw.text, 280), feature: clip(raw.feature, 120) };
-  return base.text === '' ? null : withSource(base, kind, raw.sourceIds ?? [], sources);
+  return base.text === '' ? null : withSource(base, kind, raw.sourceIds ?? [], sources, picked);
 }
 
 // The model's own kind label wins; the planned kind at that position covers a missing or unknown one.
@@ -158,11 +161,11 @@ export function sanitizeDigest(
 }
 
 /** The first usable idea, always of the asked kind (the model's own label is ignored). */
-export function sanitizeSingleIdea(raw: unknown, kind: IdeaKind = 'spacehub', sources: OfferedSources = NO_SOURCES): Idea | null {
+export function sanitizeSingleIdea(raw: unknown, kind: IdeaKind = 'spacehub', sources: OfferedSources = NO_SOURCES, picked?: IdeaSource): Idea | null {
   const parsed = RawIdeasSchema.safeParse(raw);
   if (!parsed.success) return null;
   for (const idea of parsed.data.ideas) {
-    const clean = cleanIdea(idea, kind, sources);
+    const clean = cleanIdea(idea, kind, sources, picked);
     if (clean) return clean;
   }
   return null;
@@ -177,10 +180,10 @@ function parseDigest(text: string, knownIds: ReadonlySet<string>, plan: readonly
   return content ? ok(content) : err('malformed output: no digest object');
 }
 
-export function parseSingleIdea(text: string, kind: IdeaKind = 'spacehub', sources: OfferedSources = NO_SOURCES): Result<Idea> {
+export function parseSingleIdea(text: string, kind: IdeaKind = 'spacehub', sources: OfferedSources = NO_SOURCES, picked?: IdeaSource): Result<Idea> {
   const json = extractJson(text);
   if (!json.ok) return json;
-  const idea = sanitizeSingleIdea(firstObject(json.value), kind, sources);
+  const idea = sanitizeSingleIdea(firstObject(json.value), kind, sources, picked);
   return idea ? ok(idea) : err('malformed output: no idea');
 }
 

@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { defaultConfig, err, ok } from '@xc/shared';
+import { defaultConfig, err, IdeaGenerateRequestSchema, ok } from '@xc/shared';
 import { openDb } from '../db';
 import { ingestPosts } from '../posts';
 import { buildDigestPrompt, buildSingleIdeaPrompt, readDigestView, sanitizeSingleIdea } from './digest';
@@ -122,5 +122,49 @@ describe('single idea kinds', () => {
       if (outcome.status === 'ok') kinds.push(outcome.idea.kind);
     }
     expect(kinds).toEqual(['spacehub', 'eco', 'inspired', 'quote', 'spacehub', 'eco']);
+  });
+});
+
+describe('single idea for a picked post', () => {
+  const capture = (statusId: string, handle: string, text: string) => ({
+    statusId, authorName: handle, authorHandle: handle, text, postedAt: new Date().toISOString(),
+    metrics: { replies: 1, reposts: 1, likes: 9, views: 50 }, isReply: false, replyTo: [], quotedStatusId: null, avatarUrl: null,
+  });
+  const sourceBlock = (prompt: string) => /<source-posts>\n(.*)\n<\/source-posts>/.exec(prompt)?.[1];
+
+  it('uses only the picked post: the stored text when captured (by id, or by author and text), else the DOM text', async () => {
+    const db = freshDb();
+    ingestPosts(db, [capture('41', 'alice', 'stored take'), capture('42', 'bob', 'best ranked crypto take'), capture('43', 'dave', 'quoted words')], Date.now(), 'me');
+    const prompts: string[] = [];
+    const model = async (prompt: string) => {
+      prompts.push(prompt);
+      return ok(JSON.stringify([{ ideas: [{ text: 'an idea', feature: 'f', sourceIds: ['42'] }] }]));
+    };
+    const service = createSingleIdeaService(db, config(), model, { productContext: async () => '', wait: noWait });
+
+    expect(await service.generate('inspired', { statusId: '41', authorHandle: 'alice', text: 'dom text' })).toMatchObject({
+      status: 'ok',
+      idea: { kind: 'inspired', sourceIds: ['41'], source: { statusId: '41', url: 'https://x.com/alice/status/41', excerpt: 'stored take' } },
+    });
+    expect(sourceBlock(prompts[0] ?? '')).toBe('[{"statusId":"41","author":"alice","excerpt":"stored take"}]');
+
+    expect(await service.generate('quote', { statusId: null, authorHandle: 'dave', text: 'quoted words' })).toMatchObject({
+      status: 'ok',
+      idea: { kind: 'quote', source: { statusId: '43', url: 'https://x.com/dave/status/43' } },
+    });
+
+    expect(await service.generate('quote', { statusId: null, authorHandle: 'erin', text: 'never captured' })).toMatchObject({
+      status: 'ok',
+      idea: { kind: 'quote', sourceIds: [], source: { statusId: null, url: null, authorHandle: 'erin', excerpt: 'never captured' } },
+    });
+    expect(sourceBlock(prompts[2] ?? '')).toBe('[{"statusId":null,"author":"erin","excerpt":"never captured"}]');
+  });
+
+  it('accepts a source only with kind inspired or quote', () => {
+    const source = { authorHandle: 'alice', text: 'hi' };
+    expect(IdeaGenerateRequestSchema.safeParse({ kind: 'quote', source }).success).toBe(true);
+    expect(IdeaGenerateRequestSchema.safeParse({ kind: 'eco', source }).success).toBe(false);
+    expect(IdeaGenerateRequestSchema.safeParse({ source }).success).toBe(false);
+    expect(IdeaGenerateRequestSchema.safeParse({ kind: 'quote', source: { authorHandle: 'alice', text: '  ' } }).success).toBe(false);
   });
 });

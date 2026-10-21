@@ -15,12 +15,11 @@ import {
   type DigestView,
   type DoctorReport,
   type HealthResponse,
-  type IdeaKind,
   type VoiceView,
 } from '@xc/shared';
 import { isAuthorized } from './auth';
 import type { ManualDigestOutcome } from './digest/digest';
-import type { SingleIdeaOutcome } from './digest/single-idea';
+import type { SingleIdeaService } from './digest/single-idea';
 import { selectVersion } from './polish/drafts-store';
 import type { PolishState } from './polish/polish';
 import { log } from './log';
@@ -275,13 +274,13 @@ function postDigestRun(runNow: () => Promise<ManualDigestOutcome>): Handler {
 }
 
 // An empty body asks for the mixed rotation.
-function postIdeaGenerate(generate: (kind?: IdeaKind) => Promise<SingleIdeaOutcome>): Handler {
+function postIdeaGenerate(generate: SingleIdeaService['generate']): Handler {
   return async (req, res) => {
     const raw = await readBody(req);
     if (raw === null) return sendJson(res, 413, { error: 'body too large' });
     const request = IdeaGenerateRequestSchema.safeParse(raw.trim() === '' ? {} : parseJson(raw));
     if (!request.success) return sendJson(res, 400, { error: 'invalid idea request' });
-    const outcome = await generate(request.data.kind);
+    const outcome = await generate(request.data.kind, request.data.source);
     switch (outcome.status) {
       case 'ok':
         return sendJson(res, 200, { idea: outcome.idea });
@@ -324,7 +323,7 @@ export interface RouterHooks {
   voiceView: () => VoiceView;
   digestView: () => DigestView;
   runDigestNow: () => Promise<ManualDigestOutcome>;
-  generateIdea: (kind?: IdeaKind) => Promise<SingleIdeaOutcome>;
+  generateIdea: SingleIdeaService['generate'];
   ownHandle: string;
   flagRules: PrefilterRules;
 }

@@ -17,6 +17,10 @@ export const SEL = {
   composerToolbar: '[data-testid="toolBar"]',
   // Live DOM unverified: the scrollable icon list inside that row; the toolbar itself when it is missing.
   composerTools: '[data-testid="ScrollSnap-List"]',
+  // Live DOM unverified: X's Quote opens the Post modal (a dialog) holding the composer and the quoted post.
+  quoteComposer: '[role="dialog"]',
+  // Live DOM unverified: the quoted post card inside that composer (X renders quoted posts as role=link cards).
+  quotedCard: 'div[role="link"]:has([data-testid="tweetText"])',
 } as const;
 
 // Live DOM unverified: X renders "Replying to @a and @b" outside tweetText (ES: "En respuesta a").

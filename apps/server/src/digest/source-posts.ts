@@ -31,7 +31,8 @@ export interface SourceCandidate {
 
 /** A source post as the prompt shows it. */
 export interface SourcePost {
-  statusId: string;
+  /** Null for a post the user picked in X's quote composer that was never captured. */
+  statusId: string | null;
   author: string;
   excerpt: string;
 }
@@ -71,10 +72,10 @@ export function selectSourcePosts(candidates: readonly SourceCandidate[], rules:
 
 export const toPromptSource = (c: SourceCandidate): SourcePost => ({ statusId: c.statusId, author: c.authorHandle, excerpt: excerptOf(c.text) });
 
-export function ideaSourceOf(c: SourceCandidate): IdeaSource {
+export function ideaSourceOf(c: Pick<SourceCandidate, 'authorHandle' | 'text'> & { statusId: string | null }): IdeaSource {
   return {
     statusId: c.statusId,
-    url: `https://x.com/${c.authorHandle}/status/${c.statusId}`,
+    url: c.statusId ? `https://x.com/${c.authorHandle}/status/${c.statusId}` : null,
     authorHandle: c.authorHandle,
     excerpt: excerptOf(c.text),
   };

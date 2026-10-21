@@ -22,6 +22,8 @@ export interface InlineContext {
   handlers: InlineHandlers;
   /** When triage resumes after a quota pause, or null when it is running. */
   triagePausedUntil: () => number | null;
+  /** The post's "Post idea" section, appended under its draft. */
+  ideaSection: (statusId: string) => HTMLElement;
 }
 
 interface HostState {
@@ -169,7 +171,7 @@ export function upsertInlineDraft(article: Element, post: StoredPost, ctx: Inlin
   if (state.signature === signature) return;
   state.signature = signature;
   state.label.textContent = isDrafting(post, draft) ? 'Drafting…' : 'Ready';
-  state.card.replaceChildren(renderSection(post, draft, ctx.handlers));
+  state.card.replaceChildren(renderSection(post, draft, ctx.handlers), ctx.ideaSection(post.statusId));
 }
 
 export function removeInlineDraft(article: Element): void {

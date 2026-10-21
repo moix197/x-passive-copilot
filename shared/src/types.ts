@@ -278,10 +278,10 @@ export const IdeaKindSchema = z.enum(IDEA_KINDS);
 // Only x.com status links: the panel and the compose popover render this URL as a link.
 export const IDEA_SOURCE_URL = /^https:\/\/x\.com\/[A-Za-z0-9_]{1,15}\/status\/\d{1,30}$/;
 
-/** The captured post an inspired or quote idea comes from. */
+/** The post an inspired or quote idea comes from; a quoted post read from X's composer may have no status id. */
 export const IdeaSourceSchema = z.object({
-  statusId: capturedStatusId,
-  url: z.string().regex(IDEA_SOURCE_URL),
+  statusId: capturedStatusId.nullable(),
+  url: z.string().regex(IDEA_SOURCE_URL).nullable(),
   authorHandle: xHandle,
   excerpt: z.string().max(300),
 });
@@ -304,8 +304,26 @@ export const DigestIdeaSchema = StoredIdeaSchema.extend({
   polish: PolishInfoSchema.nullable(),
 });
 
-/** POST /v1/ideas/generate body; no kind means the mixed rotation. */
-export const IdeaGenerateRequestSchema = z.object({ kind: IdeaKindSchema.optional() });
+export const MAX_IDEA_SOURCE_TEXT = 1000;
+
+/** The exact post a manual inspired or quote idea is for, as the content script read it from X's DOM (untrusted). */
+export const IdeaSourceInputSchema = z.object({
+  statusId: capturedStatusId.nullable().default(null),
+  authorHandle: xHandle,
+  text: z.string().trim().min(1).max(MAX_IDEA_SOURCE_TEXT),
+});
+export type IdeaSourceInput = z.infer<typeof IdeaSourceInputSchema>;
+
+const SOURCED_KINDS: readonly IdeaKind[] = ['inspired', 'quote'];
+
+/**
+ * POST /v1/ideas/generate body; no kind means the mixed rotation. A source (inspired or quote only) is the
+ * post the user picked, replacing the automatic source selection.
+ */
+export const IdeaGenerateRequestSchema = z
+  .object({ kind: IdeaKindSchema.optional(), source: IdeaSourceInputSchema.optional() })
+  .refine((r) => !r.source || (r.kind !== undefined && SOURCED_KINDS.includes(r.kind)), { message: 'a source needs kind inspired or quote' });
+export type IdeaGenerateRequest = z.infer<typeof IdeaGenerateRequestSchema>;
 export type DigestIdea = z.infer<typeof DigestIdeaSchema>;
 
 export const DIGEST_STEP_IDS = ['collect', 'context', 'model', 'save'] as const;
@@ -374,6 +392,8 @@ export const ComposeIdeasMessageSchema = z.object({
   action: z.enum(['list', 'generate']),
   /** Generate only: the kind asked for; none means the mixed rotation. */
   kind: IdeaKindSchema.optional(),
+  /** Generate only: the post the user picked (the quote composer's quoted post, or a timeline post). */
+  source: IdeaSourceInputSchema.optional(),
 });
 export type ComposeIdeasMessage = z.infer<typeof ComposeIdeasMessageSchema>;
 

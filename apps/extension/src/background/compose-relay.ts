@@ -5,7 +5,6 @@ import {
   DigestViewSchema,
   type ComposeIdeasMessage,
   type ComposeIdeasReply,
-  type IdeaKind,
 } from '@xc/shared/types';
 import { viewIdeas } from '../drafts/idea-list';
 import { errorText, getJson, postJson } from '../server-api';
@@ -25,17 +24,17 @@ async function refusal(res: Response): Promise<ComposeIdeasReply> {
   return reply({ error: await errorText(res), resumesAt });
 }
 
-async function generateIdea(kind: IdeaKind | undefined): Promise<ComposeIdeasReply> {
-  const res = await postJson('/v1/ideas/generate', kind ? { kind } : undefined);
+async function generateIdea({ kind, source }: ComposeIdeasMessage): Promise<ComposeIdeasReply> {
+  const res = await postJson('/v1/ideas/generate', kind ? { kind, ...(source ? { source } : {}) } : undefined);
   if (!res.ok) return refusal(res);
   const { idea } = (await res.json()) as { idea?: unknown };
   return reply({ ideas: [DigestIdeaSchema.parse(idea)] });
 }
 
-async function runComposeIdeas({ action, kind }: ComposeIdeasMessage): Promise<ComposeIdeasReply> {
+async function runComposeIdeas(message: ComposeIdeasMessage): Promise<ComposeIdeasReply> {
   try {
     if (!(await getServerConfig()).token) return reply({ error: OFFLINE });
-    return await (action === 'list' ? listIdeas() : generateIdea(kind));
+    return await (message.action === 'list' ? listIdeas() : generateIdea(message));
   } catch {
     return reply({ error: OFFLINE });
   }

@@ -16,10 +16,10 @@ function kindTag(kind: IdeaKind): HTMLElement {
 }
 
 // Only opens the post: for a quote idea the user clicks Quote on X themselves.
-function openPostLink(source: IdeaSource): HTMLAnchorElement {
+function openPostLink(url: string): HTMLAnchorElement {
   const link = document.createElement('a');
   link.textContent = 'Open post';
-  link.href = source.url;
+  link.href = url;
   link.target = '_blank';
   link.rel = 'noopener noreferrer';
   link.dataset.testid = 'idea-source-link';
@@ -31,7 +31,7 @@ function sourceLine(source: IdeaSource): HTMLElement {
   line.dataset.testid = 'idea-source';
   const quote = element('span', `@${source.authorHandle}: ${source.excerpt}`, 'idea-source-text');
   quote.title = source.excerpt;
-  line.append(quote, openPostLink(source));
+  line.append(quote, ...(source.url ? [openPostLink(source.url)] : []));
   return line;
 }
 

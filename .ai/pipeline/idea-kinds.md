@@ -4,7 +4,7 @@ type: decision
 summary: Ideas have a kind (spacehub, eco, inspired, quote); Mix never repeats a kind, spacehub <=1 in 3; inspired/quote cite fresh captured posts, quoted once
 tags: [digest, ideas, kinds, rotation, quote, inspired, source-posts, untrusted-input, tone]
 paths: [apps/server/src/digest/idea-kind.ts, apps/server/src/digest/source-posts.ts, apps/server/src/digest/digest.ts, apps/server/src/digest/single-idea.ts, apps/server/src/polish/polish.ts, apps/server/src/db.ts, apps/server/src/router.ts, shared/src/types.ts, apps/extension/src/panel/idea-meta.ts, apps/extension/src/panel/digest-section.ts, apps/extension/src/content/inline/compose-card.ts, e2e/idea-kinds.spec.ts, e2e/fakes/opencode.mjs]
-related: [pipeline/voice-and-digest, capture/compose-ideas, pipeline/digest-product-context, pipeline/reply-tone]
+related: [pipeline/voice-and-digest, capture/compose-ideas, capture/manual-ideas, pipeline/digest-product-context, pipeline/reply-tone]
 status: active
 updated: 2026-10-21
 ---
@@ -37,6 +37,7 @@ words; top `MAX_SOURCE_POSTS` = 6 as `{statusId, author, excerpt}` (200 chars, o
 dash) in an untrusted `<source-posts>` block with an ignore-instructions rule. An inspired/quote
 idea citing no offered id is dropped (digest) or malformed (single, retried). Asking for
 inspired/quote with no source -> `no_source` -> 422.
+A post the user picked (`{kind, source}`, capture/manual-ideas) replaces this selection for that one idea.
 
 **Tone:** `ideaToneRules` unchanged plus `kindRules` (never copy source wording, eco never names the
 product, "the LONG ecosystem"/"LONG eco"). Polish adds `polishKindNote`, marks the idea's source as

@@ -38,7 +38,7 @@ export function planDigestKinds(newestFirst: readonly IdeaKind[], hasSources: bo
 }
 
 /** At most one spacehub idea and each source post quoted once; later extras are dropped. */
-export function capIdeaKinds<T extends { kind: IdeaKind; source: { statusId: string } | null }>(ideas: T[]): T[] {
+export function capIdeaKinds<T extends { kind: IdeaKind; source: { statusId: string | null } | null }>(ideas: T[]): T[] {
   let spacehub = false;
   const quoted = new Set<string>();
   return ideas.filter((idea) => {
@@ -46,7 +46,7 @@ export function capIdeaKinds<T extends { kind: IdeaKind; source: { statusId: str
       if (spacehub) return false;
       spacehub = true;
     }
-    if (idea.kind !== 'quote' || !idea.source) return true;
+    if (idea.kind !== 'quote' || !idea.source?.statusId) return true;
     if (quoted.has(idea.source.statusId)) return false;
     quoted.add(idea.source.statusId);
     return true;

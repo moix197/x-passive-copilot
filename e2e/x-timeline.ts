@@ -36,25 +36,47 @@ const TOOLBAR_HTML = `<div data-testid="toolBar" style="display:flex;justify-con
     <button type="button" data-testid="tweetButtonInline">Post</button>
   </div>`;
 
-// X's compose box ("What's happening?"): the text box, then the toolbar row (in a slot the fixture can re-render).
-const composerHtml = (label: string) => `<div data-testid="fixture-composer" role="region" aria-label="${label}">
+/** The post X embeds under the text box after the user clicks Quote. */
+export interface QuotedPost {
+  handle: string;
+  text: string;
+  /** Only when the card links the post; X's composer usually shows none. */
+  statusId?: string;
+}
+
+// X's quoted-post card: a role=link box with the author line and the post text, no action bar.
+const quotedCardHtml = (q: QuotedPost) => `<div role="link" tabindex="0" data-testid="fixture-quoted">
+    <div data-testid="User-Name"><span>${q.handle} name</span><span>@${q.handle}</span>${q.statusId ? `<a href="/${q.handle}/status/${q.statusId}">2h</a>` : '<span>2h</span>'}</div>
+    <div data-testid="tweetText"><span>${q.text}</span></div>
+  </div>`;
+
+// X's compose box ("What's happening?"): the text box, the quoted post when quoting, then the toolbar row (in a slot the fixture can re-render).
+const composerHtml = (label: string, quoted?: QuotedPost) => `<div data-testid="fixture-composer" role="region" aria-label="${label}">
     <div data-testid="tweetTextarea_0" role="textbox" contenteditable="true" aria-label="Post text">Half-written post</div>
+    ${quoted ? quotedCardHtml(quoted) : ''}
     <div data-testid="fixture-toolbar-slot">${TOOLBAR_HTML}</div>
   </div>`;
 
-// Counts what reaches X's compose box (clicks, keys, input, Post clicks); opens the Post modal; swaps a toolbar like React does.
-const composerScript = () => `
+const modalHtml = (label: string, quoted?: QuotedPost) =>
+  `<div role="dialog" aria-modal="true" aria-label="${label}">${composerHtml(`${label} composer`, quoted)}</div>`;
+
+// Counts what reaches X's compose box (clicks, keys, input, Post clicks); opens the Post or Quote modal; swaps a toolbar like React does.
+const composerScript = (quoted?: QuotedPost) => `
       window.__composer = { leaked: 0, posted: 0 };
       for (const type of ['click', 'mousedown', 'keydown', 'keyup', 'input']) {
         document.addEventListener(type, (e) => { if (e.target.closest && e.target.closest('[data-testid="fixture-composer"]')) window.__composer.leaked++; });
       }
       document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-testid^="tweetButton"]')) window.__composer.posted++; });
-      window.__openPostModal = () => {
+      const openModal = (html) => {
         const layers = document.createElement('div');
         layers.dataset.testid = 'layers';
-        layers.innerHTML = ${JSON.stringify(`<div role="dialog" aria-modal="true" aria-label="Post modal">${composerHtml('Post modal composer')}</div>`)};
+        // X's layers float over the page, so the modal never needs a scroll.
+        layers.style.cssText = 'position:fixed;top:0;right:0;width:420px;background:#fff';
+        layers.innerHTML = html;
         document.body.append(layers);
       };
+      window.__openPostModal = () => openModal(${JSON.stringify(modalHtml('Post modal'))});
+      window.__openQuoteModal = () => openModal(${JSON.stringify(quoted ? modalHtml('Quote modal', quoted) : '')});
       window.__rerenderToolbar = (index) => {
         document.querySelectorAll('[data-testid="fixture-toolbar-slot"]')[index].innerHTML = ${JSON.stringify(TOOLBAR_HTML)};
       };`;
@@ -62,6 +84,8 @@ const composerScript = () => `
 export interface TimelineOptions {
   /** Adds X's home composer above the timeline, plus page hooks to open the Post modal and re-render a toolbar. */
   composer?: boolean;
+  /** With composer: the post `__openQuoteModal()` embeds, like X's Quote composer. */
+  quoted?: QuotedPost;
 }
 
 // Stands in for X: its document-level listeners count clicks and keys that leak out of an article.
@@ -74,7 +98,7 @@ function timelineHtml(posts: Post[], options: TimelineOptions = {}): string {
       window.__leaked = 0;
       for (const type of ['click', 'mousedown', 'keydown']) {
         document.addEventListener(type, (e) => { if (e.target.closest && e.target.closest('article')) window.__leaked++; });
-      }${options.composer ? composerScript() : ''}
+      }${options.composer ? composerScript(options.quoted) : ''}
     </script></body></html>`;
 }
 

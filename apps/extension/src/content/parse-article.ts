@@ -21,7 +21,7 @@ function ownMatch(article: Element, selector: string): Element | null {
   return ownElements(article, selector)[0] ?? null;
 }
 
-function readStatusPath(anchor: Element | null | undefined): { handle: string; statusId: string } | null {
+export function readStatusPath(anchor: Element | null | undefined): { handle: string; statusId: string } | null {
   const href = anchor?.getAttribute('href');
   if (!href) return null;
   const match = STATUS_PATH.exec(new URL(href, 'https://x.com').pathname);
