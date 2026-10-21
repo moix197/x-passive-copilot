@@ -328,6 +328,22 @@ export function listFlaggedPosts(
   return { posts, nextBefore: null, counts };
 }
 
+/** The given posts that sit in To reply right now (same rules as the Flagged list), for inline drafts on x.com. */
+export function listToReplyByIds(
+  db: DatabaseSync,
+  statusIds: string[],
+  ctx: PolishContext,
+  rules: PrefilterRules | null,
+  now: number,
+): StoredPost[] {
+  if (statusIds.length === 0) return [];
+  const marks = statusIds.map(() => '?').join(',');
+  const rows = db
+    .prepare(`${SELECT_WITH_TRIAGE} WHERE p.status_id IN (${marks}) AND p.replied_at IS NULL AND ${FLAGGED_WHERE}`)
+    .all(...statusIds) as unknown as PostRow[];
+  return rows.flatMap((row) => eligibleFlagged(toStoredPost(row, ctx), rules, now) ?? []);
+}
+
 /** Marking keeps the first replied time, so a later Copy on a replied card does not reorder it. */
 export function setReplied(db: DatabaseSync, statusId: string, replied: boolean, now: number): boolean {
   const result = replied

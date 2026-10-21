@@ -1,7 +1,7 @@
 import { PostListResponseSchema, type FlaggedFeed, type StoredPost } from '@xc/shared/types';
 import { errorText, getJson, markCopied, postJson, requestPolish, sendFeedback } from '../server-api';
 import { authHeaders, getServerConfig } from '../server-config';
-import { copyText, type DraftCallbacks, type Rating } from './draft-actions';
+import { copyText, type EditableDraftCallbacks, type Rating } from './draft-actions';
 import { generateErrorText } from './digest-notice';
 import { mountDigestSection } from './digest-section';
 import { mountDoctorCard } from './doctor-card';
@@ -97,7 +97,7 @@ async function onCopied(post: StoredPost): Promise<void> {
 // Remembers this session's thumbs so a poll that was fetched before the save landed cannot revert them.
 const sessionRatings = new Map<string, Rating>();
 
-function draftCallbacks(draftId: string, saved: Rating | null = null): DraftCallbacks {
+function draftCallbacks(draftId: string, saved: Rating | null = null): EditableDraftCallbacks {
   return {
     rating: sessionRatings.get(draftId) ?? saved,
     onCopy: async (text) => {

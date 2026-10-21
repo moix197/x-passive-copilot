@@ -1,0 +1,30 @@
+/* Inline draft card on x.com, inside our shadow root; panel.css supplies the tokens and buttons. */
+:host {
+  display: block;
+  margin: 4px 0 8px;
+  font-family: -apple-system, 'Segoe UI', system-ui, Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text);
+  text-align: left;
+}
+.inline-badge {
+  padding: 2px 10px;
+  border-color: var(--accent);
+  background: var(--bg);
+  color: var(--accent);
+  font-size: 12px;
+}
+.inline-badge[aria-expanded='true'] {
+  background: var(--accent-soft);
+}
+.inline-card[hidden] {
+  display: none;
+}
+.inline-card .reply-section {
+  margin: 8px 0 0;
+  background: var(--surface);
+}
+.inline-card .copied-badge {
+  margin-left: auto;
+}

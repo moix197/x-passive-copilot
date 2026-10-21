@@ -1,6 +1,7 @@
-import { MAX_DRAFT_VERSIONS, type DraftVersion, type PolishInfo, type StoredPost } from '@xc/shared/types';
+import type { DraftVersion, PolishInfo, StoredPost } from '@xc/shared/types';
+import { canPolish, canRegenerate, polishedText } from '../drafts/current-draft';
 import { element } from './dom';
-import { copiedBadge, renderDraftActions, type DraftCallbacks, type Rating } from './draft-actions';
+import { copiedBadge, polishButton, renderDraftActions, type DraftCallbacks, type EditableDraftCallbacks, type Rating } from './draft-actions';
 import { renderPostCard } from './post-card';
 import { mountPostsView, type PostsViewOptions } from './posts-view';
 import { renderVersionNav } from './version-nav';
@@ -17,7 +18,7 @@ export interface FlaggedHandlers {
   onRetriage: (statusId: string) => Promise<string | null>;
   onRegenerate: PolishHandler;
   onSelectVersion: (statusId: string, versionId: number) => Promise<void>;
-  draftCallbacks: (statusId: string, saved: Rating | null) => DraftCallbacks;
+  draftCallbacks: (statusId: string, saved: Rating | null) => EditableDraftCallbacks;
 }
 
 type DraftKind = 'rough' | 'claude';
@@ -42,22 +43,6 @@ function scoreBadge(post: StoredPost): HTMLElement {
   const badge = element('span', score === null || score === undefined ? '—' : String(Math.round(score)), 'score-badge');
   badge.title = 'Triage score';
   return badge;
-}
-
-function polishButton(post: StoredPost, onPolish: PolishHandler): HTMLButtonElement {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.textContent = 'Polish';
-  button.dataset.testid = 'polish-button';
-  button.addEventListener('click', () => {
-    button.disabled = true;
-    button.textContent = 'Polishing...';
-    void onPolish(post.statusId).catch(() => {
-      button.disabled = false;
-      button.textContent = 'Polish';
-    });
-  });
-  return button;
 }
 
 // Rows are rebuilt every poll, so a copy is remembered here until the server's copiedAt catches up.
@@ -233,7 +218,6 @@ function showEdited(post: StoredPost, text: string, ctx: RowContext): void {
 
 function draftActionsFor(post: StoredPost, text: string, ctx: RowContext): HTMLElement {
   const { handlers } = ctx;
-  const versions = post.polish?.versions.length ?? 0;
   const base = handlers.draftCallbacks(post.statusId, post.polish?.feedback ?? null);
   const callbacks: DraftCallbacks = {
     ...base,
@@ -242,7 +226,7 @@ function draftActionsFor(post: StoredPost, text: string, ctx: RowContext): HTMLE
       if (!error) showEdited(post, edited, ctx);
       return error;
     },
-    ...(versions < MAX_DRAFT_VERSIONS ? { onRegenerate: () => handlers.onRegenerate(post.statusId) } : {}),
+    ...(canRegenerate(post) ? { onRegenerate: () => handlers.onRegenerate(post.statusId) } : {}),
   };
   return renderDraftActions(text, copyMarksCopied(post, callbacks, ctx), trackEditing(ctx, post.statusId, 'claude'));
 }
@@ -258,18 +242,13 @@ function finalReply(post: StoredPost, polish: PolishInfo & { text: string }, ctx
   return parts;
 }
 
-function canPolish(post: StoredPost): boolean {
-  const t = post.triage;
-  // A must-flag post stays polishable even when its triage errored.
-  return Boolean(t && !t.skipReason && (!t.error || t.mustFlag !== null));
-}
-
 function claudeBody(post: StoredPost, ctx: RowContext): HTMLElement[] {
   const polish = post.polish;
-  if (polish?.text && polish.status !== 'error') return finalReply(post, { ...polish, text: polish.text }, ctx);
+  const text = polishedText(polish);
+  if (polish && text) return finalReply(post, { ...polish, text }, ctx);
   if (polish?.status === 'polishing') return [element('div', 'Polishing...', 'post-tags')];
   const note = polish?.status === 'cap_reached' ? 'Daily cap reached' : polish?.error ? `Polish failed: ${polish.error}` : '';
-  return [...(note ? [element('div', note, 'post-tags')] : []), ...(canPolish(post) ? [polishButton(post, ctx.handlers.onPolish)] : [])];
+  return [...(note ? [element('div', note, 'post-tags')] : []), ...(canPolish(post) ? [polishButton(() => ctx.handlers.onPolish(post.statusId))] : [])];
 }
 
 function claudeSection(post: StoredPost, ctx: RowContext): HTMLElement | null {

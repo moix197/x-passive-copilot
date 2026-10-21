@@ -107,7 +107,7 @@ to; first 8 KB are used) by an LLM through [opencode](https://opencode.ai). Setu
   ("free models only, no auth") when `models.triage` is one of them.
 - Failed batches log `triage batch <ids> failed: <class> (<reason>)`; the reason is CLI/provider
   error text (exit code, stderr, opencode error event), never the prompt.
-- The **Flagged** tab lists reply-worthy posts with reason, rough draft and a Copy button, split by a toggle into **To reply** (default; unscored "triage pending" posts first, then score high to low, ties newest) and **Replied** (newest replied first), each with its count. Copying any draft (first draft or Claude version) or pressing **Mark replied** moves the post to Replied immediately; **Move back to To reply** undoes it. Replied posts ignore the Flagged age limits and are kept past the 30-day prune.
+- The **Flagged** tab lists reply-worthy posts with reason, rough draft and a Copy button, split by a toggle into **To reply** (default; unscored "triage pending" posts first, then score high to low, ties newest) and **Replied** (newest replied first), each with its count. Copying any draft (first draft or Claude version) copies it, opens the post on x.com (or focuses a tab already on it) and marks the card **Copied ✓**; the post stays in To reply. **Mark replied** moves it to Replied immediately; **Move back to To reply** undoes it. Replies are not detected automatically. Replied posts ignore the Flagged age limits and are kept past the 30-day prune.
 - A batch runs at 15 pending posts or 30s after the first pending one. Malformed model output marks
   those posts "triage error"; the server keeps running.
 - opencode runs in `<home>/sandbox/opencode` with all tools denied (only `read` is offered, with
@@ -197,7 +197,11 @@ for the digest.
   (and spaced/bare en dashes) to commas or hyphens in triage drafts, polished replies, versions and
   digest text, before the reply guard runs.
 - Every post card has a **View on X ↗** link (new tab) next to the metrics; the time also links.
+- On x.com, a post that is in To reply with a draft gets a small **Draft ready** badge under it
+  (shadow DOM, never touching X's own buttons or compose box). It expands to the current draft
+  (Claude version, else first draft) with Copy (no new tab), Polish / Regenerate and thumbs. Lookups
+  are batched for visible posts through the service worker; nothing shows while offline.
 
 Routes (all need the bearer token): `GET /v1/voice`, `GET /v1/digest`, `POST /v1/digest/run` (200, 409 busy, 422 too few posts, 429 + `Retry-After`, 502 failed), `GET|POST /v1/style-notes {notes<=2000}`,
 `POST /v1/drafts/:id/feedback {kind: copy|edit|up|down, text?<=1000}`, `POST /v1/ideas/:id/polish`,
-`GET /v1/posts?view=flagged&feed=to_reply|replied` (returns `counts`), `POST /v1/posts/:id/replied {replied: boolean}`, `POST /v1/posts/:id/polish[?regenerate=1]` (409 at the version cap), `POST /v1/drafts/:id/select {versionId}`.
+`GET /v1/posts?view=flagged&feed=to_reply|replied` (returns `counts`), `POST /v1/posts/:id/replied {replied: boolean}`, `POST /v1/posts/:id/copied`, `GET /v1/posts/to-reply?ids=a,b` (<=100 ids; unreplied flagged posts only), `POST /v1/posts/:id/polish[?regenerate=1]` (409 at the version cap), `POST /v1/drafts/:id/select {versionId}`.

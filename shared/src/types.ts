@@ -137,6 +137,31 @@ export const PostListResponseSchema = z.object({
 });
 export type PostListResponse = z.infer<typeof PostListResponseSchema>;
 
+/** Most post ids one inline-drafts lookup may ask about (`GET /v1/posts/to-reply?ids=`). */
+export const MAX_INLINE_IDS = 100;
+
+export const ToReplyByIdsResponseSchema = z.object({ posts: z.array(StoredPostSchema).max(MAX_INLINE_IDS) });
+export type ToReplyByIdsResponse = z.infer<typeof ToReplyByIdsResponseSchema>;
+
+/** Content script -> service worker: which of these visible posts are in To reply (with their drafts). */
+export const InlineDraftsMessageSchema = z.object({
+  type: z.literal('inline-drafts'),
+  statusIds: z.array(capturedStatusId).min(1).max(MAX_INLINE_IDS),
+});
+export type InlineDraftsMessage = z.infer<typeof InlineDraftsMessageSchema>;
+
+export const INLINE_ACTIONS = ['copy', 'up', 'down', 'polish', 'regenerate'] as const;
+export type InlineActionKind = (typeof INLINE_ACTIONS)[number];
+
+/** Content script -> service worker: a click on an inline draft card, relayed to the server. */
+export const InlineActionMessageSchema = z.object({
+  type: z.literal('inline-action'),
+  action: z.enum(INLINE_ACTIONS),
+  statusId: capturedStatusId,
+  draftId: z.string().regex(/^(?:rough-)?\d{1,30}$/),
+});
+export type InlineActionMessage = z.infer<typeof InlineActionMessageSchema>;
+
 export const DEFAULT_SERVER_URL = 'http://127.0.0.1:7457';
 
 export const NATIVE_HOST_NAME = 'com.xpassivecopilot.host';

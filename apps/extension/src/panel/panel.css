@@ -1,4 +1,6 @@
-:root {
+/* :host lets the inline cards on x.com reuse these tokens inside their shadow root. */
+:root,
+:host {
   color-scheme: dark;
   --bg: #000;
   --surface: #16181c;

@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DatabaseSync } from 'node:sqlite';
 import {
   FLAGGED_FEEDS,
+  MAX_INLINE_IDS,
   FeedbackRequestSchema,
   RepliedRequestSchema,
   describeModelFailure,
@@ -19,7 +20,7 @@ import type { ManualDigestOutcome } from './digest/digest';
 import { selectVersion } from './polish/drafts-store';
 import type { PolishState } from './polish/polish';
 import { log } from './log';
-import { ingestPosts, listFlaggedPosts, listPosts, setCopied, setReplied, type PolishContext } from './posts';
+import { ingestPosts, listFlaggedPosts, listPosts, listToReplyByIds, setCopied, setReplied, type PolishContext } from './posts';
 import type { PrefilterRules } from './triage/prefilter';
 import type { RetriageOutcome } from './triage/triage';
 import { recordFeedback } from './voice/feedback';
@@ -104,6 +105,23 @@ function getPosts(db: DatabaseSync, polishContext: () => PolishContext, flagRule
     }
     if (view !== null && view !== 'all') return sendJson(res, 400, { error: 'bad query' });
     sendJson(res, 200, listPosts(db, limit, before || null, polishContext()));
+  };
+}
+
+const STATUS_ID = /^\d{1,30}$/;
+
+/** "1,2,3" -> unique ids, or null when any id is malformed or there are too many. */
+function parseStatusIds(value: string | null): string[] | null {
+  const ids = [...new Set((value ?? '').split(',').filter(Boolean))];
+  if (ids.length === 0 || ids.length > MAX_INLINE_IDS || !ids.every((id) => STATUS_ID.test(id))) return null;
+  return ids;
+}
+
+function getToReplyByIds(db: DatabaseSync, polishContext: () => PolishContext, flagRules: PrefilterRules): Handler {
+  return (_req, res, url) => {
+    const ids = parseStatusIds(url.searchParams.get('ids'));
+    if (!ids) return sendJson(res, 400, { error: 'bad query' });
+    sendJson(res, 200, { posts: listToReplyByIds(db, ids, polishContext(), flagRules, Date.now()) });
   };
 }
 
@@ -257,6 +275,7 @@ export function createRouter(
     'GET /v1/health': (_req, res) => sendJson(res, 200, { status: 'ok' } satisfies HealthResponse),
     'GET /v1/posts': getPosts(db, hooks.polishContext, hooks.flagRules),
     'POST /v1/posts': postPosts(db, hooks.ownHandle, hooks.onIngest),
+    'GET /v1/posts/to-reply': getToReplyByIds(db, hooks.polishContext, hooks.flagRules),
     'GET /v1/doctor': async (_req, res) => sendJson(res, 200, await hooks.doctor()),
     'GET /v1/voice': (_req, res) => sendJson(res, 200, hooks.voiceView()),
     'GET /v1/style-notes': (_req, res) => sendJson(res, 200, { notes: readStyleNotes(db) }),

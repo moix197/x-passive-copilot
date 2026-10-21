@@ -22,6 +22,8 @@ async function bundle() {
     outdir: out,
     bundle: true,
     format: 'iife',
+    // Stylesheets go into the inline cards' shadow root as text: no web_accessible_resources for X to probe.
+    loader: { '.css': 'text' },
     target: 'chrome120',
     tsconfig: `${ext}/tsconfig.json`,
   });

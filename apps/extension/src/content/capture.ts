@@ -1,4 +1,6 @@
 import type { CaptureMessage, CapturedPost } from '@xc/shared/types';
+import { createInlineDrafts } from './inline/inline-drafts';
+import { isOwnInsertion } from './inline/own-nodes';
 import { parseArticle } from './parse-article';
 import { SEL } from './selectors';
 
@@ -45,8 +47,17 @@ function schedule(): void {
   timer = window.setTimeout(flush, DEBOUNCE_MS);
 }
 
+const inlineDrafts = createInlineDrafts();
+
+// Our own card insertions must not wake capture or the cards again (that would loop).
+function onColumnChange(records: MutationRecord[]): void {
+  if (records.every(isOwnInsertion)) return;
+  schedule();
+  inlineDrafts.schedule();
+}
+
 function watch(): void {
-  const columnObserver = new MutationObserver(schedule);
+  const columnObserver = new MutationObserver(onColumnChange);
   let current: Element | null = null;
   const attach = () => {
     const column = document.querySelector(SEL.primaryColumn);
@@ -55,6 +66,7 @@ function watch(): void {
     columnObserver.disconnect();
     columnObserver.observe(column, { childList: true, subtree: true });
     schedule();
+    inlineDrafts.schedule();
   };
   new MutationObserver(attach).observe(document.body, { childList: true, subtree: true });
   attach();

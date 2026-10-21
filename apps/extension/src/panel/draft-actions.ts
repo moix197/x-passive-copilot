@@ -8,8 +8,8 @@ export type Rating = 'up' | 'down';
 
 export interface DraftCallbacks {
   onCopy: (text: string) => Promise<void>;
-  /** Resolves to an error message to show, or null when the edit was accepted. */
-  onEdit: (text: string) => Promise<string | null>;
+  /** Resolves to an error message to show, or null when the edit was accepted; without it there is no Edit button. */
+  onEdit?: (text: string) => Promise<string | null>;
   /** Resolves to an error message to show, or null when the rating was saved. */
   onRate: (rating: Rating) => Promise<string | null>;
   /** The draft's saved rating, shown as the selected thumb. */
@@ -17,6 +17,9 @@ export interface DraftCallbacks {
   /** When set, a Regenerate button asks for another version; it stays busy until the view re-renders. */
   onRegenerate?: () => Promise<void>;
 }
+
+/** The panel's callbacks always allow editing. */
+export type EditableDraftCallbacks = DraftCallbacks & Required<Pick<DraftCallbacks, 'onEdit'>>;
 
 const NOOP = (): void => undefined;
 
@@ -55,6 +58,17 @@ function rateButton(rating: Rating, selected: Rating | null, onPick: (rating: Ra
   return b;
 }
 
+export function polishButton(onPolish: () => Promise<void>): HTMLButtonElement {
+  return button('Polish', 'polish-button', (b) => {
+    b.disabled = true;
+    b.textContent = 'Polishing...';
+    void onPolish().catch(() => {
+      b.disabled = false;
+      b.textContent = 'Polish';
+    });
+  });
+}
+
 function regenerateButton(onRegenerate: () => Promise<void>): HTMLButtonElement {
   return button('Regenerate', 'draft-regenerate', (b) => {
     b.disabled = true;
@@ -73,7 +87,7 @@ function bindEditorKeys(area: HTMLTextAreaElement, save: () => void, cancel: () 
   });
 }
 
-function editor(text: string, callbacks: DraftCallbacks, onSaved: (text: string) => void, close: () => void): HTMLElement {
+function editor(text: string, onEdit: NonNullable<DraftCallbacks['onEdit']>, onSaved: (text: string) => void, close: () => void): HTMLElement {
   const box = element('div', '', 'draft-editor');
   const area = document.createElement('textarea');
   area.value = text;
@@ -84,8 +98,7 @@ function editor(text: string, callbacks: DraftCallbacks, onSaved: (text: string)
   const save = button('Save', 'draft-save', (b) => {
     const edited = area.value;
     b.disabled = true;
-    void callbacks
-      .onEdit(edited)
+    void onEdit(edited)
       .catch(() => 'Save failed.')
       .then((error) => {
         b.disabled = false;
@@ -122,7 +135,7 @@ export function renderDraftActions(
     onEditing(false);
     bar.replaceChildren(
       copyButton(current, callbacks.onCopy),
-      button('Edit', 'draft-edit', showEditor),
+      ...(callbacks.onEdit ? [button('Edit', 'draft-edit', showEditor)] : []),
       ...(callbacks.onRegenerate ? [regenerateButton(callbacks.onRegenerate)] : []),
       rateButton('up', rated, rate),
       rateButton('down', rated, rate),
@@ -134,8 +147,9 @@ export function renderDraftActions(
     showButtons();
   };
   function showEditor(): void {
+    if (!callbacks.onEdit) return;
     onEditing(true);
-    bar.replaceChildren(editor(current, callbacks, onSaved, showButtons));
+    bar.replaceChildren(editor(current, callbacks.onEdit, onSaved, showButtons));
     bar.querySelector('textarea')?.focus();
   }
   showButtons();

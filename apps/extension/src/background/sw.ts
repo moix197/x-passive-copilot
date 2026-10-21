@@ -5,6 +5,7 @@ import {
   type CapturedPost,
 } from '@xc/shared/types';
 import { authHeaders, getServerConfig } from '../server-config';
+import { answerInlineMessage } from './inline-relay';
 import { restoreNativeLink, setDesiredOnline } from './native-link';
 
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
@@ -38,6 +39,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (control.success) {
     if (sender.tab) return false; // only extension pages (the panel) may toggle the link
     void setDesiredOnline(control.data.online).then(() => sendResponse({ ok: true }));
+    return true;
+  }
+  const inline = answerInlineMessage(message);
+  if (inline) {
+    void inline.then(sendResponse);
     return true;
   }
   const parsed = CaptureMessageSchema.safeParse(message);

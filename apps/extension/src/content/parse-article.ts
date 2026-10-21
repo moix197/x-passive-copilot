@@ -65,10 +65,21 @@ function readReplyTargets(context: string): string[] {
   return [...new Set(handles)].slice(0, MAX_REPLY_TO);
 }
 
-export function parseArticle(article: Element): CapturedPost | null {
+function readOwnStatus(article: Element): { time: Element; link: { handle: string; statusId: string } } | null {
   const time = ownMatch(article, SEL.time);
   const link = readStatusPath(time?.closest('a'));
-  if (!time || !link) return null;
+  return time && link ? { time, link } : null;
+}
+
+/** The outer post's status id, without parsing the rest of the article. */
+export function readArticleStatusId(article: Element): string | null {
+  return readOwnStatus(article)?.link.statusId ?? null;
+}
+
+export function parseArticle(article: Element): CapturedPost | null {
+  const status = readOwnStatus(article);
+  if (!status) return null;
+  const { time, link } = status;
   const label = ownMatch(article, SEL.metrics)?.getAttribute('aria-label') ?? '';
   const replyContext = readReplyContext(article);
   return {
