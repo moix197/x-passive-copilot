@@ -122,7 +122,17 @@ h1 {
 }
 .replied-actions {
   display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 6px 0 2px;
+}
+.copied-badge {
+  padding: 1px 8px;
+  border: 1px solid var(--ok);
+  border-radius: 999px;
+  color: var(--ok);
+  font-size: 12px;
+  font-weight: 700;
 }
 .replied-actions button {
   padding: 4px 9px;

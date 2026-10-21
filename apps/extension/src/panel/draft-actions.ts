@@ -40,6 +40,12 @@ export function copyButton(text: string, onCopy: (text: string) => Promise<void>
   });
 }
 
+export function copiedBadge(): HTMLElement {
+  const badge = element('span', 'Copied ✓', 'copied-badge');
+  badge.dataset.testid = 'copied-badge';
+  return badge;
+}
+
 const RATE_SAVED: Record<Rating, string> = { up: 'Saved as good example', down: 'Saved as example to avoid' };
 
 function rateButton(rating: Rating, selected: Rating | null, onPick: (rating: Rating) => void): HTMLButtonElement {

@@ -19,7 +19,7 @@ import type { ManualDigestOutcome } from './digest/digest';
 import { selectVersion } from './polish/drafts-store';
 import type { PolishState } from './polish/polish';
 import { log } from './log';
-import { ingestPosts, listFlaggedPosts, listPosts, setReplied, type PolishContext } from './posts';
+import { ingestPosts, listFlaggedPosts, listPosts, setCopied, setReplied, type PolishContext } from './posts';
 import type { PrefilterRules } from './triage/prefilter';
 import type { RetriageOutcome } from './triage/triage';
 import { recordFeedback } from './voice/feedback';
@@ -108,6 +108,7 @@ function getPosts(db: DatabaseSync, polishContext: () => PolishContext, flagRule
 }
 
 const REPLIED_PATH = /^\/v1\/posts\/(\d{1,30})\/replied$/;
+const COPIED_PATH = /^\/v1\/posts\/(\d{1,30})\/copied$/;
 const POLISH_PATH = /^\/v1\/posts\/(\d{1,30})\/polish$/;
 const RETRIAGE_PATH = /^\/v1\/posts\/(\d{1,30})\/retriage$/;
 
@@ -176,6 +177,13 @@ function postReplied(db: DatabaseSync): ParamHandler {
     const request = RepliedRequestSchema.safeParse(parseJson(raw));
     if (!request.success) return sendJson(res, 400, { error: 'invalid replied request' });
     if (!setReplied(db, statusId, request.data.replied, Date.now())) return sendJson(res, 404, { error: 'not found' });
+    sendJson(res, 200, { ok: true });
+  };
+}
+
+function postCopied(db: DatabaseSync): ParamHandler {
+  return (statusId) => (_req, res) => {
+    if (!setCopied(db, statusId, Date.now())) return sendJson(res, 404, { error: 'not found' });
     sendJson(res, 200, { ok: true });
   };
 }
@@ -261,6 +269,7 @@ export function createRouter(
     { pattern: IDEA_POLISH_PATH, handler: postPolish(hooks.onIdeaPolish) },
     { pattern: RETRIAGE_PATH, handler: postRetriage(hooks.onRetriage) },
     { pattern: REPLIED_PATH, handler: postReplied(db) },
+    { pattern: COPIED_PATH, handler: postCopied(db) },
     { pattern: FEEDBACK_PATH, handler: postFeedback(db) },
     { pattern: SELECT_PATH, handler: postSelect(db) },
   ];

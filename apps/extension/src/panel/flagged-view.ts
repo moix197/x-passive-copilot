@@ -1,6 +1,6 @@
 import { MAX_DRAFT_VERSIONS, type DraftVersion, type PolishInfo, type StoredPost } from '@xc/shared/types';
 import { element } from './dom';
-import { renderDraftActions, type DraftCallbacks, type Rating } from './draft-actions';
+import { copiedBadge, renderDraftActions, type DraftCallbacks, type Rating } from './draft-actions';
 import { renderPostCard } from './post-card';
 import { mountPostsView, type PostsViewOptions } from './posts-view';
 import { renderVersionNav } from './version-nav';
@@ -10,6 +10,8 @@ export type PolishHandler = (statusId: string) => Promise<void>;
 export interface FlaggedHandlers {
   /** Marks or un-marks a post replied; the owner of the feeds moves the card immediately. */
   onSetReplied: (statusId: string, replied: boolean) => Promise<void>;
+  /** Records the copy and brings the post up on X; the card stays where it is. */
+  onCopied: (post: StoredPost) => Promise<void>;
   onPolish: PolishHandler;
   /** Re-queues a failed triage; resolves to why it was refused, or null when queued. */
   onRetriage: (statusId: string) => Promise<string | null>;
@@ -58,14 +60,25 @@ function polishButton(post: StoredPost, onPolish: PolishHandler): HTMLButtonElem
   return button;
 }
 
-// Copying any draft means the user is about to reply, so the post moves to Replied.
-function copyMarksReplied(post: StoredPost, callbacks: DraftCallbacks, ctx: RowContext): DraftCallbacks {
-  if (post.repliedAt !== null) return callbacks;
+// Rows are rebuilt every poll, so a copy is remembered here until the server's copiedAt catches up.
+const sessionCopied = new Set<string>();
+
+const wasCopied = (post: StoredPost) => post.copiedAt !== null || sessionCopied.has(post.statusId);
+
+function showCopied(row: HTMLElement): void {
+  const bar = row.querySelector('.replied-actions');
+  if (bar && !bar.querySelector('[data-testid="copied-badge"]')) bar.append(copiedBadge());
+}
+
+// Copying does not mean the reply was posted, so the card stays put until Mark replied.
+function copyMarksCopied(post: StoredPost, callbacks: DraftCallbacks, ctx: RowContext): DraftCallbacks {
   return {
     ...callbacks,
     onCopy: async (text) => {
       await callbacks.onCopy(text);
-      void ctx.handlers.onSetReplied(post.statusId, true).catch(() => undefined);
+      sessionCopied.add(post.statusId);
+      showCopied(ctx.row);
+      void ctx.handlers.onCopied(post).catch(() => undefined);
     },
   };
 }
@@ -78,7 +91,7 @@ function repliedButton(post: StoredPost, onSetReplied: FlaggedHandlers['onSetRep
   button.dataset.testid = replied ? 'move-back' : 'mark-replied';
   button.addEventListener('click', () => void onSetReplied(post.statusId, !replied).catch(() => undefined));
   const bar = element('div', '', 'replied-actions');
-  bar.append(button);
+  bar.append(button, ...(wasCopied(post) ? [copiedBadge()] : []));
   return bar;
 }
 
@@ -173,7 +186,7 @@ function roughDraftActions(post: StoredPost, text: HTMLElement, rating: Rating |
       return error;
     },
   };
-  return renderDraftActions(text.textContent ?? '', copyMarksReplied(post, callbacks, ctx), trackEditing(ctx, post.statusId, 'rough'));
+  return renderDraftActions(text.textContent ?? '', copyMarksCopied(post, callbacks, ctx), trackEditing(ctx, post.statusId, 'rough'));
 }
 
 function firstDraftSection(post: StoredPost, ctx: RowContext): HTMLElement | null {
@@ -231,7 +244,7 @@ function draftActionsFor(post: StoredPost, text: string, ctx: RowContext): HTMLE
     },
     ...(versions < MAX_DRAFT_VERSIONS ? { onRegenerate: () => handlers.onRegenerate(post.statusId) } : {}),
   };
-  return renderDraftActions(text, copyMarksReplied(post, callbacks, ctx), trackEditing(ctx, post.statusId, 'claude'));
+  return renderDraftActions(text, copyMarksCopied(post, callbacks, ctx), trackEditing(ctx, post.statusId, 'claude'));
 }
 
 // While a regenerate runs, the selected version stays readable but cannot be acted on.

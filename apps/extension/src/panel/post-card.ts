@@ -2,7 +2,7 @@ import type { StoredPost } from '@xc/shared/types';
 import { element } from './dom';
 import { formatAbsoluteTime, formatRelativeTime, initialsFor } from './post-format';
 
-function postUrl(post: StoredPost): string {
+export function postUrl(post: Pick<StoredPost, 'authorHandle' | 'statusId'>): string {
   return `https://x.com/${encodeURIComponent(post.authorHandle)}/status/${post.statusId}`;
 }
 

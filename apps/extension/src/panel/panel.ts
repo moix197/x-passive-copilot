@@ -1,13 +1,16 @@
 import { PostListResponseSchema, type FlaggedFeed, type StoredPost } from '@xc/shared/types';
+import { errorText, getJson, markCopied, postJson, requestPolish, sendFeedback } from '../server-api';
 import { authHeaders, getServerConfig } from '../server-config';
 import { copyText, type DraftCallbacks, type Rating } from './draft-actions';
 import { generateErrorText } from './digest-notice';
 import { mountDigestSection } from './digest-section';
 import { mountDoctorCard } from './doctor-card';
 import { mountFlaggedFeeds, type FlaggedPage } from './flagged-feeds';
+import { postUrl } from './post-card';
 import { mountPostsView } from './posts-view';
 import { mountPowerToggle } from './power-toggle';
 import { mountVoiceTab } from './voice-tab';
+import { focusOrOpenPostTab } from './x-tab';
 
 type View = 'all' | 'flagged' | 'digest' | 'voice';
 
@@ -35,42 +38,15 @@ async function loadDoctorReport(): Promise<unknown> {
   return res.json();
 }
 
-
-async function getJson(path: string): Promise<unknown> {
-  const config = await getServerConfig();
-  const res = await fetch(`${config.baseUrl}${path}`, { headers: authHeaders(config) });
-  if (!res.ok) throw new Error(`server ${res.status}`);
-  return res.json();
-}
-
-async function postJson(path: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
-  const config = await getServerConfig();
-  const headers = { ...authHeaders(config), ...(body === undefined ? {} : { 'content-type': 'application/json' }) };
-  return fetch(`${config.baseUrl}${path}`, {
-    method: 'POST',
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal,
-  });
-}
-
 async function saveStyleNotes(notes: string): Promise<unknown> {
   const res = await postJson('/v1/style-notes', { notes });
   if (!res.ok) throw new Error(`server ${res.status}`);
   return res.json();
 }
 
-async function requestPolish(statusId: string, regenerate = false): Promise<void> {
-  const query = regenerate ? '?regenerate=1' : '';
-  const res = await postJson(`/v1/posts/${encodeURIComponent(statusId)}/polish${query}`);
-  if (!res.ok) throw new Error(`server ${res.status}`);
-}
-
 async function requestRetriage(statusId: string): Promise<string | null> {
   const res = await postJson(`/v1/posts/${encodeURIComponent(statusId)}/retriage`);
-  if (res.ok) return null;
-  const body = (await res.json().catch(() => ({}))) as { error?: unknown };
-  return typeof body.error === 'string' ? body.error : `server ${res.status}`;
+  return res.ok ? null : errorText(res);
 }
 
 async function setReplied(statusId: string, replied: boolean): Promise<void> {
@@ -113,11 +89,9 @@ async function requestIdeaPolish(ideaId: string): Promise<void> {
   if (!res.ok) throw new Error(`server ${res.status}`);
 }
 
-async function sendFeedback(draftId: string, kind: 'copy' | 'edit' | 'up' | 'down', text?: string): Promise<string | null> {
-  const res = await postJson(`/v1/drafts/${encodeURIComponent(draftId)}/feedback`, { kind, text });
-  if (res.ok) return null;
-  const body = (await res.json().catch(() => ({}))) as { error?: unknown };
-  return typeof body.error === 'string' ? body.error : `server ${res.status}`;
+// Copying means the user is about to reply on X: bring the post up there, but leave it in To reply.
+async function onCopied(post: StoredPost): Promise<void> {
+  await Promise.all([markCopied(post.statusId), focusOrOpenPostTab(post.statusId, postUrl(post))]);
 }
 
 // Remembers this session's thumbs so a poll that was fetched before the save landed cannot revert them.
@@ -164,6 +138,7 @@ function mountView(root: HTMLElement, view: View): () => void {
     return mountFlaggedFeeds(root, {
       load: loadFlagged,
       onSetReplied: setReplied,
+      onCopied,
       onPolish: (statusId) => requestPolish(statusId),
       onRetriage: requestRetriage,
       onRegenerate: (statusId) => requestPolish(statusId, true),

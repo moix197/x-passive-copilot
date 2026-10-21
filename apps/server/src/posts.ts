@@ -138,6 +138,7 @@ interface PostRow {
   avatar_url: string | null;
   captured_at: number;
   replied_at: number | null;
+  copied_at: number | null;
   t_status_id: string | null;
   score: number | null;
   reason: string | null;
@@ -216,6 +217,7 @@ function toStoredPost(row: PostRow, ctx: PolishContext): StoredPost {
     avatarUrl: row.avatar_url,
     capturedAt: row.captured_at,
     repliedAt: row.replied_at,
+    copiedAt: row.copied_at,
     triage: toTriage(row),
     polish: toPolish(row, ctx),
   };
@@ -331,6 +333,11 @@ export function setReplied(db: DatabaseSync, statusId: string, replied: boolean,
   const result = replied
     ? db.prepare('UPDATE posts SET replied_at = COALESCE(replied_at, ?) WHERE status_id = ?').run(now, statusId)
     : db.prepare('UPDATE posts SET replied_at = NULL WHERE status_id = ?').run(statusId);
+  return Number(result.changes) > 0;
+}
+
+export function setCopied(db: DatabaseSync, statusId: string, now: number): boolean {
+  const result = db.prepare('UPDATE posts SET copied_at = ? WHERE status_id = ?').run(now, statusId);
   return Number(result.changes) > 0;
 }
 

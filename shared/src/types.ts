@@ -116,6 +116,8 @@ export const StoredPostSchema = CapturedPostSchema.extend({
   capturedAt: z.number().int().nonnegative(),
   /** When the user marked this post replied (null while it still needs a reply). */
   repliedAt: z.number().int().nonnegative().nullable().default(null),
+  /** When the user last copied one of its drafts; copying never marks the post replied. */
+  copiedAt: z.number().int().nonnegative().nullable().default(null),
   triage: TriageInfoSchema.nullable(),
   polish: PolishInfoSchema.nullable(),
 });

@@ -1,4 +1,4 @@
-// @covers apps/extension/src/panel/flagged-feeds.ts, apps/extension/src/panel/flagged-view.ts, apps/extension/src/panel/posts-view.ts, apps/extension/src/panel/draft-actions.ts, apps/extension/src/panel/panel.ts, apps/server/src/posts.ts, apps/server/src/router.ts, apps/server/src/db.ts, shared/src/types.ts, e2e/fakes/opencode.mjs, apps/server/src/triage/**, apps/server/src/app.ts
+// @covers apps/extension/src/panel/flagged-feeds.ts, apps/extension/src/panel/flagged-view.ts, apps/extension/src/panel/posts-view.ts, apps/extension/src/panel/draft-actions.ts, apps/extension/src/panel/panel.ts, apps/extension/src/panel/x-tab.ts, apps/extension/src/panel/post-card.ts, apps/extension/src/panel/panel.css, apps/extension/src/server-api.ts, apps/extension/manifest.json, apps/server/src/posts.ts, apps/server/src/router.ts, apps/server/src/db.ts, shared/src/types.ts, e2e/fakes/opencode.mjs, apps/server/src/triage/**, apps/server/src/app.ts
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -117,36 +117,60 @@ test('To reply orders by score with pending posts on top; Replied is newest repl
   await expect(reloaded.getByTestId('feed-replied')).toContainText('Replied (1)');
 });
 
-test('copying the first draft or the Claude version moves the post to Replied, and it stays there after reload', async () => {
+const postPageUrl = (statusId: string) => `https://x.com/someone/status/${statusId}`;
+
+async function storedPost(statusId: string) {
+  const res = await fetch(`${server.baseUrl}/v1/posts?limit=100`, { headers: authHeader });
+  const body = (await res.json()) as { posts: { statusId: string; copiedAt: number | null; repliedAt: number | null }[] };
+  return body.posts.find((p) => p.statusId === statusId);
+}
+
+// Read through chrome.tabs: a tab the extension opens is not routed by Playwright, so its page URL is an error page.
+async function tabUrls(query: chrome.tabs.QueryInfo): Promise<string[]> {
+  const worker = context.serviceWorkers()[0]!;
+  return worker.evaluate(async (q) => (await chrome.tabs.query(q)).map((t) => t.pendingUrl ?? t.url ?? ''), query);
+}
+
+const tabsAt = async (url: string) => (await tabUrls({})).filter((u) => u === url).length;
+
+async function copyOpensTab(panel: Page, statusId: string, scope: 'first-draft' | 'claude-version'): Promise<void> {
+  expect(await tabsAt(postPageUrl(statusId))).toBe(0);
+  await row(panel, statusId).getByTestId(scope).getByTestId('draft-copy').click();
+  await expect.poll(() => tabsAt(postPageUrl(statusId))).toBe(1);
+  // The real panel is a side panel and stays visible; this tab went to the background.
+  await panel.bringToFront();
+}
+
+test('Copy keeps the post in To reply with a Copied badge and opens it on X, focusing an open tab; Mark replied moves it', async () => {
   const mine = ['6201', '6202'];
   await ingest(capturedPost('6201', 'copy first draft'), capturedPost('6202', 'copy claude version'));
   const panel = await openFlagged();
 
-  const firstDraft = row(panel, '6201').getByTestId('first-draft');
-  await expect(firstDraft).toContainText('Congrats on shipping!', { timeout: 20_000 });
-  await firstDraft.getByTestId('draft-copy').click();
-  await expect(row(panel, '6201')).toHaveCount(0);
+  await expect(row(panel, '6201').getByTestId('first-draft')).toContainText('Congrats on shipping!', { timeout: 20_000 });
+  await copyOpensTab(panel, '6201', 'first-draft');
+  await expect(row(panel, '6201').getByTestId('copied-badge')).toHaveText('Copied ✓');
+  await expect.poll(async () => (await storedPost('6201'))?.copiedAt ?? null).not.toBeNull();
+  expect((await storedPost('6201'))?.repliedAt).toBeNull();
 
   const claude = row(panel, '6202').getByTestId('claude-version');
   await claude.getByTestId('polish-button').click({ timeout: 20_000 });
   await expect(claude.getByTestId('claude-text')).toBeVisible({ timeout: 20_000 });
-  await claude.getByTestId('draft-copy').click();
-  await expect(row(panel, '6202')).toHaveCount(0);
+  await copyOpensTab(panel, '6202', 'claude-version');
+  await expect(row(panel, '6202').getByTestId('copied-badge')).toBeVisible();
 
-  await expect
-    .poll(async () => {
-      const res = await fetch(`${server.baseUrl}/v1/posts?view=flagged&feed=replied&limit=50`, { headers: authHeader });
-      const body = (await res.json()) as { posts: { statusId: string; repliedAt: number | null }[] };
-      return body.posts.filter((p) => mine.includes(p.statusId) && p.repliedAt !== null).map((p) => p.statusId);
-    })
-    .toEqual(['6202', '6201']);
+  await row(panel, '6201').getByTestId('first-draft').getByTestId('draft-copy').click();
+  await expect.poll(() => tabUrls({ active: true })).toContain(postPageUrl('6201'));
+  expect(await tabsAt(postPageUrl('6201'))).toBe(1);
 
   const reloaded = await openFlagged();
+  await expect.poll(() => rowIds(reloaded, mine)).toEqual(expect.arrayContaining(mine));
+  for (const id of mine) await expect(row(reloaded, id).getByTestId('copied-badge')).toBeVisible();
+
+  await row(reloaded, '6201').getByTestId('mark-replied').click();
+  await expect(row(reloaded, '6201')).toHaveCount(0);
+  await expect.poll(async () => (await storedPost('6201'))?.repliedAt ?? null).not.toBeNull();
   await reloaded.getByTestId('feed-replied').click();
-  await expect.poll(() => rowIds(reloaded, mine)).toEqual(['6202', '6201']);
-  await expect.poll(() => rowIds(reloaded, mine).then((ids) => ids.length)).toBe(2);
-  await reloaded.getByTestId('feed-to-reply').click();
-  await expect.poll(() => rowIds(reloaded, mine)).toEqual([]);
+  await expect.poll(() => rowIds(reloaded, mine)).toEqual(['6201']);
 });
 
 test('a failed triage shows Retry; retrying shows pending, then the new draft', async () => {

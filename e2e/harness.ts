@@ -65,7 +65,9 @@ export function launchExtension(): Promise<BrowserContext> {
   return chromium.launchPersistentContext(makeTempDir('xc-profile-'), {
     channel: 'chromium',
     headless: true,
-    args: [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`],
+    // x.com never resolves: specs route it to fixtures, and tabs the extension opens itself (which
+    // Playwright cannot route) fail offline instead of reaching the real site.
+    args: [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`, '--host-resolver-rules=MAP x.com ~NOTFOUND'],
   });
 }
 
