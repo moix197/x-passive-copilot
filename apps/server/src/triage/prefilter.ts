@@ -8,6 +8,7 @@ export interface PrefilterRules {
   maxAgeHours: number;
   mentionMaxAgeHours: number;
   minEngagement: number;
+  minFlagScore: number;
 }
 
 export type PrefilterResult =
@@ -23,6 +24,7 @@ export function rulesFromConfig(config: AppConfig): PrefilterRules {
     maxAgeHours: config.triage.maxAgeHours,
     mentionMaxAgeHours: config.triage.mentionMaxAgeHours,
     minEngagement: config.triage.minEngagement,
+    minFlagScore: config.triage.minFlagScore,
   };
 }
 

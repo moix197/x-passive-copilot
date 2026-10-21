@@ -273,8 +273,15 @@ function isStaleFlagged(post: StoredPost, rules: PrefilterRules | null, now: num
   return !!rules && !isWithinAgeLimit(post.postedAt, mustFlag, rules, now);
 }
 
+/** A merely reply-worthy row (no must-flag, no manual flag) below the score floor is not flagged. */
+function isBelowScoreFloor(post: StoredPost, rules: PrefilterRules | null): boolean {
+  const triage = post.triage;
+  if (!rules || !triage || triage.mustFlag || post.manualFlaggedAt !== null) return false;
+  return (triage.score ?? 0) < rules.minFlagScore;
+}
+
 function eligibleFlagged(post: StoredPost, rules: PrefilterRules | null, now: number): StoredPost | null {
-  if (post.triage) return isStaleFlagged(post, rules, now) ? null : post;
+  if (post.triage) return isStaleFlagged(post, rules, now) || isBelowScoreFloor(post, rules) ? null : post;
   if (post.manualFlaggedAt !== null) return { ...post, triage: pendingTriage('manual') };
   return rules ? asPendingMustFlag(post, rules, now) : null;
 }

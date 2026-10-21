@@ -30,8 +30,8 @@ root. There is no Edit inline (`onEdit` is optional and omitted): typing on X's 
 **Other pill states** (`inline-pills.ts`, same host slot, a host of another kind is replaced):
 a To-reply post still waiting for triage -> "Drafting…" (or "Paused · resumes <time>" while the
 quota pause holds, from the lookup's `triagePausedUntil`); a replied post -> muted "Replied" (chosen
-over nothing, so a handled post is not offered + Flag); any other captured, non-own post -> subtle
-"+ Flag" (pipeline/manual-flag). Own and not-yet-captured posts get no pill. Only posts in the
+over nothing, so a handled post is not offered + Flag); any other captured, non-own post ->
+"+ Flag" in the Ready violet (pipeline/manual-flag). Own and not-yet-captured posts get no pill. Only posts in the
 Flagged set ever get Ready: the server filters with `listToReplyByIds`, the Flagged feed's own rules.
 
 **Server path:** content -> `chrome.runtime.sendMessage` -> service worker (`inline-relay.ts`, zod

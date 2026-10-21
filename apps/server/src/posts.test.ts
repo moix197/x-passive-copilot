@@ -9,7 +9,7 @@ import type { PrefilterRules } from './triage/prefilter';
 
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2026, 0, 10);
-const rules: PrefilterRules = { handle: 'me', watchlist: ['vip'], maxAgeHours: 24, mentionMaxAgeHours: 72, minEngagement: 0 };
+const rules: PrefilterRules = { handle: 'me', watchlist: ['vip'], maxAgeHours: 24, mentionMaxAgeHours: 72, minEngagement: 0, minFlagScore: 80 };
 
 const metrics = { replies: 0, reposts: 0, likes: 0, views: 0 };
 const post = (id: number, ageHours: number): CapturedPost => ({
@@ -49,7 +49,7 @@ describe('listFlaggedPosts', () => {
   it('puts a manual flag at its flag time and drops reply-worthy posts past the age limit', () => {
     const db = openDb(mkdtempSync(join(tmpdir(), 'xc-posts-')));
     ingestPosts(db, [post(1, 1), post(2, 30), post(3, 30), post(4, 1)], NOW, 'me');
-    db.exec(`INSERT INTO triage (status_id, score, reply_worthy, triaged_at) VALUES ('1', 50, 1, 100), ('2', 90, 1, 100), ('4', 50, 1, 200)`);
+    db.exec(`INSERT INTO triage (status_id, score, reply_worthy, triaged_at) VALUES ('1', 85, 1, 100), ('2', 90, 1, 100), ('4', 85, 1, 200)`);
     db.exec(`UPDATE posts SET manual_flag_at = 500 WHERE status_id IN ('1', '3')`);
 
     const ids = listFlaggedPosts(db, 10, undefined, rules, NOW).posts.map((p) => p.statusId);

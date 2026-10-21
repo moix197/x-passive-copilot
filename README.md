@@ -81,13 +81,14 @@ to; first 8 KB are used) by an LLM through [opencode](https://opencode.ai). Setu
   "handle": "yourhandle",
   "watchlist": ["someauthor"],
   "models": { "triage": "opencode/<model-id>" },
-  "triage": { "batchSize": 15, "maxAgeHours": 24, "mentionMaxAgeHours": 72, "minEngagement": 3 }
+  "triage": { "batchSize": 15, "maxAgeHours": 24, "mentionMaxAgeHours": 72, "minEngagement": 3, "minFlagScore": 80 }
 }
 ```
 
 - `models.triage` is required (provider/model id as shown by `opencode models`); empty = triage off.
 - Posts older than `maxAgeHours` or with likes+reposts+replies below `minEngagement` show
   "skipped: <reason>" in the All tab and are never sent to the LLM.
+- A reply-worthy post only counts as flagged when its triage score is >= `minFlagScore` (80); mention/watchlist and manually flagged posts are exempt.
 - Posts whose text mentions `@handle` and posts by `watchlist` authors are flagged
   (tagged `mention` / `watchlist`), even if scored low or low-engagement, unless too old: mentions
   older than `mentionMaxAgeHours` (72) and watchlist posts older than `maxAgeHours` are skipped and hidden from Flagged. Fresh ones show in Flagged as "triage pending"

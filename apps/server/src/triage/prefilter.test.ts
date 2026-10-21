@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { isWithinAgeLimit, prefilter, type PrefilterRules } from './prefilter';
 
 const NOW = Date.parse('2026-10-17T12:00:00Z');
-const rules: PrefilterRules = { handle: 'MyHandle', watchlist: ['@Vip_User'], maxAgeHours: 24, mentionMaxAgeHours: 72, minEngagement: 3 };
+const rules: PrefilterRules = { handle: 'MyHandle', watchlist: ['@Vip_User'], maxAgeHours: 24, mentionMaxAgeHours: 72, minEngagement: 3, minFlagScore: 80 };
 const metrics = (likes: number, reposts = 0, replies = 0) => ({ likes, reposts, replies, views: 0 });
 const post = (over: Partial<Parameters<typeof prefilter>[0]> = {}) => ({
   authorHandle: 'someone',

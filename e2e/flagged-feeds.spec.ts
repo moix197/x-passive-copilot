@@ -81,9 +81,9 @@ const row = (panel: Page, statusId: string) => panel.locator(`[data-status-id="$
 test('To reply orders newest flagged first whatever the score, pending posts included; Replied is newest replied first; Move back returns a card; all survive reload', async () => {
   const mine = ['6101', '6102', '6103', '6104'];
   await ingest(
-    capturedPost('6101', 'low one [score:40]'),
-    capturedPost('6102', 'high one [score:80]'),
-    capturedPost('6103', 'middle one [score:60]'),
+    capturedPost('6101', 'low one [score:81]'),
+    capturedPost('6102', 'high one [score:99]'),
+    capturedPost('6103', 'middle one [score:90]'),
   );
   const panel = await openFlagged();
   await expect.poll(() => rowIds(panel, mine)).toEqual(['6103', '6102', '6101']);

@@ -15,6 +15,8 @@ export const AppConfigSchema = z.object({
       maxAgeHours: z.number().positive().default(24),
       mentionMaxAgeHours: z.number().positive().default(72),
       minEngagement: z.number().nonnegative().default(3),
+      /** A reply-worthy post only counts as flagged at or above this triage score; must-flag and manual flags are exempt. */
+      minFlagScore: z.number().min(0).max(100).default(80),
     })
     .prefault({}),
   autoPolish: z
