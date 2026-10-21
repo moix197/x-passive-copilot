@@ -1,4 +1,4 @@
-// Fake `opencode run --format json` CLI: triages every post in the prompt as reply-worthy, or answers
+// Fake `opencode run --format json` CLI: triages every post in the prompt as reply-worthy (unless marked), or answers
 // a digest prompt (recognised by its <product-context> block) with one trend and one idea.
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -13,15 +13,33 @@ const readStdin = async () => {
 // A post whose text carries "[score:NN]" gets that triage score; the rest get 90.
 const scoreOf = (prompt, id) => Number(prompt.match(new RegExp(`"statusId":"${id}"[^}]*?\\[score:(\\d+)\\]`))?.[1] ?? 90);
 
+// The prompt's JSON for one post, up to the next post (its note comes after the nested metrics object).
+const postSegment = (prompt, id) => {
+  const start = prompt.indexOf(`"statusId":"${id}"`);
+  const next = prompt.indexOf('"statusId":', start + 1);
+  return prompt.slice(start, next < 0 ? undefined : next);
+};
+
+// "[unworthy]" in a post's text: not reply-worthy and no draft, unless the owner flagged it (note "manual");
+// "[draft-anyway]": not reply-worthy, yet the model still wrote a draft.
+const verdictOf = (segment) => {
+  const manual = segment.includes('"note":"manual"');
+  const unworthy = !manual && (segment.includes('[unworthy]') || segment.includes('[draft-anyway]'));
+  return { worthy: !unworthy, drafted: !unworthy || segment.includes('[draft-anyway]') };
+};
+
 const triageReply = (ids, prompt) =>
-  ids.map((statusId) => ({
-    statusId,
-    relevant: true,
-    replyWorthy: true,
-    score: scoreOf(prompt, statusId),
-    reason: 'Fake triage: a builder sharing a release invites a reply.',
-    roughDraft: 'Congrats on shipping! The hardest part — was it scope?',
-  }));
+  ids.map((statusId) => {
+    const { worthy, drafted } = verdictOf(postSegment(prompt, statusId));
+    return {
+      statusId,
+      relevant: worthy,
+      replyWorthy: worthy,
+      score: scoreOf(prompt, statusId),
+      reason: 'Fake triage: a builder sharing a release invites a reply.',
+      roughDraft: drafted ? 'Congrats on shipping! The hardest part — was it scope?' : '',
+    };
+  });
 
 const digestReply = (ids, call) => [
   { trends: [{ title: 'Fake trend', summary: 'Builders ship.', statusIds: ids.slice(0, 1) }], ideas: [{ text: `Fake idea ${call}`, feature: 'f' }] },

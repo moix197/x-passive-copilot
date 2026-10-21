@@ -3,16 +3,16 @@ import {
   type InlineActionKind,
   type InlineActionMessage,
   type InlineDraftsMessage,
-  type StoredPost,
+  type ToReplyByIdsResponse,
 } from '@xc/shared/types';
 
 // The content script never talks to the server itself: the service worker owns the token and the fetch.
 
-/** The asked posts that are in To reply; throws when the service worker or server is unreachable. */
-export async function fetchToReply(statusIds: string[]): Promise<StoredPost[]> {
+/** Where each asked post stands (To reply, replied, flaggable); throws when the service worker or server is unreachable. */
+export async function fetchToReply(statusIds: string[]): Promise<ToReplyByIdsResponse> {
   const message: InlineDraftsMessage = { type: 'inline-drafts', statusIds };
   const reply = await chrome.runtime.sendMessage(message);
-  return ToReplyByIdsResponseSchema.parse(reply).posts;
+  return ToReplyByIdsResponseSchema.parse(reply);
 }
 
 /** Resolves to the server's refusal, or null when the action was accepted. */

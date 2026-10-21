@@ -14,10 +14,14 @@ export interface InlineHandlers {
   onRate: (post: StoredPost, draft: CurrentDraft, rating: Rating) => Promise<string | null>;
   onPolish: (post: StoredPost) => Promise<void>;
   onRegenerate: (post: StoredPost) => Promise<void>;
+  /** Flags a post by hand; resolves to the server's refusal, or null when accepted. */
+  onFlag: (statusId: string) => Promise<string | null>;
 }
 
 export interface InlineContext {
   handlers: InlineHandlers;
+  /** When triage resumes after a quota pause, or null when it is running. */
+  triagePausedUntil: () => number | null;
 }
 
 interface HostState {
@@ -68,17 +72,29 @@ function mountPoint(article: Element): Element {
   return bars[bars.length - 1] ?? article;
 }
 
-function createHost(article: Element, statusId: string): HostState {
+/** A new host holding these nodes at the end of the article's action bar, replacing any other host of ours there. */
+export function attachHost(article: Element, ...nodes: Node[]): HTMLElement {
   const host = document.createElement(HOST_TAG);
   isolate(host);
   const shadow = host.attachShadow({ mode: 'open' });
   const style = document.createElement('style');
   style.textContent = panelCss + inlineCss;
-  const card = openCardFor(statusId) ?? newCard();
-  const { pill, label } = pillButton(statusId, card);
-  shadow.append(style, pill);
+  shadow.append(style, ...nodes);
   removeStaleHosts(article, null);
   mountPoint(article).append(host);
+  return host;
+}
+
+/** X can rebuild the action bar under a kept article; our host moves back into the current one. */
+export function keepInActionBar(article: Element, host: Element): void {
+  const mount = mountPoint(article);
+  if (host.parentElement !== mount) mount.append(host);
+}
+
+function createHost(article: Element, statusId: string): HostState {
+  const card = openCardFor(statusId) ?? newCard();
+  const { pill, label } = pillButton(statusId, card);
+  const host = attachHost(article, pill);
   adoptOpenCard(statusId, pill);
   const state = { card, label, signature: '' };
   hosts.set(host, state);
@@ -139,9 +155,10 @@ export function upsertInlineDraft(article: Element, post: StoredPost, ctx: Inlin
   const draft = currentDraft(post);
   if (!draft) return removeInlineDraft(article);
   const host = findHost(article);
-  const state = (host && hosts.get(host)) || createHost(article, post.statusId);
-  const mount = mountPoint(article);
-  if (host && host.parentElement !== mount) mount.append(host);
+  // A host of another kind (a status or flag pill) has no card state and is replaced.
+  const kept = host ? hosts.get(host) : undefined;
+  if (host && kept) keepInActionBar(article, host);
+  const state = kept ?? createHost(article, post.statusId);
   const signature = signatureOf(post, draft);
   if (state.signature === signature) return;
   state.signature = signature;

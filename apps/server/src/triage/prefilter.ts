@@ -66,13 +66,14 @@ export function ageLimitHours(mustFlag: MustFlag | undefined, rules: PrefilterRu
   return mustFlag === 'mention' ? rules.mentionMaxAgeHours : rules.maxAgeHours;
 }
 
-/** Unknown postedAt counts as fresh. */
+/** Unknown postedAt counts as fresh; a post the user flagged by hand never ages out. */
 export function isWithinAgeLimit(
   postedAt: string | null,
   mustFlag: MustFlag | undefined,
   rules: PrefilterRules,
   now: number,
 ): boolean {
+  if (mustFlag === 'manual') return true;
   const age = ageHours(postedAt, now);
   return age === null || age <= ageLimitHours(mustFlag, rules);
 }

@@ -47,6 +47,38 @@
 .inline-badge:focus-visible {
   outline-color: var(--ready);
 }
+/* Status pills read as quieter versions of Ready; + Flag is barely there until hovered. */
+.inline-status {
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-weight: 600;
+}
+.inline-status.pending {
+  background: var(--ready-soft);
+}
+.inline-status.muted {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.inline-flag,
+.inline-flag:hover:not(:disabled) {
+  padding: 1px 8px;
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-weight: 500;
+  opacity: 0.6;
+}
+.inline-flag:hover:not(:disabled),
+.inline-flag:focus-visible {
+  filter: none;
+  opacity: 1;
+}
+.inline-flag:disabled {
+  cursor: progress;
+  opacity: 0.8;
+}
 .pill-icon {
   width: 12px;
   height: 12px;

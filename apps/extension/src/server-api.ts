@@ -41,3 +41,9 @@ export async function markCopied(statusId: string): Promise<void> {
   const res = await postJson(`/v1/posts/${encodeURIComponent(statusId)}/copied`);
   if (!res.ok) throw new Error(`server ${res.status}`);
 }
+
+/** Flags a post by hand; resolves to the server's refusal, or null when it was flagged (its draft may still be on the way). */
+export async function flagPost(statusId: string): Promise<string | null> {
+  const res = await postJson(`/v1/posts/${encodeURIComponent(statusId)}/flag`);
+  return res.ok ? null : errorText(res);
+}

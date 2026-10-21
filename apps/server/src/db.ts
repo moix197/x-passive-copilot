@@ -89,6 +89,7 @@ const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
   { table: 'posts', column: 'avatar_url', definition: 'TEXT' },
   { table: 'posts', column: 'replied_at', definition: 'INTEGER' },
   { table: 'posts', column: 'copied_at', definition: 'INTEGER' },
+  { table: 'posts', column: 'manual_flag_at', definition: 'INTEGER' },
   { table: 'drafts', column: 'selected_version', definition: 'INTEGER' },
 ];
 

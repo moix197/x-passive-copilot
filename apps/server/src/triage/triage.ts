@@ -4,13 +4,13 @@ import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { type AppConfig, type MustFlag, type Result, type StoredPost } from '@xc/shared';
 import { parseTriageReply, type TriageReply } from '../llm/opencode';
-import { getPost, listUntriagedPosts } from '../posts';
-import { prefilter, rulesFromConfig } from './prefilter';
+import { getPost, listUntriagedPosts, setManualFlag } from '../posts';
+import { isOwnAuthor, prefilter, rulesFromConfig, type PrefilterResult } from './prefilter';
 import type { Style } from '../voice/select-examples';
 import { buildTriagePrompt, NO_STYLE } from './prompts';
 import type { RunModel } from '../voice/voice';
 import { classifyFailure, errorClass, safeReason, withRetry } from './retry';
-import { clearTriageError, saveError, saveResult, saveSkipped } from './triage-store';
+import { clearTriage, clearTriageError, saveError, saveResult, saveSkipped } from './triage-store';
 
 const FLUSH_DELAY_MS = 30_000;
 const PAUSE_SLACK_MS = 1000;
@@ -41,9 +41,18 @@ export type RetriageOutcome =
   | { status: 'unavailable' }
   | { status: 'skipped'; reason: string };
 
+export type FlagOutcome =
+  | { status: 'queued'; resumesAt: number | null }
+  | { status: 'drafted' }
+  | { status: 'unknown' }
+  | { status: 'own' }
+  | { status: 'unavailable' };
+
 export interface TriageService {
   /** Re-queues a post whose triage failed. */
   retriage(statusId: string): RetriageOutcome;
+  /** Marks a post flagged by hand and, unless it already has a draft, triages it again for one. */
+  flag(statusId: string): FlagOutcome;
   notify(): void;
   drain(force: boolean): Promise<void>;
 }
@@ -65,11 +74,15 @@ export function createTriageService(
   let running = false;
   let timer: NodeJS.Timeout | null = null;
 
+  // A post flagged by hand skips the age and engagement rules.
+  function verdictFor(post: StoredPost): PrefilterResult {
+    return post.manualFlaggedAt !== null ? { action: 'triage', mustFlag: 'manual' } : prefilter(post, rulesFromConfig(config), now());
+  }
+
   function collectCandidates(): Candidate[] {
-    const rules = rulesFromConfig(config);
     const candidates: Candidate[] = [];
     for (const post of listUntriagedPosts(db)) {
-      const verdict = prefilter(post, rules, now());
+      const verdict = verdictFor(post);
       if (verdict.action === 'skip') saveSkipped(db, post.statusId, verdict.reason, now());
       else candidates.push({ post, mustFlag: verdict.mustFlag ?? null });
     }
@@ -151,16 +164,33 @@ export function createTriageService(
     const post = getPost(db, statusId);
     if (!post) return { status: 'unknown' };
     if (!post.triage?.error) return { status: 'not_failed' };
-    const verdict = prefilter(post, rulesFromConfig(config), now());
+    const verdict = verdictFor(post);
     if (verdict.action === 'skip') return { status: 'skipped', reason: verdict.reason };
     clearTriageError(db, statusId);
+    return requeue();
+  }
+
+  function requeue(): { status: 'queued'; resumesAt: number | null } {
     void drain(true);
     armTimer();
     return { status: 'queued', resumesAt: isPaused() ? pausedUntil() : null };
   }
 
+  // Idempotent: a post that already has a draft (or is waiting for triage) is only marked.
+  function flag(statusId: string): FlagOutcome {
+    if (!config.models.triage) return { status: 'unavailable' };
+    const post = getPost(db, statusId);
+    if (!post) return { status: 'unknown' };
+    if (isOwnAuthor(post.authorHandle, config.handle)) return { status: 'own' };
+    setManualFlag(db, statusId, now());
+    if (post.triage?.roughDraft || post.polish?.text) return { status: 'drafted' };
+    if (post.triage) clearTriage(db, statusId);
+    return requeue();
+  }
+
   return {
     retriage,
+    flag,
     notify: () => {
       void drain(false);
       armTimer();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { prefilter, type PrefilterRules } from './prefilter';
+import { isWithinAgeLimit, prefilter, type PrefilterRules } from './prefilter';
 
 const NOW = Date.parse('2026-10-17T12:00:00Z');
 const rules: PrefilterRules = { handle: 'MyHandle', watchlist: ['@Vip_User'], maxAgeHours: 24, mentionMaxAgeHours: 72, minEngagement: 3 };
@@ -93,5 +93,15 @@ describe('prefilter', () => {
   it('mention wins over watchlist', () => {
     const result = prefilter(post({ authorHandle: 'vip_user', text: '@myhandle hi' }), rules, NOW);
     expect(result).toEqual({ action: 'triage', mustFlag: 'mention' });
+  });
+});
+
+describe('isWithinAgeLimit', () => {
+  it('never ages out a post flagged by hand', () => {
+    const now = Date.parse('2026-10-20T00:00:00Z');
+    const old = new Date(now - 30 * 24 * 3_600_000).toISOString();
+    expect(isWithinAgeLimit(old, 'manual', rules, now)).toBe(true);
+    expect(isWithinAgeLimit(old, 'mention', rules, now)).toBe(false);
+    expect(isWithinAgeLimit(old, undefined, rules, now)).toBe(false);
   });
 });

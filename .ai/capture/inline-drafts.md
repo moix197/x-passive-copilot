@@ -1,10 +1,10 @@
 ---
 id: capture/inline-drafts
 type: decision
-summary: x.com To-reply posts get a shadow-DOM "Ready" pill in the action bar opening a fixed popover card; own nodes ignored; events never leak
+summary: x.com action-bar shadow-DOM pills: Ready (To reply) opens a fixed popover card, else Drafting…/Replied/+ Flag; own nodes ignored; events never leak
 tags: [content-script, inline, shadow-dom, mutation-observer, ban-risk, drafts, service-worker]
-paths: [apps/extension/src/content/**, apps/extension/src/background/inline-relay.ts, apps/extension/src/background/sw.ts, apps/extension/src/drafts/**, apps/extension/src/server-api.ts, apps/extension/src/panel/draft-actions.ts, apps/extension/src/panel/panel.css, apps/extension/src/css.d.ts, apps/server/src/posts.ts, apps/server/src/router.ts, shared/src/types.ts, scripts/build.mjs, e2e/inline-drafts.spec.ts]
-related: [capture/passive-capture-invariants, pipeline/copy-keeps-to-reply, pipeline/polish-flow]
+paths: [apps/extension/src/content/**, apps/extension/src/background/inline-relay.ts, apps/extension/src/background/sw.ts, apps/extension/src/drafts/**, apps/extension/src/server-api.ts, apps/extension/src/panel/draft-actions.ts, apps/extension/src/panel/panel.css, apps/extension/src/css.d.ts, apps/server/src/posts.ts, apps/server/src/router.ts, shared/src/types.ts, scripts/build.mjs, e2e/inline-drafts.spec.ts, e2e/manual-flag.spec.ts, e2e/x-timeline.ts]
+related: [capture/passive-capture-invariants, pipeline/copy-keeps-to-reply, pipeline/polish-flow, pipeline/manual-flag]
 status: active
 updated: 2026-10-20
 ---
@@ -27,10 +27,17 @@ the panel's `renderDraftActions`, `polishButton`, `copiedBadge` and all of `pane
 (`:root, :host` tokens), bundled as text (esbuild `.css` text loader) into a `<style>` in each shadow
 root. There is no Edit inline (`onEdit` is optional and omitted): typing on X's page is avoided.
 
+**Other pill states** (`inline-pills.ts`, same host slot, a host of another kind is replaced):
+a To-reply post still waiting for triage -> "Drafting…" (or "Paused · resumes <time>" while the
+quota pause holds, from the lookup's `triagePausedUntil`); a replied post -> muted "Replied" (chosen
+over nothing, so a handled post is not offered + Flag); any other captured, non-own post -> subtle
+"+ Flag" (pipeline/manual-flag). Own and not-yet-captured posts get no pill. Only posts in the
+Flagged set ever get Ready: the server filters with `listToReplyByIds`, the Flagged feed's own rules.
+
 **Server path:** content -> `chrome.runtime.sendMessage` -> service worker (`inline-relay.ts`, zod
 `InlineDraftsMessage` / `InlineActionMessage`) -> shared `server-api.ts` (also used by the panel).
-`GET /v1/posts/to-reply?ids=a,b` (<= `MAX_INLINE_IDS` 100 unique digit ids, else 400) returns only
-unreplied, eligible flagged posts. Offline (no token) the worker answers `posts: []` without a request.
+`GET /v1/posts/to-reply?ids=a,b` (<= `MAX_INLINE_IDS` 100 unique digit ids, else 400) returns
+unreplied, eligible flagged posts plus `replied` / `flaggable` ids and `triagePausedUntil`. Offline (no token) the worker answers `posts: []` without a request.
 Copy = clipboard write in the page + `copy` feedback + `POST /v1/posts/:id/copied`; no tab opens.
 
 **Batching:** `draft-cache.ts` (pure, unit-tested) keeps one answer per id; a sync asks, in one

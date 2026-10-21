@@ -7,6 +7,7 @@ import {
   RepliedRequestSchema,
   describeModelFailure,
   type FlaggedFeed,
+  type ToReplyByIdsResponse,
   PostBatchSchema,
   StyleNotesSchema,
   SelectVersionRequestSchema,
@@ -20,9 +21,9 @@ import type { ManualDigestOutcome } from './digest/digest';
 import { selectVersion } from './polish/drafts-store';
 import type { PolishState } from './polish/polish';
 import { log } from './log';
-import { ingestPosts, listFlaggedPosts, listPosts, listToReplyByIds, setCopied, setReplied, type PolishContext } from './posts';
+import { ingestPosts, listFlaggedPosts, listPosts, lookupInlineStates, setCopied, setReplied, type PolishContext } from './posts';
 import type { PrefilterRules } from './triage/prefilter';
-import type { RetriageOutcome } from './triage/triage';
+import type { FlagOutcome, RetriageOutcome } from './triage/triage';
 import { recordFeedback } from './voice/feedback';
 import { readStyleNotes, saveStyleNotes } from './voice/style-notes';
 
@@ -117,11 +118,16 @@ function parseStatusIds(value: string | null): string[] | null {
   return ids;
 }
 
-function getToReplyByIds(db: DatabaseSync, polishContext: () => PolishContext, flagRules: PrefilterRules): Handler {
+function getToReplyByIds(db: DatabaseSync, hooks: RouterHooks): Handler {
   return (_req, res, url) => {
     const ids = parseStatusIds(url.searchParams.get('ids'));
     if (!ids) return sendJson(res, 400, { error: 'bad query' });
-    sendJson(res, 200, { posts: listToReplyByIds(db, ids, polishContext(), flagRules, Date.now()) });
+    const now = Date.now();
+    const pausedUntil = hooks.triagePausedUntil();
+    sendJson(res, 200, {
+      ...lookupInlineStates(db, ids, hooks.polishContext(), hooks.flagRules, now),
+      triagePausedUntil: pausedUntil > now ? pausedUntil : null,
+    } satisfies ToReplyByIdsResponse);
   };
 }
 
@@ -129,6 +135,7 @@ const REPLIED_PATH = /^\/v1\/posts\/(\d{1,30})\/replied$/;
 const COPIED_PATH = /^\/v1\/posts\/(\d{1,30})\/copied$/;
 const POLISH_PATH = /^\/v1\/posts\/(\d{1,30})\/polish$/;
 const RETRIAGE_PATH = /^\/v1\/posts\/(\d{1,30})\/retriage$/;
+const FLAG_PATH = /^\/v1\/posts\/(\d{1,30})\/flag$/;
 
 const FEEDBACK_PATH = /^\/v1\/drafts\/(\d{1,30}|rough-\d{1,30}|idea-\d{1,9}-\d)\/feedback$/;
 const SELECT_PATH = /^\/v1\/drafts\/(\d{1,30}|idea-\d{1,9}-\d)\/select$/;
@@ -158,6 +165,24 @@ function postRetriage(onRetriage: (statusId: string) => RetriageOutcome): ParamH
         return sendJson(res, 503, { error: 'No triage model configured' });
       case 'skipped':
         return sendJson(res, 409, { error: `Not retried: this post is now skipped (${outcome.reason})` });
+    }
+  };
+}
+
+function postFlag(onFlag: (statusId: string) => FlagOutcome): ParamHandler {
+  return (statusId) => (_req, res) => {
+    const outcome = onFlag(statusId);
+    switch (outcome.status) {
+      case 'queued':
+        return sendJson(res, 202, { state: 'queued', ...(outcome.resumesAt ? { resumesAt: outcome.resumesAt } : {}) });
+      case 'drafted':
+        return sendJson(res, 200, { state: 'drafted' });
+      case 'unknown':
+        return sendJson(res, 404, { error: 'not found' });
+      case 'own':
+        return sendJson(res, 409, { error: 'Your own post cannot be flagged' });
+      case 'unavailable':
+        return sendJson(res, 503, { error: 'No triage model configured' });
     }
   };
 }
@@ -257,6 +282,9 @@ export interface RouterHooks {
   onPolish: (statusId: string, regenerate: boolean) => PolishState;
   onIdeaPolish: (ideaId: string) => PolishState;
   onRetriage: (statusId: string) => RetriageOutcome;
+  onFlag: (statusId: string) => FlagOutcome;
+  /** When triage resumes after a quota pause on every model (0 or past: not paused). */
+  triagePausedUntil: () => number;
   polishContext: () => PolishContext;
   doctor: () => Promise<DoctorReport>;
   voiceView: () => VoiceView;
@@ -275,7 +303,7 @@ export function createRouter(
     'GET /v1/health': (_req, res) => sendJson(res, 200, { status: 'ok' } satisfies HealthResponse),
     'GET /v1/posts': getPosts(db, hooks.polishContext, hooks.flagRules),
     'POST /v1/posts': postPosts(db, hooks.ownHandle, hooks.onIngest),
-    'GET /v1/posts/to-reply': getToReplyByIds(db, hooks.polishContext, hooks.flagRules),
+    'GET /v1/posts/to-reply': getToReplyByIds(db, hooks),
     'GET /v1/doctor': async (_req, res) => sendJson(res, 200, await hooks.doctor()),
     'GET /v1/voice': (_req, res) => sendJson(res, 200, hooks.voiceView()),
     'GET /v1/style-notes': (_req, res) => sendJson(res, 200, { notes: readStyleNotes(db) }),
@@ -287,6 +315,7 @@ export function createRouter(
     { pattern: POLISH_PATH, handler: postPolish(hooks.onPolish) },
     { pattern: IDEA_POLISH_PATH, handler: postPolish(hooks.onIdeaPolish) },
     { pattern: RETRIAGE_PATH, handler: postRetriage(hooks.onRetriage) },
+    { pattern: FLAG_PATH, handler: postFlag(hooks.onFlag) },
     { pattern: REPLIED_PATH, handler: postReplied(db) },
     { pattern: COPIED_PATH, handler: postCopied(db) },
     { pattern: FEEDBACK_PATH, handler: postFeedback(db) },

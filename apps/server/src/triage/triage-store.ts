@@ -19,6 +19,11 @@ export function saveError(
   db.prepare(UPSERT).run(statusId, null, null, null, 0, null, mustFlag, error, now);
 }
 
+/** Drops any verdict, e.g. one without a draft for a post the user just flagged by hand. */
+export function clearTriage(db: DatabaseSync, statusId: string): void {
+  db.prepare('DELETE FROM triage WHERE status_id = ?').run(statusId);
+}
+
 /** Drops a failed verdict so the post is untriaged again and the triage loop picks it up. */
 export function clearTriageError(db: DatabaseSync, statusId: string): void {
   db.prepare('DELETE FROM triage WHERE status_id = ? AND error IS NOT NULL').run(statusId);

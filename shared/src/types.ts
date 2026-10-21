@@ -50,7 +50,8 @@ export const CaptureMessageSchema = z.object({
 });
 export type CaptureMessage = z.infer<typeof CaptureMessageSchema>;
 
-export const MustFlagSchema = z.enum(['mention', 'watchlist']);
+/** `manual`: the user flagged the post themselves (posts.manual_flag_at); it skips the prefilter and never auto-unflags. */
+export const MustFlagSchema = z.enum(['mention', 'watchlist', 'manual']);
 export type MustFlag = z.infer<typeof MustFlagSchema>;
 
 export const TriageItemSchema = z.object({
@@ -118,6 +119,8 @@ export const StoredPostSchema = CapturedPostSchema.extend({
   repliedAt: z.number().int().nonnegative().nullable().default(null),
   /** When the user last copied one of its drafts; copying never marks the post replied. */
   copiedAt: z.number().int().nonnegative().nullable().default(null),
+  /** When the user flagged it by hand ("+ Flag" on x.com); null for posts flagged by rules or triage. */
+  manualFlaggedAt: z.number().int().nonnegative().nullable().default(null),
   triage: TriageInfoSchema.nullable(),
   polish: PolishInfoSchema.nullable(),
 });
@@ -140,7 +143,16 @@ export type PostListResponse = z.infer<typeof PostListResponseSchema>;
 /** Most post ids one inline-drafts lookup may ask about (`GET /v1/posts/to-reply?ids=`). */
 export const MAX_INLINE_IDS = 100;
 
-export const ToReplyByIdsResponseSchema = z.object({ posts: z.array(StoredPostSchema).max(MAX_INLINE_IDS) });
+export const ToReplyByIdsResponseSchema = z.object({
+  /** The asked posts in To reply (same rules as the Flagged list). */
+  posts: z.array(StoredPostSchema).max(MAX_INLINE_IDS),
+  /** Asked ids already marked replied. */
+  replied: z.array(capturedStatusId).max(MAX_INLINE_IDS).default([]),
+  /** Asked ids captured but in neither list (and not the user's own): they can be flagged by hand. */
+  flaggable: z.array(capturedStatusId).max(MAX_INLINE_IDS).default([]),
+  /** When triage resumes after a quota pause on every model; null when it is not paused. */
+  triagePausedUntil: z.number().int().nonnegative().nullable().default(null),
+});
 export type ToReplyByIdsResponse = z.infer<typeof ToReplyByIdsResponseSchema>;
 
 /** Content script -> service worker: which of these visible posts are in To reply (with their drafts). */
@@ -150,7 +162,7 @@ export const InlineDraftsMessageSchema = z.object({
 });
 export type InlineDraftsMessage = z.infer<typeof InlineDraftsMessageSchema>;
 
-export const INLINE_ACTIONS = ['copy', 'up', 'down', 'polish', 'regenerate'] as const;
+export const INLINE_ACTIONS = ['copy', 'up', 'down', 'polish', 'regenerate', 'flag'] as const;
 export type InlineActionKind = (typeof INLINE_ACTIONS)[number];
 
 /** Content script -> service worker: a click on an inline draft card, relayed to the server. */

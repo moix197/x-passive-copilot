@@ -139,6 +139,7 @@ interface PostRow {
   captured_at: number;
   replied_at: number | null;
   copied_at: number | null;
+  manual_flag_at: number | null;
   t_status_id: string | null;
   score: number | null;
   reason: string | null;
@@ -165,6 +166,9 @@ export interface PolishContext {
 
 const NO_POLISH_CONTEXT: PolishContext = { threshold: Number.POSITIVE_INFINITY, capReached: false };
 
+// The manual mark lives on the post, so no later triage verdict can unflag it.
+const rowMustFlag = (row: PostRow): MustFlag | null => (row.manual_flag_at !== null ? 'manual' : row.must_flag);
+
 function toTriage(row: PostRow): StoredPost['triage'] {
   if (row.t_status_id === null) return null;
   return {
@@ -173,7 +177,7 @@ function toTriage(row: PostRow): StoredPost['triage'] {
     roughDraft: row.rough_draft,
     replyWorthy: row.reply_worthy === 1,
     skipReason: row.skip_reason,
-    mustFlag: row.must_flag,
+    mustFlag: rowMustFlag(row),
     error: row.error,
     roughDraftWarnings: row.rough_draft ? ruleNames(checkReply(row.rough_draft, row.text)) : [],
     feedback: row.t_feedback,
@@ -196,7 +200,7 @@ function toPolish(row: PostRow, ctx: PolishContext): PolishInfo | null {
     };
   }
   const eligible = ctx.capReached && row.score !== null && row.score >= ctx.threshold;
-  const worthy = row.reply_worthy === 1 || row.must_flag !== null;
+  const worthy = row.reply_worthy === 1 || rowMustFlag(row) !== null;
   return eligible && worthy
     ? { status: 'cap_reached', text: null, violations: [], topPick: false, error: null, versions: [], selectedVersion: null, feedback: null }
     : null;
@@ -218,6 +222,7 @@ function toStoredPost(row: PostRow, ctx: PolishContext): StoredPost {
     capturedAt: row.captured_at,
     repliedAt: row.replied_at,
     copiedAt: row.copied_at,
+    manualFlaggedAt: row.manual_flag_at,
     triage: toTriage(row),
     polish: toPolish(row, ctx),
   };
@@ -269,6 +274,7 @@ function isStaleMustFlag(post: StoredPost, rules: PrefilterRules | null, now: nu
 
 function eligibleFlagged(post: StoredPost, rules: PrefilterRules | null, now: number): StoredPost | null {
   if (post.triage) return isStaleMustFlag(post, rules, now) ? null : post;
+  if (post.manualFlaggedAt !== null) return { ...post, triage: pendingTriage('manual') };
   return rules ? asPendingMustFlag(post, rules, now) : null;
 }
 
@@ -280,7 +286,7 @@ function byReplyPriority(a: StoredPost, b: StoredPost): number {
   return sb - sa || b.seq - a.seq;
 }
 
-const FLAGGED_WHERE = '(t.must_flag IS NOT NULL OR t.reply_worthy = 1 OR t.status_id IS NULL)';
+const FLAGGED_WHERE = '(t.must_flag IS NOT NULL OR t.reply_worthy = 1 OR t.status_id IS NULL OR p.manual_flag_at IS NOT NULL)';
 
 /** Every unreplied post still worth a reply. Stale rows drop out after the SQL page, so scan all pages. */
 function collectToReply(db: DatabaseSync, ctx: PolishContext, rules: PrefilterRules | null, now: number): StoredPost[] {
@@ -342,6 +348,52 @@ export function listToReplyByIds(
     .prepare(`${SELECT_WITH_TRIAGE} WHERE p.status_id IN (${marks}) AND p.replied_at IS NULL AND ${FLAGGED_WHERE}`)
     .all(...statusIds) as unknown as PostRow[];
   return rows.flatMap((row) => eligibleFlagged(toStoredPost(row, ctx), rules, now) ?? []);
+}
+
+export interface InlineLookup {
+  posts: StoredPost[];
+  replied: string[];
+  flaggable: string[];
+}
+
+interface CapturedRow {
+  status_id: string;
+  is_own: number;
+  replied_at: number | null;
+}
+
+function capturedRows(db: DatabaseSync, statusIds: string[]): CapturedRow[] {
+  if (statusIds.length === 0) return [];
+  const marks = statusIds.map(() => '?').join(',');
+  return db
+    .prepare(`SELECT status_id, is_own, replied_at FROM posts WHERE status_id IN (${marks})`)
+    .all(...statusIds) as unknown as CapturedRow[];
+}
+
+/** For the x.com pills: the asked posts in To reply, the replied ones, and the captured rest that can be flagged by hand. */
+export function lookupInlineStates(
+  db: DatabaseSync,
+  statusIds: string[],
+  ctx: PolishContext,
+  rules: PrefilterRules | null,
+  now: number,
+): InlineLookup {
+  const posts = listToReplyByIds(db, statusIds, ctx, rules, now);
+  const inToReply = new Set(posts.map((post) => post.statusId));
+  const rows = capturedRows(db, statusIds);
+  return {
+    posts,
+    replied: rows.filter((row) => row.replied_at !== null).map((row) => row.status_id),
+    flaggable: rows
+      .filter((row) => row.replied_at === null && row.is_own === 0 && !inToReply.has(row.status_id))
+      .map((row) => row.status_id),
+  };
+}
+
+/** Keeps the first flag time, so flagging again changes nothing. */
+export function setManualFlag(db: DatabaseSync, statusId: string, now: number): boolean {
+  const result = db.prepare('UPDATE posts SET manual_flag_at = COALESCE(manual_flag_at, ?) WHERE status_id = ?').run(now, statusId);
+  return Number(result.changes) > 0;
 }
 
 /** Marking keeps the first replied time, so a later Copy on a replied card does not reorder it. */

@@ -1,4 +1,4 @@
-// @covers apps/extension/src/content/**, apps/extension/src/background/**, apps/extension/src/drafts/**, apps/extension/src/server-api.ts, apps/extension/src/server-config.ts, apps/extension/src/panel/draft-actions.ts, apps/extension/src/panel/dom.ts, apps/extension/src/panel/panel.css, apps/extension/manifest.json, scripts/build.mjs, apps/server/src/posts.ts, apps/server/src/router.ts, apps/server/src/polish/**, apps/server/src/voice/feedback.ts, apps/server/src/triage/**, shared/src/types.ts, e2e/fakes/**
+// @covers apps/extension/src/content/**, e2e/x-timeline.ts, apps/extension/src/background/**, apps/extension/src/drafts/**, apps/extension/src/server-api.ts, apps/extension/src/server-config.ts, apps/extension/src/panel/draft-actions.ts, apps/extension/src/panel/dom.ts, apps/extension/src/panel/panel.css, apps/extension/manifest.json, scripts/build.mjs, apps/server/src/posts.ts, apps/server/src/router.ts, apps/server/src/polish/**, apps/server/src/voice/feedback.ts, apps/server/src/triage/**, shared/src/types.ts, e2e/fakes/**
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import {
   authHeader,
@@ -11,13 +11,7 @@ import {
   startServer,
   type TestServer,
 } from './harness';
-
-const HOUR = 3_600_000;
-interface Post {
-  statusId: string;
-  handle: string;
-  text: string;
-}
+import { articleOf, captured, openTimeline as openXTimeline, type Post } from './x-timeline';
 
 const flagged = (statusId: string, text: string): Post => ({ statusId, handle: 'someone', text });
 const OWN: Post = { statusId: '9102', handle: 'e2eowner', text: 'My own post, never flagged' };
@@ -45,44 +39,6 @@ test.afterAll(async () => {
   removeTempDirs();
 });
 
-function articleHtml(post: Post): string {
-  return `<article data-testid="tweet">
-    <div data-testid="User-Name"><a href="/${post.handle}"><span>${post.handle}</span></a></div>
-    <a href="/${post.handle}/status/${post.statusId}"><time datetime="${new Date(Date.now() - 2 * HOUR).toISOString()}">2h</time></a>
-    <div data-testid="tweetText"><span>${post.text}</span></div>
-    <div role="group" aria-label="2 replies, 3 reposts, 40 likes, 900 views" style="display:flex;justify-content:space-between;align-items:center;overflow:hidden">
-      <button type="button" aria-label="Reply">2</button><button type="button" aria-label="Repost">3</button>
-      <button type="button" aria-label="Like">40</button><span>900</span>
-    </div>
-  </article>`;
-}
-
-// Stands in for X: its document-level listeners count clicks and keys that leak out of an article.
-function timelineHtml(posts: Post[]): string {
-  const html = Object.fromEntries(posts.map((p) => [p.statusId, articleHtml(p)]));
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Home / X (fixture)</title></head><body>
-    <div data-testid="primaryColumn"><section id="timeline" style="overflow:hidden;transform:translateY(0);width:600px;height:240px">${Object.values(html).join('')}</section></div>
-    <div style="height:3000px"></div><script>
-      window.__articleHtml = ${JSON.stringify(html)};
-      window.__leaked = 0;
-      for (const type of ['click', 'mousedown', 'keydown']) {
-        document.addEventListener(type, (e) => { if (e.target.closest && e.target.closest('article')) window.__leaked++; });
-      }
-    </script></body></html>`;
-}
-
-const captured = (post: Post) => ({
-  statusId: post.statusId,
-  authorName: post.handle,
-  authorHandle: post.handle,
-  text: post.text,
-  postedAt: new Date(Date.now() - 2 * HOUR).toISOString(),
-  metrics: { replies: 2, reposts: 3, likes: 40, views: 900 },
-  isReply: false,
-  replyTo: [],
-  quotedStatusId: null,
-});
-
 interface ApiPost {
   statusId: string;
   copiedAt: number | null;
@@ -102,15 +58,7 @@ async function seedTriaged(post: Post): Promise<string> {
   return (await apiPost(post.statusId))?.triage?.roughDraft ?? '';
 }
 
-async function openTimeline(posts: Post[], requests: string[] = []): Promise<Page> {
-  await context.route('https://x.com/**', (route) => route.fulfill({ contentType: 'text/html', body: timelineHtml(posts) }));
-  const page = await context.newPage();
-  page.on('request', (request) => requests.push(request.url()));
-  await page.goto('https://x.com/home');
-  return page;
-}
-
-const articleOf = (page: Page, post: Post) => page.getByRole('article').filter({ hasText: post.text });
+const openTimeline = (posts: Post[], requests: string[] = []) => openXTimeline(context, posts, requests);
 
 function replaceArticle(page: Page, post: Post, mode: 'fresh' | 'clone'): Promise<void> {
   return page.evaluate(

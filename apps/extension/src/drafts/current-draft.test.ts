@@ -1,6 +1,6 @@
 import type { PolishInfo, StoredPost, TriageInfo } from '@xc/shared/types';
 import { describe, expect, it } from 'vitest';
-import { canPolish, currentDraft } from './current-draft';
+import { canPolish, currentDraft, isTriagePending } from './current-draft';
 
 const triage = (over: Partial<TriageInfo> = {}): TriageInfo => ({
   score: 80, reason: 'r', roughDraft: 'rough text', replyWorthy: true, skipReason: null,
@@ -15,7 +15,7 @@ const polish = (over: Partial<PolishInfo> = {}): PolishInfo => ({
 const post = (over: Partial<StoredPost> = {}): StoredPost => ({
   statusId: '42', authorName: 'A', authorHandle: 'a', text: 't', postedAt: null,
   metrics: { replies: 0, reposts: 0, likes: 0, views: 0 }, isReply: false, replyTo: [], quotedStatusId: null,
-  avatarUrl: null, seq: 1, capturedAt: 0, repliedAt: null, copiedAt: null, triage: triage(), polish: null, ...over,
+  avatarUrl: null, seq: 1, capturedAt: 0, repliedAt: null, copiedAt: null, manualFlaggedAt: null, triage: triage(), polish: null, ...over,
 });
 
 describe('currentDraft', () => {
@@ -51,5 +51,16 @@ describe('canPolish', () => {
     expect(canPolish(post({ triage: triage({ error: 'x' }) }))).toBe(false);
     expect(canPolish(post({ triage: triage({ skipReason: 'own post' }) }))).toBe(false);
     expect(canPolish(post({ triage: null }))).toBe(false);
+  });
+});
+
+describe('isTriagePending', () => {
+  it('is true only for a flagged post with no verdict, error, skip or draft yet', () => {
+    const pending = triage({ score: null, roughDraft: null, mustFlag: 'manual' });
+    expect(isTriagePending(post({ triage: pending }))).toBe(true);
+    expect(isTriagePending(post())).toBe(false);
+    expect(isTriagePending(post({ triage: null }))).toBe(false);
+    expect(isTriagePending(post({ triage: { ...pending, error: 'timeout' } }))).toBe(false);
+    expect(isTriagePending(post({ triage: { ...pending, skipReason: 'own post' } }))).toBe(false);
   });
 });

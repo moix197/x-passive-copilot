@@ -34,3 +34,9 @@ export function currentDraft(post: StoredPost): CurrentDraft | null {
   if (!rough) return null;
   return { kind: 'rough', text: rough, draftId: `rough-${post.statusId}`, rating: post.triage?.feedback ?? null, busy: false };
 }
+
+/** Flagged but not triaged yet, so its First draft is still on the way. */
+export function isTriagePending(post: StoredPost): boolean {
+  const t = post.triage;
+  return Boolean(t && t.score === null && !t.error && !t.skipReason && !t.roughDraft);
+}

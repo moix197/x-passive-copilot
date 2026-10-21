@@ -1,10 +1,22 @@
-import type { StoredPost } from '@xc/shared/types';
+import type { StoredPost, ToReplyByIdsResponse } from '@xc/shared/types';
+import { currentDraft, isTriagePending } from '../../drafts/current-draft';
 import { copyText } from '../../panel/draft-actions';
 import { readArticleStatusId } from '../parse-article';
 import { SEL } from '../selectors';
-import { forgetOld, idsToFetch, markStale, nextRefreshMs, REFRESH_MS, storeLookup, type DraftCache } from './draft-cache';
+import {
+  forgetOld,
+  idsToFetch,
+  keepAfterFailedLookup,
+  markStale,
+  nextRefreshMs,
+  REFRESH_MS,
+  storeLookup,
+  type CacheEntry,
+  type DraftCache,
+} from './draft-cache';
 import { closeDetachedPopover } from './inline-popover';
 import { removeInlineDraft, upsertInlineDraft, type InlineContext, type InlineHandlers } from './inline-card';
+import { draftingLabel, upsertFlagPill, upsertStatusPill } from './inline-pills';
 import { fetchToReply, sendInlineAction } from './relay';
 
 const SYNC_DELAY_MS = 400;
@@ -47,42 +59,54 @@ function createScheduler(run: () => void): Schedule {
 }
 
 /** Every action goes through the service worker; afterwards the card's post is looked up again. */
-function inlineHandlers(refreshSoon: (post: StoredPost) => void): InlineHandlers {
+function inlineHandlers(refreshSoon: (statusId: string) => void): InlineHandlers {
   const runThenRefresh = async (action: 'polish' | 'regenerate', post: StoredPost) => {
     const error = await sendInlineAction(action, post.statusId, post.statusId);
-    refreshSoon(post);
+    refreshSoon(post.statusId);
     if (error) throw new Error(error);
   };
   return {
     onCopy: async (post, draft) => {
       await copyText(draft.text);
       await sendInlineAction('copy', post.statusId, draft.draftId);
-      refreshSoon(post);
+      refreshSoon(post.statusId);
     },
     onRate: async (post, draft, rating) => {
       const error = await sendInlineAction(rating, post.statusId, draft.draftId);
-      if (!error) refreshSoon(post);
+      if (!error) refreshSoon(post.statusId);
       return error;
     },
     onPolish: (post) => runThenRefresh('polish', post),
     onRegenerate: (post) => runThenRefresh('regenerate', post),
+    onFlag: async (statusId) => {
+      const error = await sendInlineAction('flag', statusId, statusId);
+      refreshSoon(statusId);
+      return error;
+    },
   };
 }
 
+// Ready with a draft; Drafting… (or the quota resume time) while triage runs; muted Replied; + Flag on the rest.
+function renderArticle(article: Element, statusId: string, entry: CacheEntry | undefined, ctx: InlineContext): void {
+  const post = entry?.post;
+  if (post && currentDraft(post)) return upsertInlineDraft(article, post, ctx);
+  if (post && isTriagePending(post)) return upsertStatusPill(article, draftingLabel(ctx.triagePausedUntil()), 'pending');
+  if (!post && entry?.mark === 'replied') return upsertStatusPill(article, 'Replied', 'muted');
+  if (!post && entry?.mark === 'flaggable') return upsertFlagPill(article, statusId, ctx.handlers.onFlag);
+  removeInlineDraft(article);
+}
+
 function render(articles: Map<string, Element>, cache: DraftCache, ctx: InlineContext): void {
-  for (const [statusId, article] of articles) {
-    const post = cache.get(statusId)?.post;
-    if (post) upsertInlineDraft(article, post, ctx);
-    else removeInlineDraft(article);
-  }
+  for (const [statusId, article] of articles) renderArticle(article, statusId, cache.get(statusId), ctx);
   closeDetachedPopover();
 }
 
 // Unreachable server or worker: keep what is shown and ask again after the refresh interval.
-async function lookup(cache: DraftCache, ids: string[]): Promise<void> {
-  const known = ids.flatMap((id) => cache.get(id)?.post ?? []);
-  const posts = await fetchToReply(ids).catch(() => known);
-  storeLookup(cache, ids, posts, Date.now());
+async function lookup(cache: DraftCache, ids: string[]): Promise<ToReplyByIdsResponse | null> {
+  const answer = await fetchToReply(ids).catch(() => null);
+  if (answer) storeLookup(cache, ids, answer, Date.now());
+  else keepAfterFailedLookup(cache, ids, Date.now());
+  return answer;
 }
 
 function nextDelay(cache: DraftCache): number {
@@ -90,16 +114,18 @@ function nextDelay(cache: DraftCache): number {
   return Math.max(MIN_GAP_MS, nextRefreshMs([...visibleArticles().keys()], cache, Date.now()));
 }
 
-/** "Ready" pills (with a popover card) in the action bar of X articles that are in To reply; the server is reached via the service worker. */
+/** Pills in the action bar of captured X articles (Ready with a popover card, Drafting…, Replied, + Flag); the server is reached via the service worker. */
 export function createInlineDrafts(): InlineDrafts {
   const cache: DraftCache = new Map();
   let syncing = false;
+  let triagePausedUntil: number | null = null;
   const schedule = createScheduler(() => void sync());
   const ctx: InlineContext = {
-    handlers: inlineHandlers((post) => {
-      markStale(cache, post.statusId);
+    handlers: inlineHandlers((statusId) => {
+      markStale(cache, statusId);
       schedule(AFTER_ACTION_MS);
     }),
+    triagePausedUntil: () => triagePausedUntil,
   };
 
   async function sync(): Promise<void> {
@@ -109,7 +135,8 @@ export function createInlineDrafts(): InlineDrafts {
       render(visibleArticles(), cache, ctx);
       const due = idsToFetch([...visibleArticles().keys()], cache, Date.now());
       if (due.length && document.visibilityState === 'visible') {
-        await lookup(cache, due);
+        const answer = await lookup(cache, due);
+        if (answer) triagePausedUntil = answer.triagePausedUntil;
         render(visibleArticles(), cache, ctx);
       }
       forgetOld(cache, Date.now());

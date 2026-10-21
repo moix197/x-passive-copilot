@@ -201,7 +201,10 @@ for the digest.
   (shadow DOM, never touching X's own buttons or compose box). Clicking it opens a popover with the current draft
   (Claude version, else first draft) with Copy (no new tab), Polish / Regenerate and thumbs. Lookups
   are batched for visible posts through the service worker; nothing shows while offline.
+- Other captured posts on x.com get a faint **+ Flag** pill: it flags the post by hand (no age or engagement
+  rule, never unflagged by triage), shows **Drafting…** (or when triage resumes after a quota pause) and then
+  **Ready**; the post joins To reply tagged `manual`. Replied posts show a muted **Replied** pill.
 
 Routes (all need the bearer token): `GET /v1/voice`, `GET /v1/digest`, `POST /v1/digest/run` (200, 409 busy, 422 too few posts, 429 + `Retry-After`, 502 failed), `GET|POST /v1/style-notes {notes<=2000}`,
 `POST /v1/drafts/:id/feedback {kind: copy|edit|up|down, text?<=1000}`, `POST /v1/ideas/:id/polish`,
-`GET /v1/posts?view=flagged&feed=to_reply|replied` (returns `counts`), `POST /v1/posts/:id/replied {replied: boolean}`, `POST /v1/posts/:id/copied`, `GET /v1/posts/to-reply?ids=a,b` (<=100 ids; unreplied flagged posts only), `POST /v1/posts/:id/polish[?regenerate=1]` (409 at the version cap), `POST /v1/drafts/:id/select {versionId}`.
+`GET /v1/posts?view=flagged&feed=to_reply|replied` (returns `counts`), `POST /v1/posts/:id/replied {replied: boolean}`, `POST /v1/posts/:id/copied`, `GET /v1/posts/to-reply?ids=a,b` (<=100 ids; unreplied flagged posts, plus replied/flaggable ids and the triage pause), `POST /v1/posts/:id/flag` (manual flag; 202 queued, 200 already drafted, 404, 409 own post), `POST /v1/posts/:id/polish[?regenerate=1]` (409 at the version cap), `POST /v1/drafts/:id/select {versionId}`.

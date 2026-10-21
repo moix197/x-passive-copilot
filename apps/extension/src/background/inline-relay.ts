@@ -5,13 +5,13 @@ import {
   type InlineActionMessage,
   type ToReplyByIdsResponse,
 } from '@xc/shared/types';
-import { getJson, markCopied, requestPolish, sendFeedback } from '../server-api';
+import { flagPost, getJson, markCopied, requestPolish, sendFeedback } from '../server-api';
 import { getServerConfig } from '../server-config';
 
-/** Offline (no token): nothing is in To reply, so no badges, and no request is made. */
+/** Offline (no token): nothing is in To reply or flaggable, so no pills, and no request is made. */
 async function lookupToReply(statusIds: string[]): Promise<ToReplyByIdsResponse | { error: string }> {
   try {
-    if (!(await getServerConfig()).token) return { posts: [] };
+    if (!(await getServerConfig()).token) return ToReplyByIdsResponseSchema.parse({ posts: [] });
     return ToReplyByIdsResponseSchema.parse(await getJson(`/v1/posts/to-reply?ids=${statusIds.join(',')}`));
   } catch {
     return { error: 'lookup failed' };
@@ -36,6 +36,8 @@ async function runAction({ action, statusId, draftId }: InlineActionMessage): Pr
       return requestPolish(statusId).then(() => null);
     case 'regenerate':
       return requestPolish(statusId, true).then(() => null);
+    case 'flag':
+      return flagPost(statusId);
   }
 }
 
